@@ -2,13 +2,23 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Nyra.Entities;
 using Nyra.Exceptions;
 
 namespace Nyra.Internal;
 
 /// <summary>The kind and version of a server, detected through GET /v4/info.</summary>
-internal sealed record ServerInfo(bool IsNodeLink, string RawVersion, NodeVersion? Version);
+internal sealed record ServerInfo(
+    bool IsNodeLink,
+    string RawVersion,
+    NodeVersion? Version,
+    IReadOnlySet<string> Plugins
+)
+{
+    /// <summary>Whether Lavalink reported the given plugin as loaded; NodeLink has no plugin list.</summary>
+    internal bool HasPlugin(string name) => Plugins.Contains(name);
+}
 
 /// <summary>REST client of a node; the process-wide <see cref="HttpClient"/> is shared by all nodes.</summary>
 internal sealed class RestClient
@@ -50,6 +60,7 @@ internal sealed class RestClient
     }
 
     // NodeLink sets "isNodelink": true; both servers report "version" -> "semver".
+    // Lavalink additionally reports "plugins": [{ "name": ... }] for loaded plugins.
     private static ServerInfo ParseServerInfo(byte[] json)
     {
         try
@@ -57,6 +68,7 @@ internal sealed class RestClient
             var reader = new Utf8JsonReader(json);
             var isNodeLink = false;
             string? semver = null;
+            var plugins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             while (reader.Read())
             {
@@ -74,11 +86,39 @@ internal sealed class RestClient
                     if (reader.TokenType is JsonTokenType.String)
                         semver = reader.GetString();
                 }
+                else if (reader.ValueTextEquals("plugins"u8))
+                {
+                    reader.Read();
+                    if (reader.TokenType != JsonTokenType.StartArray)
+                        continue;
+
+                    while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                    {
+                        if (reader.TokenType != JsonTokenType.StartObject)
+                            continue;
+
+                        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+                        {
+                            if (
+                                reader.TokenType == JsonTokenType.PropertyName
+                                && reader.ValueTextEquals("name"u8)
+                            )
+                            {
+                                reader.Read();
+                                if (
+                                    reader.TokenType is JsonTokenType.String
+                                    && reader.GetString() is { } name
+                                )
+                                    plugins.Add(name);
+                            }
+                        }
+                    }
+                }
             }
 
             // Dev builds report a commit hash instead of a semver; the version stays null there.
             NodeVersion? version = NodeVersion.TryParse(semver, out var parsed) ? parsed : null;
-            return new ServerInfo(isNodeLink, semver ?? "", version);
+            return new ServerInfo(isNodeLink, semver ?? "", version, plugins);
         }
         catch (JsonException exception)
         {
@@ -153,6 +193,96 @@ internal sealed class RestClient
             BuildPlayerPath(guildId),
             cancellationToken: cancellationToken
         );
+
+    // NodeLink wraps the lyrics in a { loadType, data } envelope; LavaLyrics answers with a bare
+    // Lyrics object and 204 when nothing was found.
+    public async Task<LyricsResult> LoadLyricsAsync(
+        string encodedTrack,
+        string? language,
+        bool skipTrackSource,
+        CancellationToken cancellationToken
+    )
+    {
+        if (_node.IsNodeLink)
+        {
+            var path = string.Concat(
+                Endpoints.LoadLyrics,
+                "?encodedTrack=",
+                Uri.EscapeDataString(encodedTrack)
+            );
+            if (!string.IsNullOrWhiteSpace(language))
+                path = string.Concat(path, "&lang=", Uri.EscapeDataString(language));
+
+            var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return Deserialize<LyricsResult>(json, path)
+                ?? throw new RestException(
+                    (int)HttpStatusCode.OK,
+                    path,
+                    "The server returned an empty lyrics result."
+                );
+        }
+
+        var lavaPath = string.Concat(
+            Endpoints.Lyrics,
+            "?track=",
+            Uri.EscapeDataString(encodedTrack)
+        );
+        if (skipTrackSource)
+            lavaPath = string.Concat(lavaPath, "&skipTrackSource=true");
+
+        var lavaJson = await SendAsync(
+                HttpMethod.Get,
+                lavaPath,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (lavaJson.Length == 0)
+            return new LyricsResult { LoadType = LyricsLoadType.Empty };
+
+        return (
+            Deserialize<LavaLyricsLyrics>(lavaJson, lavaPath)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                lavaPath,
+                "The server returned an empty lyrics result."
+            )
+        ).ToResult();
+    }
+
+    public Task SubscribeLyricsAsync(
+        ulong guildId,
+        bool skipTrackSource,
+        CancellationToken cancellationToken
+    ) =>
+        SendAsync(
+            HttpMethod.Post,
+            BuildLyricsSubscriptionPath(guildId, skipTrackSource),
+            cancellationToken: cancellationToken
+        );
+
+    public Task UnsubscribeLyricsAsync(ulong guildId, CancellationToken cancellationToken) =>
+        SendAsync(
+            HttpMethod.Delete,
+            BuildLyricsSubscriptionPath(guildId, skipTrackSource: false),
+            cancellationToken: cancellationToken
+        );
+
+    private string BuildLyricsSubscriptionPath(ulong guildId, bool skipTrackSource)
+    {
+        if (string.IsNullOrEmpty(_node.SessionId))
+            throw new InvalidOperationException(
+                $"Node '{_node.Name}' has no session id yet; it is not ready."
+            );
+
+        var path = string.Format(
+            CultureInfo.InvariantCulture,
+            Endpoints.LyricsSubscription,
+            _node.SessionId,
+            guildId
+        );
+        return skipTrackSource ? path + "?skipTrackSource=true" : path;
+    }
 
     public async Task<Session> UpdateSessionAsync(
         bool resuming,
@@ -248,3 +378,39 @@ internal sealed class RestClient
         return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
     }
 }
+
+// LavaLyrics wire shape: a bare Lyrics object rather than NodeLink's { loadType, data } envelope.
+internal sealed record LavaLyricsLyrics(
+    [property: JsonPropertyName("sourceName")] string SourceName,
+    [property: JsonPropertyName("provider")] string? Provider,
+    [property: JsonPropertyName("text")] string? Text,
+    [property: JsonPropertyName("lines")] IReadOnlyList<LavaLyricsLine>? Lines
+)
+{
+    public LyricsResult ToResult() =>
+        new()
+        {
+            LoadType = LyricsLoadType.Lyrics,
+            Data = new LyricsData
+            {
+                Name = SourceName,
+                Synced = Lines is not null,
+                Lines = Lines
+                    ?.Select(line => new LyricsLine
+                    {
+                        Text = line.Line,
+                        Time = line.Timestamp,
+                        Duration = line.Duration ?? 0,
+                    })
+                    .ToList(),
+                Provider = Provider,
+                Text = Text,
+            },
+        };
+}
+
+internal sealed record LavaLyricsLine(
+    [property: JsonPropertyName("timestamp")] long Timestamp,
+    [property: JsonPropertyName("duration")] long? Duration,
+    [property: JsonPropertyName("line")] string Line
+);

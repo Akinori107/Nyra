@@ -133,6 +133,15 @@ public sealed class GuildConnection
     /// <summary>Raised when the node's Discord voice websocket for this guild was closed.</summary>
     public event EventHandler<WebsocketClosedEventArgs>? WebSocketClosed;
 
+    /// <summary>Raised when the node loaded the lyrics of the current track through a lyrics subscription.</summary>
+    public event EventHandler<LyricsFoundEventArgs>? LyricsFound;
+
+    /// <summary>Raised when no lyrics provider had lyrics for the current track.</summary>
+    public event EventHandler<LyricsNotFoundEventArgs>? LyricsNotFound;
+
+    /// <summary>Raised for every lyrics line that becomes current during playback.</summary>
+    public event EventHandler<LyricsLineEventArgs>? LyricsLine;
+
     /// <summary>Raised when a handler of one of the other events of this connection threw.</summary>
     public event EventHandler<PlaybackErrorEventArgs>? PlaybackError;
 
@@ -297,6 +306,41 @@ public sealed class GuildConnection
             )
             .ConfigureAwait(false);
         CaptureState(player);
+    }
+
+    /// <summary>
+    /// Subscribes to lyrics updates: <see cref="LyricsFound"/> delivers the full lyrics,
+    /// <see cref="LyricsLine"/> the current line as playback advances.
+    /// <paramref name="skipTrackSource"/> skips the track source's own lyrics.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink and does not have the LavaLyrics plugin.</exception>
+    public Task SubscribeLyricsAsync(
+        bool skipTrackSource = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        NodeGuards.RequireNodeLinkOrPlugin(
+            _node,
+            NodeGuards.LavaLyricsPlugin,
+            "lyrics subscription"
+        );
+        EnsureActive();
+
+        return _node.Rest.SubscribeLyricsAsync(GuildId, skipTrackSource, cancellationToken);
+    }
+
+    /// <summary>Ends the lyrics subscription; no further lyrics events arrive.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink and does not have the LavaLyrics plugin.</exception>
+    public Task UnsubscribeLyricsAsync(CancellationToken cancellationToken = default)
+    {
+        NodeGuards.RequireNodeLinkOrPlugin(
+            _node,
+            NodeGuards.LavaLyricsPlugin,
+            "lyrics subscription"
+        );
+        EnsureActive();
+
+        return _node.Rest.UnsubscribeLyricsAsync(GuildId, cancellationToken);
     }
 
     /// <summary>Applies an audio filter, replacing the previous filter of the same kind. On NodeLink, a filter set while no track is loaded is re-sent when the next track starts.</summary>
@@ -554,6 +598,15 @@ public sealed class GuildConnection
         // Without the voice websocket there is no audio either; tear the connection down.
         _ = DisconnectAfterVoiceClosedAsync();
     }
+
+    internal void HandleLyricsFound(LyricsFoundEventArgs eventArgs) =>
+        LyricsFound.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleLyricsNotFound(LyricsNotFoundEventArgs eventArgs) =>
+        LyricsNotFound.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleLyricsLine(LyricsLineEventArgs eventArgs) =>
+        LyricsLine.Raise(this, eventArgs, OnHandlerError);
 
     private async Task DisconnectAfterVoiceClosedAsync()
     {

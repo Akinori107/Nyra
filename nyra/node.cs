@@ -83,6 +83,9 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// </summary>
     public NodeVersion? Version => _serverInfo?.Version;
 
+    /// <summary>Detected at connect: true when Lavalink reports the given plugin as loaded. Always false for NodeLink.</summary>
+    public bool HasPlugin(string name) => _serverInfo?.HasPlugin(name) ?? false;
+
     internal NodeOptions Options => _options;
 
     /// <summary>The node session id of the current connection, or null before the node became ready. Not a Discord voice session id.</summary>
@@ -287,6 +290,28 @@ public sealed class Node : IAsyncDisposable, IDisposable
         };
 
         return await _rest.LoadTracksAsync(identifier, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Loads the lyrics of a track: <paramref name="language"/> applies to NodeLink,
+    /// <paramref name="skipTrackSource"/> to Lavalink with the LavaLyrics plugin. For live
+    /// per-line lyrics use <see cref="GuildConnection.SubscribeLyricsAsync"/> instead.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink and does not have the LavaLyrics plugin.</exception>
+    public async Task<LyricsResult> LoadLyricsAsync(
+        Track track,
+        string? language = null,
+        bool skipTrackSource = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(track);
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        NodeGuards.RequireNodeLinkOrPlugin(this, NodeGuards.LavaLyricsPlugin, "lyrics");
+
+        return await _rest
+            .LoadLyricsAsync(track.Encoded, language, skipTrackSource, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

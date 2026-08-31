@@ -7,6 +7,9 @@ namespace Nyra;
 /// </summary>
 internal static class NodeGuards
 {
+    /// <summary>The name Lavalink reports for the LavaLyrics plugin in GET /v4/info.</summary>
+    internal const string LavaLyricsPlugin = "lavalyrics-plugin";
+
     /// <summary>Throws when the node is not NodeLink, or runs a version older than the feature requires.</summary>
     internal static void RequireNodeLink(
         Node node,
@@ -22,6 +25,22 @@ internal static class NodeGuards
         if (minimum is { } required && node.Version is { } version && version < required)
             throw new NotSupportedException(
                 $"{feature ?? "This operation"} requires NodeLink {required} or newer; the node '{node.Name}' runs {version}."
+            );
+    }
+
+    /// <summary>Throws when the node is neither NodeLink nor Lavalink with the given plugin loaded.</summary>
+    internal static void RequireNodeLinkOrPlugin(
+        Node node,
+        string pluginName,
+        string? feature = null
+    )
+    {
+        if (node.IsNodeLink)
+            return;
+
+        if (!node.HasPlugin(pluginName))
+            throw new NotSupportedException(
+                $"{feature ?? "This operation"} requires NodeLink or the '{pluginName}' Lavalink plugin; the node '{node.Name}' has neither."
             );
     }
 

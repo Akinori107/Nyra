@@ -21,7 +21,11 @@ internal sealed class NodeEventDispatcher
     private const int EventTrackException = 3;
     private const int EventTrackStuck = 4;
     private const int EventWebSocketClosed = 5;
+    private const int EventLyricsFound = 6;
 
+    private const int EventLyricsNotFound = 7;
+
+    private const int EventLyricsLine = 8;
     private readonly Node _node;
 
     public NodeEventDispatcher(Node node)
@@ -147,6 +151,29 @@ internal sealed class NodeEventDispatcher
                 break;
             }
 
+            case EventLyricsFound:
+            {
+                var args = Deserialize<LyricsFoundEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleLyricsFound(args);
+                break;
+            }
+
+            case EventLyricsNotFound:
+            {
+                var args = Deserialize<LyricsNotFoundEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleLyricsNotFound(args);
+                break;
+            }
+
+            case EventLyricsLine:
+            {
+                var args = Deserialize<LyricsLineEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleLyricsLine(args);
+                break;
+            }
             default:
                 // NodeLink emits extra event types (player lifecycle, seek, volume and so on);
                 // they are not part of the shared protocol and are ignored.
@@ -200,6 +227,12 @@ internal sealed class NodeEventDispatcher
             return EventTrackStuck;
         if (reader.ValueTextEquals("WebSocketClosedEvent"u8))
             return EventWebSocketClosed;
+        if (reader.ValueTextEquals("LyricsFoundEvent"u8))
+            return EventLyricsFound;
+        if (reader.ValueTextEquals("LyricsNotFoundEvent"u8))
+            return EventLyricsNotFound;
+        if (reader.ValueTextEquals("LyricsLineEvent"u8))
+            return EventLyricsLine;
         return 0;
     }
 
