@@ -1,0 +1,7 @@
+# Build artifacts
+[Bb]in/
+[Oo]bj/
+
+# VScode / Rider
+.vscode/
+.idea/
