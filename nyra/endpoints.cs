@@ -24,4 +24,7 @@ internal static class Endpoints
 
     // {0} = session id, {1} = guild id; NodeLink, or Lavalink with the LavaLyrics plugin.
     public const string LyricsSubscription = "/v4/sessions/{0}/players/{1}/lyrics/subscribe";
+
+    // {0} = session id, {1} = guild id; NodeLink only.
+    public const string SponsorBlock = "/v4/sessions/{0}/players/{1}/sponsorblock";
 }

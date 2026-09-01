@@ -142,6 +142,12 @@ public sealed class GuildConnection
     /// <summary>Raised for every lyrics line that becomes current during playback.</summary>
     public event EventHandler<LyricsLineEventArgs>? LyricsLine;
 
+    /// <summary>Raised when the node loaded the SponsorBlock segments of the current track.</summary>
+    public event EventHandler<SponsorBlockSegmentsLoadedEventArgs>? SponsorBlockSegmentsLoaded;
+
+    /// <summary>Raised when the node skipped a SponsorBlock segment of the current track.</summary>
+    public event EventHandler<SponsorBlockSegmentSkippedEventArgs>? SponsorBlockSegmentSkipped;
+
     /// <summary>Raised when a handler of one of the other events of this connection threw.</summary>
     public event EventHandler<PlaybackErrorEventArgs>? PlaybackError;
 
@@ -341,6 +347,59 @@ public sealed class GuildConnection
         EnsureActive();
 
         return _node.Rest.UnsubscribeLyricsAsync(GuildId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads the SponsorBlock state of the player: enabled categories, action types, the
+    /// segments of the current track and the skip margin.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public Task<SponsorBlockState> GetSponsorBlockAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        NodeGuards.RequireNodeLink(_node, "SponsorBlock");
+        EnsureActive();
+
+        return _node.Rest.GetSponsorBlockAsync(GuildId, cancellationToken);
+    }
+
+    /// <summary>Changes the SponsorBlock settings; members left null keep their current value.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public Task<SponsorBlockState> SetSponsorBlockAsync(
+        SponsorBlockSettings settings,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        NodeGuards.RequireNodeLink(_node, "SponsorBlock");
+        EnsureActive();
+
+        return _node.Rest.SetSponsorBlockAsync(GuildId, settings, cancellationToken);
+    }
+
+    /// <summary>Replaces the SponsorBlock segments of the current track with caller-supplied ones.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public Task<SponsorBlockState> SetSponsorBlockSegmentsAsync(
+        IReadOnlyList<SponsorBlockSegment> segments,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(segments);
+        NodeGuards.RequireNodeLink(_node, "SponsorBlock");
+        EnsureActive();
+
+        return _node.Rest.SetSponsorBlockSegmentsAsync(GuildId, segments, cancellationToken);
+    }
+
+    /// <summary>Clears the SponsorBlock state, disabling segment skipping for the player.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public Task ClearSponsorBlockAsync(CancellationToken cancellationToken = default)
+    {
+        NodeGuards.RequireNodeLink(_node, "SponsorBlock");
+        EnsureActive();
+
+        return _node.Rest.ClearSponsorBlockAsync(GuildId, cancellationToken);
     }
 
     /// <summary>Applies an audio filter, replacing the previous filter of the same kind. On NodeLink, a filter set while no track is loaded is re-sent when the next track starts.</summary>
@@ -607,6 +666,12 @@ public sealed class GuildConnection
 
     internal void HandleLyricsLine(LyricsLineEventArgs eventArgs) =>
         LyricsLine.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleSponsorBlockSegmentsLoaded(SponsorBlockSegmentsLoadedEventArgs eventArgs) =>
+        SponsorBlockSegmentsLoaded.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleSponsorBlockSegmentSkipped(SponsorBlockSegmentSkippedEventArgs eventArgs) =>
+        SponsorBlockSegmentSkipped.Raise(this, eventArgs, OnHandlerError);
 
     private async Task DisconnectAfterVoiceClosedAsync()
     {

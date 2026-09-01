@@ -22,10 +22,11 @@ internal sealed class NodeEventDispatcher
     private const int EventTrackStuck = 4;
     private const int EventWebSocketClosed = 5;
     private const int EventLyricsFound = 6;
-
     private const int EventLyricsNotFound = 7;
-
     private const int EventLyricsLine = 8;
+    private const int EventSponsorBlockSegmentsLoaded = 9;
+    private const int EventSponsorBlockSegmentSkipped = 10;
+
     private readonly Node _node;
 
     public NodeEventDispatcher(Node node)
@@ -174,6 +175,23 @@ internal sealed class NodeEventDispatcher
                     _node.GetConnection(args.GuildId)?.HandleLyricsLine(args);
                 break;
             }
+
+            case EventSponsorBlockSegmentsLoaded:
+            {
+                var args = Deserialize<SponsorBlockSegmentsLoadedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleSponsorBlockSegmentsLoaded(args);
+                break;
+            }
+
+            case EventSponsorBlockSegmentSkipped:
+            {
+                var args = Deserialize<SponsorBlockSegmentSkippedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleSponsorBlockSegmentSkipped(args);
+                break;
+            }
+
             default:
                 // NodeLink emits extra event types (player lifecycle, seek, volume and so on);
                 // they are not part of the shared protocol and are ignored.
@@ -219,20 +237,34 @@ internal sealed class NodeEventDispatcher
     {
         if (reader.ValueTextEquals("TrackStartEvent"u8))
             return EventTrackStart;
+
         if (reader.ValueTextEquals("TrackEndEvent"u8))
             return EventTrackEnd;
+
         if (reader.ValueTextEquals("TrackExceptionEvent"u8))
             return EventTrackException;
+
         if (reader.ValueTextEquals("TrackStuckEvent"u8))
             return EventTrackStuck;
+
         if (reader.ValueTextEquals("WebSocketClosedEvent"u8))
             return EventWebSocketClosed;
+
         if (reader.ValueTextEquals("LyricsFoundEvent"u8))
             return EventLyricsFound;
+
         if (reader.ValueTextEquals("LyricsNotFoundEvent"u8))
             return EventLyricsNotFound;
+
         if (reader.ValueTextEquals("LyricsLineEvent"u8))
             return EventLyricsLine;
+
+        if (reader.ValueTextEquals("SponsorBlockSegmentsLoadedEvent"u8))
+            return EventSponsorBlockSegmentsLoaded;
+
+        if (reader.ValueTextEquals("SponsorBlockSegmentSkippedEvent"u8))
+            return EventSponsorBlockSegmentSkipped;
+
         return 0;
     }
 

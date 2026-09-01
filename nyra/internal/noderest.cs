@@ -284,6 +284,83 @@ internal sealed class RestClient
         return skipTrackSource ? path + "?skipTrackSource=true" : path;
     }
 
+    public async Task<SponsorBlockState> GetSponsorBlockAsync(
+        ulong guildId,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = BuildSponsorBlockPath(guildId);
+        var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<SponsorBlockState>(json, path)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                path,
+                "The server returned an empty SponsorBlock state."
+            );
+    }
+
+    public async Task<SponsorBlockState> SetSponsorBlockAsync(
+        ulong guildId,
+        SponsorBlockSettings settings,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = BuildSponsorBlockPath(guildId);
+        var body = JsonSerializer.SerializeToUtf8Bytes(settings, Options);
+        var json = await SendAsync(HttpMethod.Patch, path, body, cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<SponsorBlockState>(json, path)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                path,
+                "The server returned an empty SponsorBlock state."
+            );
+    }
+
+    public async Task<SponsorBlockState> SetSponsorBlockSegmentsAsync(
+        ulong guildId,
+        IReadOnlyList<SponsorBlockSegment> segments,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = BuildSponsorBlockPath(guildId);
+        var body = JsonSerializer.SerializeToUtf8Bytes(
+            new SponsorBlockSegmentOverride(segments),
+            Options
+        );
+        var json = await SendAsync(HttpMethod.Post, path, body, cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<SponsorBlockState>(json, path)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                path,
+                "The server returned an empty SponsorBlock state."
+            );
+    }
+
+    public Task ClearSponsorBlockAsync(ulong guildId, CancellationToken cancellationToken) =>
+        SendAsync(
+            HttpMethod.Delete,
+            BuildSponsorBlockPath(guildId),
+            cancellationToken: cancellationToken
+        );
+
+    private string BuildSponsorBlockPath(ulong guildId)
+    {
+        if (string.IsNullOrEmpty(_node.SessionId))
+            throw new InvalidOperationException(
+                $"Node '{_node.Name}' has no session id yet; it is not ready."
+            );
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            Endpoints.SponsorBlock,
+            _node.SessionId,
+            guildId
+        );
+    }
+
     public async Task<Session> UpdateSessionAsync(
         bool resuming,
         int timeoutSeconds,
