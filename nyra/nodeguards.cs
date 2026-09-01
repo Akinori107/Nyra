@@ -10,6 +10,9 @@ internal static class NodeGuards
     /// <summary>The name Lavalink reports for the LavaLyrics plugin in GET /v4/info.</summary>
     internal const string LavaLyricsPlugin = "lavalyrics-plugin";
 
+    /// <summary>The name Lavalink reports for the LavaSrc plugin in GET /v4/info.</summary>
+    internal const string LavaSrcPlugin = "lavasrc-plugin";
+
     /// <summary>Throws when the node is not NodeLink, or runs a version older than the feature requires.</summary>
     internal static void RequireNodeLink(
         Node node,

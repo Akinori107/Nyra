@@ -282,6 +282,46 @@ public sealed class Node : IAsyncDisposable, IDisposable
             SearchType.YouTubeMusic => $"ytmsearch:{query}",
             SearchType.SoundCloud => $"scsearch:{query}",
             SearchType.Raw => query,
+            SearchType.Spotify => $"spsearch:{query}",
+            SearchType.SpotifyRecommendations => $"sprec:{query}",
+            SearchType.Monochrome => $"mcsearch:{query}",
+            SearchType.Gaana => $"gnsearch:{query}",
+            SearchType.Bandcamp => $"bcsearch:{query}",
+            SearchType.IHeartRadio => $"ihsearch:{query}",
+            SearchType.YouTubeRecommendations => $"ytrec:{query}",
+            SearchType.QobuzRecommendations => $"qbrec:{query}",
+            SearchType.LetrasRecommendations => $"lmrec:{query}",
+            SearchType.EternalBox => $"eternalbox:{query}",
+            SearchType.JioSaavn => $"jssearch:{query}",
+            SearchType.JioSaavnRecommendations => $"jsrec:{query}",
+            SearchType.Qobuz => $"qbsearch:{query}",
+            SearchType.Tidal => $"tdsearch:{query}",
+            SearchType.TidalRecommendations => $"tdrec:{query}",
+            SearchType.Letras => $"lmsearch:{query}",
+            SearchType.Audius => $"ausearch:{query}",
+            SearchType.VkMusic => $"vksearch:{query}",
+            SearchType.VkMusicRecommendations => $"vkrec:{query}",
+            SearchType.AmazonMusic => $"amazonmusic:{query}",
+            SearchType.Bluesky => $"bksearch:{query}",
+            SearchType.AppleMusic => $"amsearch:{query}",
+            SearchType.NetEase => $"ntsearch:{query}",
+            SearchType.YandexMusic => $"ymsearch:{query}",
+            SearchType.YandexMusicRecommendations => $"ymrec:{query}",
+            SearchType.Bilibili => $"bilisearch:{query}",
+            SearchType.LastFm => $"lfsearch:{query}",
+            SearchType.GoogleDrive => $"gdsearch:{query}",
+            SearchType.Shazam => $"shsearch:{query}",
+            SearchType.Deezer => $"dzsearch:{query}",
+            SearchType.DeezerRecommendations => $"dzrec:{query}",
+            SearchType.Anghami => $"agsearch:{query}",
+            SearchType.Audiomack => $"admsearch:{query}",
+            SearchType.Pandora => $"pdsearch:{query}",
+            SearchType.NicoVideo => $"ncsearch:{query}",
+            SearchType.SongLink => $"slsearch:{query}",
+            SearchType.Flowery => $"ftts:{query}",
+            SearchType.GoogleTts => $"gtts:{query}",
+            SearchType.PiperTts => $"pipertts:{query}",
+            SearchType.LazyPyTts => $"lazypytts:{query}",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(searchType),
                 searchType,
@@ -289,7 +329,73 @@ public sealed class Node : IAsyncDisposable, IDisposable
             ),
         };
 
+        RequireNodeLinkSearchSource(searchType);
+
         return await _rest.LoadTracksAsync(identifier, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The search sources NodeLink serves; a few of them (Spotify, Apple Music, Deezer, Yandex
+    /// Music, VK Music, Tidal, Qobuz, JioSaavn) are also served by Lavalink with the LavaSrc plugin.
+    /// </summary>
+    private void RequireNodeLinkSearchSource(SearchType searchType)
+    {
+        if (
+            searchType
+            is SearchType.Spotify
+                or SearchType.SpotifyRecommendations
+                or SearchType.AppleMusic
+                or SearchType.Deezer
+                or SearchType.DeezerRecommendations
+                or SearchType.YandexMusic
+                or SearchType.YandexMusicRecommendations
+                or SearchType.VkMusic
+                or SearchType.VkMusicRecommendations
+                or SearchType.Tidal
+                or SearchType.TidalRecommendations
+                or SearchType.Qobuz
+                or SearchType.QobuzRecommendations
+                or SearchType.JioSaavn
+                or SearchType.JioSaavnRecommendations
+        )
+        {
+            NodeGuards.RequireNodeLinkOrPlugin(
+                this,
+                NodeGuards.LavaSrcPlugin,
+                "this search source"
+            );
+            return;
+        }
+
+        if (
+            searchType
+            is SearchType.Bandcamp
+                or SearchType.Monochrome
+                or SearchType.YouTubeRecommendations
+                or SearchType.LetrasRecommendations
+                or SearchType.EternalBox
+                or SearchType.Gaana
+                or SearchType.IHeartRadio
+                or SearchType.Letras
+                or SearchType.Audius
+                or SearchType.AmazonMusic
+                or SearchType.Bluesky
+                or SearchType.NetEase
+                or SearchType.Bilibili
+                or SearchType.LastFm
+                or SearchType.GoogleDrive
+                or SearchType.Shazam
+                or SearchType.Anghami
+                or SearchType.Audiomack
+                or SearchType.Pandora
+                or SearchType.NicoVideo
+                or SearchType.SongLink
+                or SearchType.Flowery
+                or SearchType.GoogleTts
+                or SearchType.PiperTts
+                or SearchType.LazyPyTts
+        )
+            NodeGuards.RequireNodeLink(this, "this search source");
     }
 
     /// <summary>
