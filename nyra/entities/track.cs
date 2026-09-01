@@ -383,7 +383,7 @@ public sealed record Track
     /// </summary>
     private static ReadOnlySpan<byte> TrimLegacyNodeLinkTrailer(ReadOnlySpan<byte> raw)
     {
-        ReadOnlySpan<byte> marker = "NLK:seekable"u8;
+        var marker = "NLK:seekable"u8;
 
         // The trailer always sits at the very end: 12 marker bytes plus the 1-byte seekable flag.
         if (raw.Length < 16 || raw[^1] is not ((byte)'Y') and not ((byte)'N'))

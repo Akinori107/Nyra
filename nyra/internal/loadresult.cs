@@ -171,7 +171,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
 
     private static LoadResult ReadPlaylist(ref Utf8JsonReader data, JsonSerializerOptions options)
     {
-        string name = string.Empty;
+        var name = string.Empty;
         var selectedTrack = -1;
         List<Track>? tracks = null;
         JsonElement? pluginInfo = null;

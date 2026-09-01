@@ -9,7 +9,7 @@ using Nyra.Exceptions;
 
 // The whole configuration of the example: a bot token and one audio node.
 // Lavalink and NodeLink need no declaration, the node detects which one it is talking to.
-string token = "your token here";
+var token = "your token here";
 var endpoint = new Endpoint("localhost", 2333, "youshallnotpass"); // NodeLink default port: 3000
 
 using var cancellation = new CancellationTokenSource();

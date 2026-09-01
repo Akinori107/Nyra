@@ -197,7 +197,7 @@ public sealed class GuildConnection
         EnsureActive();
 
         // Falls back to the track's URL-derived offset; consumed only once the play is accepted.
-        long? positionMilliseconds = (long?)options?.StartPosition?.TotalMilliseconds;
+        var positionMilliseconds = (long?)options?.StartPosition?.TotalMilliseconds;
         var urlStart = positionMilliseconds is null ? track.StartPosition : null;
         if (urlStart is not null)
             positionMilliseconds = (long)urlStart.Value.TotalMilliseconds;
