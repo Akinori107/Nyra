@@ -250,6 +250,21 @@ internal sealed class RestClient
         ).ToResult();
     }
 
+    public async Task<IReadOnlyList<Chapter>> LoadChaptersAsync(
+        string encodedTrack,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = string.Concat(
+            Endpoints.LoadChapters,
+            "?encodedTrack=",
+            Uri.EscapeDataString(encodedTrack)
+        );
+        var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<List<Chapter>>(json, path) ?? [];
+    }
+
     public Task SubscribeLyricsAsync(
         ulong guildId,
         bool skipTrackSource,

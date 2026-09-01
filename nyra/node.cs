@@ -314,6 +314,22 @@ public sealed class Node : IAsyncDisposable, IDisposable
             .ConfigureAwait(false);
     }
 
+    /// <summary>Loads the chapters of a track, in milliseconds; mostly YouTube videos carry them.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public async Task<IReadOnlyList<Chapter>> LoadChaptersAsync(
+        Track track,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(track);
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        NodeGuards.RequireNodeLink(this, "chapters");
+
+        return await _rest
+            .LoadChaptersAsync(track.Encoded, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Attaches the source link's offset to the loaded track(s): all of a search result,
     /// but only the selected entry of a playlist.

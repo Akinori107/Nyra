@@ -17,6 +17,9 @@ internal static class Endpoints
     // Lavalink with the LavaLyrics plugin only.
     public const string Lyrics = "/v4/lyrics";
 
+    // NodeLink only.
+    public const string LoadChapters = "/v4/loadchapters";
+
     public const string Session = "/v4/sessions/{0}";
 
     // {0} = session id, {1} = guild id.
