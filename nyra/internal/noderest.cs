@@ -265,6 +265,55 @@ internal sealed class RestClient
         return Deserialize<List<Chapter>>(json, path) ?? [];
     }
 
+    public async Task<Track> DecodeTrackAsync(
+        string encodedTrack,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = string.Concat(
+            Endpoints.DecodeTrack,
+            "?encodedTrack=",
+            Uri.EscapeDataString(encodedTrack)
+        );
+        var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<Track>(json, path)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                path,
+                "The server returned an empty track."
+            );
+    }
+
+    public async Task<IReadOnlyList<Track>> DecodeTracksAsync(
+        IReadOnlyList<string> encodedTracks,
+        CancellationToken cancellationToken
+    )
+    {
+        var body = JsonSerializer.SerializeToUtf8Bytes(encodedTracks, Options);
+        var json = await SendAsync(HttpMethod.Post, Endpoints.DecodeTracks, body, cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<List<Track>>(json, Endpoints.DecodeTracks) ?? [];
+    }
+
+    public async Task<string> EncodeTrackAsync(
+        TrackEncodeRequest info,
+        CancellationToken cancellationToken
+    )
+    {
+        var body = JsonSerializer.SerializeToUtf8Bytes(info, Options);
+        var json = await SendAsync(HttpMethod.Post, Endpoints.EncodeTrack, body, cancellationToken)
+            .ConfigureAwait(false);
+        var encoded = Deserialize<string>(json, Endpoints.EncodeTrack);
+        return string.IsNullOrEmpty(encoded)
+            ? throw new RestException(
+                (int)HttpStatusCode.OK,
+                Endpoints.EncodeTrack,
+                "The server returned an empty encoded track."
+            )
+            : encoded;
+    }
+
     public Task SubscribeLyricsAsync(
         ulong guildId,
         bool skipTrackSource,

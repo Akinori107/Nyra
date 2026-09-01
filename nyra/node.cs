@@ -437,6 +437,72 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// Decodes a base64 track through the server, returning it with server-side metadata. For
+    /// decoding tracks this library understands, <see cref="Track.Decode"/> works without a
+    /// round trip.
+    /// </summary>
+    public async Task<Track> DecodeTrackAsync(
+        string encodedTrack,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(encodedTrack);
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+
+        return await _rest.DecodeTrackAsync(encodedTrack, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Decodes several base64 tracks through the server in one call.</summary>
+    public async Task<IReadOnlyList<Track>> DecodeTracksAsync(
+        IEnumerable<string> encodedTracks,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(encodedTracks);
+        var tracks = encodedTracks.ToList();
+        if (tracks.Count == 0)
+            throw new ArgumentException(
+                "At least one encoded track is required.",
+                nameof(encodedTracks)
+            );
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+
+        return await _rest.DecodeTracksAsync(tracks, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Encodes track information into a base64 track the node can play — the counterpart of
+    /// decoding, only NodeLink serves it.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public async Task<string> EncodeTrackAsync(
+        TrackInfo info,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        NodeGuards.RequireNodeLink(this, "track encoding");
+
+        var request = new TrackEncodeRequest
+        {
+            Identifier = info.Identifier,
+            Author = info.Author,
+            Length = info.LengthMilliseconds,
+            IsStream = info.IsStream,
+            IsSeekable = info.IsSeekable,
+            Position = info.PositionMilliseconds,
+            Title = info.Title,
+            Uri = info.Uri,
+            SourceName = info.SourceName,
+            ArtworkUrl = info.ArtworkUrl,
+            Isrc = info.Isrc,
+        };
+
+        return await _rest.EncodeTrackAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Attaches the source link's offset to the loaded track(s): all of a search result,
     /// but only the selected entry of a playlist.
     /// </summary>

@@ -20,6 +20,15 @@ internal static class Endpoints
     // NodeLink only.
     public const string LoadChapters = "/v4/loadchapters";
 
+    // Served by both servers.
+    public const string DecodeTrack = "/v4/decodetrack";
+
+    // Served by both servers.
+    public const string DecodeTracks = "/v4/decodetracks";
+
+    // NodeLink only.
+    public const string EncodeTrack = "/v4/encodetrack";
+
     public const string Session = "/v4/sessions/{0}";
 
     // {0} = session id, {1} = guild id.

@@ -458,6 +458,51 @@ public sealed record TrackInfo
     public override string ToString() => $"[{SourceName}] {Title} by {Author}";
 }
 
+/// <summary>
+/// Request body for <see cref="Node.EncodeTrackAsync"/>. NodeLink's validator rejects the
+/// request unless <c>uri</c>/<c>artworkUrl</c>/<c>isrc</c> are present as null rather than
+/// omitted, and <c>details</c> is always an array — Nyra doesn't model track details, so it
+/// always sends an empty one.
+/// </summary>
+internal sealed record TrackEncodeRequest
+{
+    [JsonPropertyName("identifier")]
+    public string Identifier { get; init; } = string.Empty;
+
+    [JsonPropertyName("author")]
+    public string Author { get; init; } = string.Empty;
+
+    [JsonPropertyName("length")]
+    public long Length { get; init; }
+
+    [JsonPropertyName("isStream")]
+    public bool IsStream { get; init; }
+
+    [JsonPropertyName("isSeekable")]
+    public bool IsSeekable { get; init; }
+
+    [JsonPropertyName("position")]
+    public long Position { get; init; }
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("uri"), JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public string? Uri { get; init; }
+
+    [JsonPropertyName("sourceName")]
+    public string SourceName { get; init; } = string.Empty;
+
+    [JsonPropertyName("artworkUrl"), JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public string? ArtworkUrl { get; init; }
+
+    [JsonPropertyName("isrc"), JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public string? Isrc { get; init; }
+
+    [JsonPropertyName("details"), JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public IReadOnlyList<string?> Details { get; init; } = [];
+}
+
 /// <summary>Result of a load-tracks operation; pattern-match on the derived record type.</summary>
 public abstract record LoadResult
 {
