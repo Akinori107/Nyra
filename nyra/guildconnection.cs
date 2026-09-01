@@ -148,6 +148,12 @@ public sealed class GuildConnection
     /// <summary>Raised when the node skipped a SponsorBlock segment of the current track.</summary>
     public event EventHandler<SponsorBlockSegmentSkippedEventArgs>? SponsorBlockSegmentSkipped;
 
+    /// <summary>Raised when a mix layer started playing on top of the main track.</summary>
+    public event EventHandler<MixStartedEventArgs>? MixStarted;
+
+    /// <summary>Raised when a mix layer ended.</summary>
+    public event EventHandler<MixEndedEventArgs>? MixEnded;
+
     /// <summary>Raised when a handler of one of the other events of this connection threw.</summary>
     public event EventHandler<PlaybackErrorEventArgs>? PlaybackError;
 
@@ -400,6 +406,66 @@ public sealed class GuildConnection
         EnsureActive();
 
         return _node.Rest.ClearSponsorBlockAsync(GuildId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Starts a mix layer: the track plays on top of the main one, server-side. Returns the
+    /// created layer, whose <see cref="MixLayer.Id"/> changes or stops it later.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public Task<MixLayer> StartMixAsync(
+        Track track,
+        float? volume = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(track);
+        ArgumentOutOfRangeException.ThrowIfLessThan(volume ?? 0.0f, 0.0f);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(volume ?? 1.0f, 1.0f);
+        NodeGuards.RequireNodeLink(_node, "mix layers");
+        EnsureActive();
+
+        return _node.Rest.CreateMixLayerAsync(GuildId, track.Encoded, volume, cancellationToken);
+    }
+
+    /// <summary>Lists the mix layers currently playing on top of the main track.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public Task<IReadOnlyList<MixLayer>> GetMixLayersAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        NodeGuards.RequireNodeLink(_node, "mix layers");
+        EnsureActive();
+
+        return _node.Rest.ListMixLayersAsync(GuildId, cancellationToken);
+    }
+
+    /// <summary>Changes the loudness of one mix layer, 0.0-1.0.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public Task SetMixVolumeAsync(
+        string mixLayerId,
+        float volume,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mixLayerId);
+        ArgumentOutOfRangeException.ThrowIfLessThan(volume, 0.0f);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(volume, 1.0f);
+        NodeGuards.RequireNodeLink(_node, "mix layers");
+        EnsureActive();
+
+        return _node.Rest.SetMixLayerVolumeAsync(GuildId, mixLayerId, volume, cancellationToken);
+    }
+
+    /// <summary>Stops one mix layer; the main track keeps playing.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public Task StopMixAsync(string mixLayerId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mixLayerId);
+        NodeGuards.RequireNodeLink(_node, "mix layers");
+        EnsureActive();
+
+        return _node.Rest.RemoveMixLayerAsync(GuildId, mixLayerId, cancellationToken);
     }
 
     /// <summary>Applies an audio filter, replacing the previous filter of the same kind. On NodeLink, a filter set while no track is loaded is re-sent when the next track starts.</summary>
@@ -672,6 +738,12 @@ public sealed class GuildConnection
 
     internal void HandleSponsorBlockSegmentSkipped(SponsorBlockSegmentSkippedEventArgs eventArgs) =>
         SponsorBlockSegmentSkipped.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleMixStarted(MixStartedEventArgs eventArgs) =>
+        MixStarted.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleMixEnded(MixEndedEventArgs eventArgs) =>
+        MixEnded.Raise(this, eventArgs, OnHandlerError);
 
     private async Task DisconnectAfterVoiceClosedAsync()
     {

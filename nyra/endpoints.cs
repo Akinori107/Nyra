@@ -27,4 +27,10 @@ internal static class Endpoints
 
     // {0} = session id, {1} = guild id; NodeLink only.
     public const string SponsorBlock = "/v4/sessions/{0}/players/{1}/sponsorblock";
+
+    // {0} = session id, {1} = guild id; NodeLink only.
+    public const string Mix = "/v4/sessions/{0}/players/{1}/mix";
+
+    // {0} = session id, {1} = guild id, {2} = mix layer id; NodeLink only.
+    public const string MixLayer = "/v4/sessions/{0}/players/{1}/mix/{2}";
 }

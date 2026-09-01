@@ -26,6 +26,8 @@ internal sealed class NodeEventDispatcher
     private const int EventLyricsLine = 8;
     private const int EventSponsorBlockSegmentsLoaded = 9;
     private const int EventSponsorBlockSegmentSkipped = 10;
+    private const int EventMixStarted = 11;
+    private const int EventMixEnded = 12;
 
     private readonly Node _node;
 
@@ -192,6 +194,22 @@ internal sealed class NodeEventDispatcher
                 break;
             }
 
+            case EventMixStarted:
+            {
+                var args = Deserialize<MixStartedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleMixStarted(args);
+                break;
+            }
+
+            case EventMixEnded:
+            {
+                var args = Deserialize<MixEndedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleMixEnded(args);
+                break;
+            }
+
             default:
                 // NodeLink emits extra event types (player lifecycle, seek, volume and so on);
                 // they are not part of the shared protocol and are ignored.
@@ -264,6 +282,12 @@ internal sealed class NodeEventDispatcher
 
         if (reader.ValueTextEquals("SponsorBlockSegmentSkippedEvent"u8))
             return EventSponsorBlockSegmentSkipped;
+
+        if (reader.ValueTextEquals("MixStartedEvent"u8))
+            return EventMixStarted;
+
+        if (reader.ValueTextEquals("MixEndedEvent"u8))
+            return EventMixEnded;
 
         return 0;
     }

@@ -361,6 +361,88 @@ internal sealed class RestClient
         );
     }
 
+    public async Task<MixLayer> CreateMixLayerAsync(
+        ulong guildId,
+        string encodedTrack,
+        float? volume,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = BuildMixPath(guildId);
+        var body = JsonSerializer.SerializeToUtf8Bytes(
+            new MixLayerCreate(new PlayerUpdateTrack { Encoded = encodedTrack }, volume),
+            Options
+        );
+        var json = await SendAsync(HttpMethod.Post, path, body, cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<MixLayer>(json, path)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                path,
+                "The server returned an empty mix layer."
+            );
+    }
+
+    public async Task<IReadOnlyList<MixLayer>> ListMixLayersAsync(
+        ulong guildId,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = BuildMixPath(guildId);
+        var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<MixLayerCollection>(json, path)?.Mixes ?? [];
+    }
+
+    public Task SetMixLayerVolumeAsync(
+        ulong guildId,
+        string mixLayerId,
+        float volume,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = BuildMixLayerPath(guildId, mixLayerId);
+        var body = JsonSerializer.SerializeToUtf8Bytes(new MixLayerVolume(volume), Options);
+        return SendAsync(HttpMethod.Patch, path, body, cancellationToken);
+    }
+
+    public Task RemoveMixLayerAsync(
+        ulong guildId,
+        string mixLayerId,
+        CancellationToken cancellationToken
+    ) =>
+        SendAsync(
+            HttpMethod.Delete,
+            BuildMixLayerPath(guildId, mixLayerId),
+            cancellationToken: cancellationToken
+        );
+
+    private string BuildMixPath(ulong guildId)
+    {
+        if (string.IsNullOrEmpty(_node.SessionId))
+            throw new InvalidOperationException(
+                $"Node '{_node.Name}' has no session id yet; it is not ready."
+            );
+
+        return string.Format(CultureInfo.InvariantCulture, Endpoints.Mix, _node.SessionId, guildId);
+    }
+
+    private string BuildMixLayerPath(ulong guildId, string mixLayerId)
+    {
+        if (string.IsNullOrEmpty(_node.SessionId))
+            throw new InvalidOperationException(
+                $"Node '{_node.Name}' has no session id yet; it is not ready."
+            );
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            Endpoints.MixLayer,
+            _node.SessionId,
+            guildId,
+            mixLayerId
+        );
+    }
+
     public async Task<Session> UpdateSessionAsync(
         bool resuming,
         int timeoutSeconds,
