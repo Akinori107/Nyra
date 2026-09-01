@@ -162,6 +162,7 @@ public sealed class GuildConnection
     /// is set. Uses <see cref="Track.StartPosition"/> as the position if set and no explicit
     /// <see cref="PlayOptions.StartPosition"/> is given; consumed after the first accepted play.
     /// </summary>
+    /// <exception cref="NotSupportedException"><see cref="PlayOptions.AudioTrackId"/> was given and the node is not NodeLink.</exception>
     public async Task PlayAsync(
         Track track,
         PlayOptions? options = null,
@@ -190,6 +191,9 @@ public sealed class GuildConnection
                 "PlayOptions.StartPosition must be earlier than PlayOptions.EndTime."
             );
 
+        if (options?.AudioTrackId is not null)
+            NodeGuards.RequireNodeLink(_node, "PlayOptions.AudioTrackId");
+
         EnsureActive();
 
         // Falls back to the track's URL-derived offset; consumed only once the play is accepted.
@@ -214,7 +218,12 @@ public sealed class GuildConnection
                 GuildId,
                 new PlayerUpdatePayload
                 {
-                    Track = new PlayerUpdateTrack { Encoded = track.Encoded },
+                    Track = new PlayerUpdateTrack
+                    {
+                        Encoded = track.Encoded,
+                        UserData = options?.UserData,
+                        AudioTrackId = options?.AudioTrackId,
+                    },
                     Position = positionMilliseconds,
                     EndTime = (long?)options?.EndTime?.TotalMilliseconds,
                 },
@@ -228,6 +237,74 @@ public sealed class GuildConnection
             track.StartPosition = null;
 
         CaptureState(player);
+    }
+
+    /// <summary>
+    /// Plays a track by its raw identifier, letting the server resolve and load it — no local
+    /// load needed. The identifier must resolve to a single track: a source URL, a video id.
+    /// Search queries and playlists are rejected by both servers. Identifier loading is Lavalink-only; NodeLink does not implement it and rejects the request.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is a NodeLink server.</exception>
+    public async Task<Track> PlayIdentifierAsync(
+        string identifier,
+        PlayOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(identifier);
+        var startPosition = options?.StartPosition;
+        var endTime = options?.EndTime;
+        if (startPosition is { } start && start < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                start,
+                "PlayOptions.StartPosition must not be negative."
+            );
+        if (endTime is { } end && end <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                end,
+                "PlayOptions.EndTime must be greater than zero."
+            );
+        if (startPosition is { } startEnd && endTime is { } endEnd && startEnd >= endEnd)
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "PlayOptions.StartPosition must be earlier than PlayOptions.EndTime."
+            );
+        // AudioTrackId is NodeLink-only, but identifier loading is Lavalink-only: no node
+        // could ever satisfy both, so this is an argument error rather than a node-kind one.
+        if (options?.AudioTrackId is not null)
+            throw new ArgumentException(
+                "PlayOptions.AudioTrackId is not supported by PlayIdentifierAsync.",
+                nameof(options)
+            );
+
+        NodeGuards.RequireLavalink(_node, "PlayIdentifierAsync");
+        EnsureActive();
+
+        var player = await _node
+            .Rest.UpdatePlayerAsync(
+                GuildId,
+                new PlayerUpdatePayload
+                {
+                    Track = new PlayerIdentifierUpdateTrack
+                    {
+                        Identifier = identifier,
+                        UserData = options?.UserData,
+                    },
+                    Position = (long?)startPosition?.TotalMilliseconds,
+                    EndTime = (long?)endTime?.TotalMilliseconds,
+                },
+                options?.NoReplace ?? false,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        CaptureState(player);
+        return player.Track
+            ?? throw new InvalidOperationException(
+                "The server did not resolve the identifier into a track."
+            );
     }
 
     /// <summary>Stops the player, clearing the current track.</summary>

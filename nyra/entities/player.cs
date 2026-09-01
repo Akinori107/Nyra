@@ -7,7 +7,7 @@ namespace Nyra.Entities;
 /// <summary>
 /// Discord voice state of a player. When sent, <see cref="Token"/>, <see cref="Endpoint"/>,
 /// <see cref="SessionId"/> and <see cref="ChannelId"/> must be provided together: Lavalink
-/// rejects the update without a channel id, and NodeLink expects the complete set too.
+/// rejects the update without a channel id; NodeLink only requires the first three.
 /// </summary>
 public sealed record VoiceState
 {
@@ -157,12 +157,38 @@ public sealed record FilterChain
     public Dictionary<string, JsonElement>? PluginFilters { get; init; }
 }
 
+/// <summary>Base of the track portion of an update-player request; the derived records pick the wire form.</summary>
+[JsonDerivedType(typeof(PlayerUpdateTrack))]
+[JsonDerivedType(typeof(PlayerIdentifierUpdateTrack))]
+internal abstract record PlayerUpdateTrackBase
+{
+    /// <summary>Client data the server attaches to the track and echoes back.</summary>
+    [JsonPropertyName("userData")]
+    public JsonElement? UserData { get; init; }
+}
+
 /// <summary>Track portion of an update-player request: a track string plays it, null stops playback.</summary>
-internal sealed record PlayerUpdateTrack
+internal sealed record PlayerUpdateTrack : PlayerUpdateTrackBase
 {
     // The null condition must never be ignored: encoded:null is how playback is stopped.
     [JsonPropertyName("encoded"), JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? Encoded { get; init; }
+
+    /// <summary>Selects a dub or alternate audio track on sources that expose more than one; NodeLink only.</summary>
+    [JsonPropertyName("audioTrackId")]
+    public string? AudioTrackId { get; init; }
+}
+
+/// <summary>
+/// Identifier form of the track portion: the server resolves and plays the identifier itself.
+/// The encoded member is absent on purpose: Lavalink rejects a payload carrying both, and
+/// NodeLink silently prefers encoded over identifier when both are present. Identifier loading
+/// is Lavalink-only, so this form never carries <c>audioTrackId</c>: that member is NodeLink-only.
+/// </summary>
+internal sealed record PlayerIdentifierUpdateTrack : PlayerUpdateTrackBase
+{
+    [JsonPropertyName("identifier")]
+    public string Identifier { get; init; } = string.Empty;
 }
 
 /// <summary>
@@ -173,7 +199,7 @@ internal sealed record PlayerUpdatePayload
 {
     /// <summary>Omitted leaves the current track playing.</summary>
     [JsonPropertyName("track")]
-    public PlayerUpdateTrack? Track { get; init; }
+    public PlayerUpdateTrackBase? Track { get; init; }
 
     /// <summary>Seek position in milliseconds; with a new track, starts it at that offset.</summary>
     [JsonPropertyName("position")]
@@ -236,12 +262,22 @@ public sealed record Session
     public int Timeout { get; init; }
 }
 
-/// <summary>Options of a playback request issued through <see cref="GuildConnection.PlayAsync"/>.</summary>
+/// <summary>
+/// Options of a playback request issued through <see cref="GuildConnection.PlayAsync"/> or
+/// <see cref="GuildConnection.PlayIdentifierAsync"/>.
+/// </summary>
 /// <param name="StartPosition">Where to start the track.</param>
 /// <param name="EndTime">Playback stops when the track reaches this position.</param>
 /// <param name="NoReplace">When true, does not replace a track that is already playing.</param>
+/// <param name="UserData">Client data the server attaches to the track and echoes back on every response.</param>
+/// <param name="AudioTrackId">
+/// Selects a dub or alternate audio track on sources that expose more than one; NodeLink only.
+/// Not usable with <see cref="GuildConnection.PlayIdentifierAsync"/>, which is Lavalink-only.
+/// </param>
 public sealed record PlayOptions(
     TimeSpan? StartPosition = null,
     TimeSpan? EndTime = null,
-    bool NoReplace = false
+    bool NoReplace = false,
+    JsonElement? UserData = null,
+    string? AudioTrackId = null
 );
