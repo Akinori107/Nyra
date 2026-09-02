@@ -484,7 +484,33 @@ public sealed class Node : IAsyncDisposable, IDisposable
         await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
         NodeGuards.RequireNodeLink(this, "track encoding");
 
-        var request = new TrackEncodeRequest
+        return await _rest
+            .EncodeTrackAsync(ToEncodeRequest(info), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Encodes a batch of track information in one request, one call instead of <see cref="EncodeTrackAsync"/> per track.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public async Task<IReadOnlyList<string>> EncodeTracksAsync(
+        IEnumerable<TrackInfo> infos,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(infos);
+        var list = infos.ToList();
+        if (list.Count == 0)
+            throw new ArgumentException("At least one track is required.", nameof(infos));
+
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        NodeGuards.RequireNodeLink(this, "track encoding");
+
+        var requests = list.Select(ToEncodeRequest).ToList();
+
+        return await _rest.EncodeTracksAsync(requests, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static TrackEncodeRequest ToEncodeRequest(TrackInfo info) =>
+        new()
         {
             Identifier = info.Identifier,
             Author = info.Author,
@@ -498,9 +524,6 @@ public sealed class Node : IAsyncDisposable, IDisposable
             ArtworkUrl = info.ArtworkUrl,
             Isrc = info.Isrc,
         };
-
-        return await _rest.EncodeTrackAsync(request, cancellationToken).ConfigureAwait(false);
-    }
 
     /// <summary>
     /// Lists every player of this node's session, including guilds this client is not connected

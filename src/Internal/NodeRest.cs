@@ -314,6 +314,22 @@ internal sealed class RestClient
             : encoded;
     }
 
+    public async Task<IReadOnlyList<string>> EncodeTracksAsync(
+        IReadOnlyList<TrackEncodeRequest> infos,
+        CancellationToken cancellationToken
+    )
+    {
+        var body = JsonSerializer.SerializeToUtf8Bytes(infos, Options);
+        var json = await SendAsync(
+                HttpMethod.Post,
+                Endpoints.EncodedTracks,
+                body,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        return Deserialize<List<string>>(json, Endpoints.EncodedTracks) ?? [];
+    }
+
     public async Task<IReadOnlyList<Player>> ListPlayersAsync(CancellationToken cancellationToken)
     {
         var path = BuildPlayersPath();

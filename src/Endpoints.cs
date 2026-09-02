@@ -1,6 +1,6 @@
 namespace Nyra;
 
-/// <summary>REST and websocket paths of the Lavalink v4 / NodeLink v3+ protocol.</summary>
+/// <summary>REST and websocket paths of the Lavalink v4+ / NodeLink v3+ protocol.</summary>
 internal static class Endpoints
 {
     public const string WebSocketPath = "/v4/websocket";
@@ -28,6 +28,9 @@ internal static class Endpoints
 
     // NodeLink only.
     public const string EncodeTrack = "/v4/encodetrack";
+
+    // NodeLink only.
+    public const string EncodedTracks = "/v4/encodedtracks";
 
     public const string Session = "/v4/sessions/{0}";
 
