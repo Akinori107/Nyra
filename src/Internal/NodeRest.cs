@@ -314,6 +314,14 @@ internal sealed class RestClient
             : encoded;
     }
 
+    public async Task<IReadOnlyList<Player>> ListPlayersAsync(CancellationToken cancellationToken)
+    {
+        var path = BuildPlayersPath();
+        var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<List<Player>>(json, path) ?? [];
+    }
+
     public Task SubscribeLyricsAsync(
         ulong guildId,
         bool skipTrackSource,
@@ -526,6 +534,16 @@ internal sealed class RestClient
                 path,
                 "The server returned an empty session response."
             );
+    }
+
+    private string BuildPlayersPath()
+    {
+        if (string.IsNullOrEmpty(_node.SessionId))
+            throw new InvalidOperationException(
+                $"Node '{_node.Name}' has no session id yet; it is not ready."
+            );
+
+        return string.Format(CultureInfo.InvariantCulture, Endpoints.Players, _node.SessionId);
     }
 
     private string BuildPlayerPath(ulong guildId)

@@ -503,6 +503,19 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// Lists every player of this node's session, including guilds this client is not connected
+    /// to; useful after a resume that adopted players from a previous session.
+    /// </summary>
+    public async Task<IReadOnlyList<Player>> ListPlayersAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+
+        return await _rest.ListPlayersAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Attaches the source link's offset to the loaded track(s): all of a search result,
     /// but only the selected entry of a playlist.
     /// </summary>
