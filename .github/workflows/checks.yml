@@ -3,7 +3,7 @@ on:
   pull_request:
     types: [opened, synchronize]
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 concurrency:
   group: checks-${{ github.event.pull_request.number || github.ref }}

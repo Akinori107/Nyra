@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Nyra.EventArgs;
 
 /// <summary>Raised when the Discord voice websocket of the player was closed.</summary>
-public sealed class WebsocketClosedEventArgs : System.EventArgs
+public sealed class WebSocketClosedEventArgs : System.EventArgs
 {
     [JsonPropertyName("guildId")]
     public ulong GuildId { get; init; }

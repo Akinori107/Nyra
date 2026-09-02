@@ -131,7 +131,7 @@ public sealed class GuildConnection
     public event EventHandler<PlayerUpdateEventArgs>? PlayerUpdated;
 
     /// <summary>Raised when the node's Discord voice websocket for this guild was closed.</summary>
-    public event EventHandler<WebsocketClosedEventArgs>? WebSocketClosed;
+    public event EventHandler<WebSocketClosedEventArgs>? WebSocketClosed;
 
     /// <summary>Raised when the node loaded the lyrics of the current track through a lyrics subscription.</summary>
     public event EventHandler<LyricsFoundEventArgs>? LyricsFound;
@@ -793,7 +793,7 @@ public sealed class GuildConnection
         PlayerUpdated.Raise(this, eventArgs, OnHandlerError);
     }
 
-    internal void HandleWebSocketClosed(WebsocketClosedEventArgs eventArgs)
+    internal void HandleWebSocketClosed(WebSocketClosedEventArgs eventArgs)
     {
         WebSocketClosed.Raise(this, eventArgs, OnHandlerError);
 

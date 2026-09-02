@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="examples/Examples.csproj" />
+  <Project Path="src/Nyra.csproj" />
+</Solution>

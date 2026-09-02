@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Net.WebSockets;
 using Microsoft.Extensions.Logging;
 using Nyra.Exceptions;
-using Nyra.Websocket;
+using Nyra.WebSocket;
 
 namespace Nyra.Internal;
 
@@ -21,7 +21,7 @@ internal sealed class NodeConnection : IDisposable
     private readonly Lock _lock = new();
     private readonly TimeProvider _timeProvider = TimeProvider.System;
 
-    private WebsocketClient? _client;
+    private WebSocketClient? _client;
     private CancellationTokenSource? _lifetimeCts;
     private Task? _supervisionTask;
     private TaskCompletionSource _disconnectSignal = new(
@@ -96,7 +96,7 @@ internal sealed class NodeConnection : IDisposable
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
         Task? supervisionTask;
-        WebsocketClient? client;
+        WebSocketClient? client;
         CancellationTokenSource? lifetimeCts;
 
         lock (_lock)
@@ -155,7 +155,7 @@ internal sealed class NodeConnection : IDisposable
 
     public void Dispose()
     {
-        WebsocketClient? client;
+        WebSocketClient? client;
         lock (_lock)
         {
             _stopped = true;
@@ -178,7 +178,7 @@ internal sealed class NodeConnection : IDisposable
     {
         await _preConnect(lifetimeCt).ConfigureAwait(false);
 
-        var client = new WebsocketClient();
+        var client = new WebSocketClient();
         try
         {
             client.TextMessageReceived += OnTextMessage;
@@ -195,7 +195,7 @@ internal sealed class NodeConnection : IDisposable
             throw;
         }
 
-        WebsocketClient? previous;
+        WebSocketClient? previous;
         lock (_lock)
         {
             previous = _client;
@@ -212,7 +212,7 @@ internal sealed class NodeConnection : IDisposable
         _node.HandleConnected();
     }
 
-    private async Task StopClientAsync(WebsocketClient client, CancellationToken cancellationToken)
+    private async Task StopClientAsync(WebSocketClient client, CancellationToken cancellationToken)
     {
         client.TextMessageReceived -= OnTextMessage;
         client.Closed -= OnClosed;
@@ -316,7 +316,7 @@ internal sealed class NodeConnection : IDisposable
 
                         // A stop that raced the connect may have missed the fresh client; take
                         // it over here so nothing survives the stop.
-                        WebsocketClient? orphan;
+                        WebSocketClient? orphan;
                         lock (_lock)
                         {
                             orphan = _stopped ? _client : null;

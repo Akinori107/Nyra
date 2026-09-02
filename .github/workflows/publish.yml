@@ -14,5 +14,5 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
-      - run: dotnet pack nyra/nyra.csproj --configuration Release -o ./nupkg
+      - run: dotnet pack src/Nyra.csproj --configuration Release -o ./nupkg
       - run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_APIKEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

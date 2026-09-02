@@ -1,6 +1,6 @@
 using System.Net.WebSockets;
 
-namespace Nyra.Websocket;
+namespace Nyra.WebSocket;
 
 /// <summary>
 /// Thin wrapper around <see cref="ClientWebSocket"/>: a dedicated receive loop that hands out
@@ -8,7 +8,7 @@ namespace Nyra.Websocket;
 /// one <see cref="ConnectAsync"/> per instance; reconnection policy lives in the node
 /// connection, which creates a fresh client per attempt.
 /// </summary>
-internal sealed class WebsocketClient : IDisposable
+internal sealed class WebSocketClient : IDisposable
 {
     // Protocol messages are small; buffering a larger one unboundedly would exhaust memory.
     private const int MaxMessageBytes = 1024 * 1024;

@@ -148,7 +148,7 @@ internal sealed class NodeEventDispatcher
 
             case EventWebSocketClosed:
             {
-                var args = Deserialize<WebsocketClosedEventArgs>(ref payload);
+                var args = Deserialize<WebSocketClosedEventArgs>(ref payload);
                 if (args is not null)
                     _node.GetConnection(args.GuildId)?.HandleWebSocketClosed(args);
                 break;
