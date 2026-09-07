@@ -307,6 +307,30 @@ public sealed class GuildConnection
             );
     }
 
+    /// <summary>
+    /// Moves or clears the end time of the current track after it started playing: playback
+    /// stops when the track reaches the new position. Pass null to play to the end.
+    /// </summary>
+    public async Task SetEndTimeAsync(
+        TimeSpan? endTime,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (endTime is { } end && end <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(endTime),
+                end,
+                "The end time must be greater than zero."
+            );
+        EnsureActive();
+
+        var payload = new EndTimeUpdate { EndTime = (long?)endTime?.TotalMilliseconds };
+        var player = await _node
+            .Rest.UpdatePlayerEndTimeAsync(GuildId, payload, cancellationToken)
+            .ConfigureAwait(false);
+        CaptureState(player);
+    }
+
     /// <summary>Stops the player, clearing the current track.</summary>
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {

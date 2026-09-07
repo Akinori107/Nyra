@@ -120,6 +120,9 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <summary>Raised for internal errors: malformed payloads, failed reconnects, handlers that threw.</summary>
     public event EventHandler<NodeErrorEventArgs>? Error;
 
+    /// <summary>Raised whenever the server reports its statistics; the latest report is also <see cref="Stats"/>.</summary>
+    public event EventHandler<NodeStatsEventArgs>? StatsUpdated;
+
     /// <summary>
     /// Attaches the node to a Discord client, opens the websocket and waits for the server's
     /// <c>ready</c> operation. Called by <see cref="NyraExtension.ConnectAllNodesAsync"/>; calling
@@ -539,6 +542,18 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// Fetches the node's statistics over REST — CPU, memory, uptime, per-frame loss counts.
+    /// The server also pushes periodic reports over the websocket, delivered through
+    /// <see cref="StatsUpdated"/> and kept in <see cref="Stats"/>.
+    /// </summary>
+    public async Task<Stats> GetStatsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+
+        return await _rest.GetStatsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Attaches the source link's offset to the loaded track(s): all of a search result,
     /// but only the selected entry of a playlist.
     /// </summary>
@@ -884,7 +899,11 @@ public sealed class Node : IAsyncDisposable, IDisposable
         }
     }
 
-    internal void HandleStats(Stats stats) => Stats = stats;
+    internal void HandleStats(Stats stats)
+    {
+        Stats = stats;
+        StatsUpdated.Raise(this, new NodeStatsEventArgs(stats), OnEventError);
+    }
 
     internal void HandleDisconnected(
         System.Net.WebSockets.WebSocketCloseStatus? closeStatus,

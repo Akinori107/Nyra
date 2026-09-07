@@ -187,6 +187,25 @@ internal sealed class RestClient
             );
     }
 
+    /// <summary>End-time-only player patch; a separate method because the payload shape differs from <see cref="PlayerUpdatePayload"/>.</summary>
+    public async Task<Player> UpdatePlayerEndTimeAsync(
+        ulong guildId,
+        EndTimeUpdate payload,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = BuildPlayerPath(guildId);
+        var body = JsonSerializer.SerializeToUtf8Bytes(payload, Options);
+        var json = await SendAsync(HttpMethod.Patch, path, body, cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<Player>(json, path)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                path,
+                "The server returned an empty player response."
+            );
+    }
+
     public Task DestroyPlayerAsync(ulong guildId, CancellationToken cancellationToken) =>
         SendAsync(
             HttpMethod.Delete,
@@ -336,6 +355,22 @@ internal sealed class RestClient
         var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         return Deserialize<List<Player>>(json, path) ?? [];
+    }
+
+    public async Task<Stats> GetStatsAsync(CancellationToken cancellationToken)
+    {
+        var json = await SendAsync(
+                HttpMethod.Get,
+                Endpoints.Stats,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        return Deserialize<Stats>(json, Endpoints.Stats)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                Endpoints.Stats,
+                "The server returned an empty stats report."
+            );
     }
 
     public Task SubscribeLyricsAsync(

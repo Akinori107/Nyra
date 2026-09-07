@@ -224,6 +224,14 @@ internal sealed record PlayerUpdatePayload
     public VoiceState? Voice { get; init; }
 }
 
+/// <summary>End-time-only update body; a null member clears the end time.</summary>
+internal sealed record EndTimeUpdate
+{
+    // Null must reach the wire: it is how the end time is cleared.
+    [JsonPropertyName("endTime"), JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public long? EndTime { get; init; }
+}
+
 /// <summary>A player as returned by the audio node.</summary>
 public sealed record Player
 {

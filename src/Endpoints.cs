@@ -37,6 +37,9 @@ internal static class Endpoints
     // {0} = session id; served by both servers.
     public const string Players = "/v4/sessions/{0}/players";
 
+    // Served by both servers.
+    public const string Stats = "/v4/stats";
+
     // {0} = session id, {1} = guild id.
     public const string Player = "/v4/sessions/{0}/players/{1}";
 
