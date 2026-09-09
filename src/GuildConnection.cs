@@ -178,6 +178,9 @@ public sealed class GuildConnection
     /// <summary>The voice connection became established.</summary>
     public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
 
+    /// <summary>A live stream announced new station metadata while playing.</summary>
+    public event EventHandler<StreamMetadataUpdatedEventArgs>? StreamMetadataUpdated;
+
     /// <summary>Raised when a handler of one of the other events of this connection threw.</summary>
     public event EventHandler<PlaybackErrorEventArgs>? PlaybackError;
 
@@ -893,6 +896,9 @@ public sealed class GuildConnection
 
     internal void HandlePlayerConnected(PlayerConnectedEventArgs eventArgs) =>
         PlayerConnected.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleStreamMetadataUpdated(StreamMetadataUpdatedEventArgs eventArgs) =>
+        StreamMetadataUpdated.Raise(this, eventArgs, OnHandlerError);
 
     private async Task DisconnectAfterVoiceClosedAsync()
     {
