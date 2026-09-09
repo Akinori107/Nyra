@@ -12,7 +12,7 @@
     <Authors>Akinori107</Authors>
     <Description>A Lavalink v4+ and NodeLink v3+ client for DSharpPlus.</Description>
     <PackageTags>discord;lavalink;nodelink;audio;music;dsharpplus</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>BlueOak-1.0.0</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/Akinori107/Nyra</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Akinori107/Nyra</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

@@ -1,6 +1,6 @@
 # Nyra
 
-![NuGet](https://img.shields.io/nuget/vpre/Nyra)
+![NuGet](https://img.shields.io/nuget/vpre/Nyra?color=blueviolet) ![Downloads](https://img.shields.io/nuget/dt/Nyra?color=darkgreen) ![License](https://img.shields.io/badge/license-BlueOak--1.0.0-blue)
 
 Nyra is a .NET 10 client for [Lavalink v4+](https://github.com/lavalink-devs/Lavalink) and [NodeLink v3+](https://github.com/PerformanC/NodeLink), built on [DSharpPlus 4.5.x](https://github.com/DSharpPlus/DSharpPlus) (maybe [Discord.Net](https://github.com/discord-net/Discord.Net) in the future). Load tracks, control playback, apply filters, manage voice connections, one API for both servers. Where they genuinely behave differently, some of the differences are listed in [NodeLink compatibility notes](#nodelink-compatibility-notes).
 
@@ -105,7 +105,3 @@ dotnet run
 ```
 
 Please don't forget to replace `"your token here"` with your bot token
-
-## License
-
-MIT. See [LICENSE](LICENSE).
