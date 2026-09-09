@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Nyra.Entities.Filters;
 
 /// <summary>Repeats the audio after a delay. NodeLink only.</summary>
-/// <param name="DelayMilliseconds">Echo delay; the server clamps it to 0-2000.</param>
+/// <param name="DelayMilliseconds">Echo delay, the server clamps it to 0-2000.</param>
 /// <param name="Feedback">How much of the echo is fed back in, 0.0-1.0.</param>
 /// <param name="Mix">Echo loudness, 0.0-1.0.</param>
 /// <param name="Transition">Animates the change instead of stepping it.</param>

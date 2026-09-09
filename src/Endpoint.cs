@@ -1,6 +1,6 @@
 namespace Nyra;
 
-/// <summary>Network endpoint of an audio node; both servers serve REST and websocket on the same host and port.</summary>
+/// <summary>Network endpoint of an audio node, both servers serve REST and websocket on the same host and port.</summary>
 public sealed class Endpoint
 {
     public string Host { get; }
@@ -17,7 +17,7 @@ public sealed class Endpoint
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(password);
         // Anything but a bare hostname or IP literal would silently build a broken URI (the
-        // scheme comes from isSecure, so a URL here corrupts the address); bracketed IPv6
+        // scheme comes from isSecure, so a URL here corrupts the address), bracketed IPv6
         // literals are the one form allowed to contain colons.
         var isIpv6Literal = host.StartsWith('[') && host.EndsWith(']');
         foreach (var character in host)
@@ -26,7 +26,7 @@ public sealed class Endpoint
                 || char.IsWhiteSpace(character)
             )
                 throw new ArgumentException(
-                    "The host must be a bare hostname or IP address, not a URL; pass the scheme through isSecure.",
+                    "The host must be a bare hostname or IP address, not a URL, pass the scheme through isSecure.",
                     nameof(host)
                 );
         ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);

@@ -62,7 +62,7 @@ public sealed record SponsorBlockState
     public int SkipMarginMilliseconds { get; init; }
 }
 
-/// <summary>SponsorBlock settings to change; members left null keep their current value.</summary>
+/// <summary>SponsorBlock settings to change, members left null keep their current value.</summary>
 public sealed record SponsorBlockSettings
 {
     [JsonPropertyName("enabled")]

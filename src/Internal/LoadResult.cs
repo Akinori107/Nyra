@@ -98,7 +98,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
 
             case TypeError:
             {
-                // Lavalink puts the exception inside "data"; NodeLink places it at the top level.
+                // Lavalink puts the exception inside "data", NodeLink places it at the top level.
                 if (isNodeLink)
                 {
                     if (!hasException || exception.TokenType != JsonTokenType.StartObject)

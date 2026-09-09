@@ -40,7 +40,7 @@ commands.SlashCommandErrored += OnSlashCommandErrored;
 
 client.Ready += async (_, _) =>
 {
-    // A node that fails to connect keeps retrying in the background; nodes that are up
+    // A node that fails to connect keeps retrying in the background, nodes that are up
     // log their detected server kind here.
     await nyra.ConnectAllNodesAsync();
 
@@ -70,7 +70,7 @@ finally
 return 0;
 
 // Known library errors carry messages meant for the user (wrong channel, node not ready,
-// unsupported feature); everything else stays generic while the details go to the logger.
+// unsupported feature), everything else stays generic while the details go to the logger.
 static async Task OnSlashCommandErrored(
     SlashCommandsExtension extension,
     SlashCommandErrorEventArgs error
@@ -85,11 +85,12 @@ static async Task OnSlashCommandErrored(
 
     var message = error.Exception
         is InvalidOperationException
+            or IncompatibleServerException
             or VoiceHandshakeException
             or NotSupportedException
             or ArgumentException
         ? error.Exception.Message
-        : "Something went wrong while running that command; check the logs for details.";
+        : "Something went wrong while running that command, check the logs for details.";
 
     var embed = new DiscordEmbedBuilder
     {
@@ -104,7 +105,7 @@ static async Task OnSlashCommandErrored(
     }
     catch
     {
-        // The command already responded or deferred; fall back to a followup.
+        // The command already responded or deferred, fall back to a followup.
         await error.Context.FollowUpAsync(
             new DiscordFollowupMessageBuilder().AddEmbed(embed).AsEphemeral()
         );

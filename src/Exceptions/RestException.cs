@@ -1,6 +1,6 @@
 namespace Nyra.Exceptions;
 
-/// <summary>A failed REST request against an audio node; carries the status code and error body when available.</summary>
+/// <summary>A failed REST request against an audio node, carries the status code and error body when available.</summary>
 public sealed class RestException : NyraException
 {
     public int StatusCode { get; }

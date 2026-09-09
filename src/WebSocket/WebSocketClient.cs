@@ -4,13 +4,12 @@ namespace Nyra.WebSocket;
 
 /// <summary>
 /// Thin wrapper around <see cref="ClientWebSocket"/>: a dedicated receive loop that hands out
-/// raw UTF-8 payloads (no intermediate string allocations) and graceful closure. Single-use —
-/// one <see cref="ConnectAsync"/> per instance; reconnection policy lives in the node
+/// raw UTF-8 payloads (no intermediate string allocations) and graceful closure. Single-use: one <see cref="ConnectAsync"/> per instance, reconnection policy lives in the node
 /// connection, which creates a fresh client per attempt.
 /// </summary>
 internal sealed class WebSocketClient : IDisposable
 {
-    // Protocol messages are small; buffering a larger one unboundedly would exhaust memory.
+    // Protocol messages are small, buffering a larger one unboundedly would exhaust memory.
     private const int MaxMessageBytes = 1024 * 1024;
 
     private readonly Lock _lock = new();
@@ -112,7 +111,7 @@ internal sealed class WebSocketClient : IDisposable
             }
             catch (Exception)
             {
-                // The server may already be gone; the socket is discarded either way.
+                // The server may already be gone, the socket is discarded either way.
             }
         }
 
@@ -247,7 +246,7 @@ internal sealed class WebSocketClient : IDisposable
         finally
         {
             // The loop owns the socket once it ends, so a closed or errored connection never
-            // leaks one; Stop/Dispose also dispose it, and ClientWebSocket tolerates that.
+            // leaks one, Stop/Dispose also dispose it, and ClientWebSocket tolerates that.
             websocket.Dispose();
         }
     }
@@ -265,7 +264,7 @@ internal sealed class WebSocketClient : IDisposable
         catch (Exception)
         {
             // The server did not complete the close handshake in time, or the socket is already
-            // dead; it is discarded either way.
+            // dead, it is discarded either way.
         }
     }
 }

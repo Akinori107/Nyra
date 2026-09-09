@@ -1,7 +1,7 @@
 namespace Nyra;
 
 /// <summary>
-/// Guards shared by operations that require Lavalink or NodeLink specifically;
+/// Guards shared by operations that require Lavalink or NodeLink specifically,
 /// an operation exclusive to one kind throws a <see cref="NotSupportedException"/> naming the
 /// feature when used against the other.
 /// </summary>
@@ -22,12 +22,12 @@ internal static class NodeGuards
     {
         if (!node.IsNodeLink)
             throw new NotSupportedException(
-                $"{feature ?? "This operation"} requires NodeLink; the node '{node.Name}' is Lavalink."
+                $"{feature ?? "This operation"} requires NodeLink, the node '{node.Name}' is Lavalink."
             );
 
         if (minimum is { } required && node.Version is { } version && version < required)
             throw new NotSupportedException(
-                $"{feature ?? "This operation"} requires NodeLink {required} or newer; the node '{node.Name}' runs {version}."
+                $"{feature ?? "This operation"} requires NodeLink {required} or newer, the node '{node.Name}' runs {version}."
             );
     }
 
@@ -43,7 +43,7 @@ internal static class NodeGuards
 
         if (!node.HasPlugin(pluginName))
             throw new NotSupportedException(
-                $"{feature ?? "This operation"} requires NodeLink or the '{pluginName}' Lavalink plugin; the node '{node.Name}' has neither."
+                $"{feature ?? "This operation"} requires NodeLink or the '{pluginName}' Lavalink plugin, the node '{node.Name}' has neither."
             );
     }
 
@@ -52,7 +52,7 @@ internal static class NodeGuards
     {
         if (node.IsNodeLink)
             throw new NotSupportedException(
-                $"{feature ?? "This operation"} requires Lavalink; the node '{node.Name}' is NodeLink."
+                $"{feature ?? "This operation"} requires Lavalink, the node '{node.Name}' is NodeLink."
             );
     }
 }

@@ -110,7 +110,7 @@ internal sealed class NodeEventDispatcher
                 break;
 
             default:
-                // Cold path: pay one string allocation to make the log useful — only when Debug is on.
+                // Cold path: pay one string allocation to make the log useful, only when Debug is on.
                 if (_node.Logger?.IsEnabled(LogLevel.Debug) == true)
                     _node.Logger.LogDebug(
                         "Node {NodeName} sent an unknown operation '{Operation}'.",
@@ -320,7 +320,7 @@ internal sealed class NodeEventDispatcher
 
             default:
                 // NodeLink emits further event types outside player lifecycle and playback
-                // state; they are not part of the shared protocol and are ignored.
+                // state, they are not part of the shared protocol and are ignored.
                 if (_node.Logger?.IsEnabled(LogLevel.Debug) == true)
                     _node.Logger.LogDebug(
                         "Node {NodeName} sent an unknown event type '{EventType}'.",
@@ -336,7 +336,7 @@ internal sealed class NodeEventDispatcher
         try
         {
             // HandleReadyAsync runs synchronously up to the session-resuming REST call, so the
-            // session id is set before the next message is processed; only the PATCH continues
+            // session id is set before the next message is processed, only the PATCH continues
             // off the receive loop.
             await _node.HandleReadyAsync(args).ConfigureAwait(false);
         }

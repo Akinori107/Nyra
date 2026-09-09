@@ -28,7 +28,7 @@ public static class YouTubeTrackExtensions
     /// <summary>
     /// The audio tracks NodeLink reports for a YouTube video, read out of a JSON string in
     /// <see cref="Track.PluginInfo"/>. Null when there is no plugin info to read from, e.g. the
-    /// track isn't from YouTube; empty when NodeLink reported the video has no alternate audio
+    /// track isn't from YouTube, empty when NodeLink reported the video has no alternate audio
     /// tracks.
     /// </summary>
     public static IReadOnlyList<YouTubeAudioTrack>? GetYouTubeAudioTracks(this Track track)

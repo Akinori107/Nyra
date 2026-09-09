@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Nyra.EventArgs;
 
-/// <summary>Raised on both pausing and resuming; <see cref="IsPaused"/> tells them apart.</summary>
+/// <summary>Raised on both pausing and resuming, <see cref="IsPaused"/> tells them apart.</summary>
 public sealed class PauseChangedEventArgs : System.EventArgs
 {
     [JsonPropertyName("guildId")]

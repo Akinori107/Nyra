@@ -2,8 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace Nyra.Entities.Filters;
 
-/// <summary>Eliminates part of a band, usually vocals. All members optional; server defaults: level 1.0, monoLevel 1.0, filterBand 220.0, filterWidth 100.0.</summary>
-/// <param name="Level">0.0-1.0; 0.0 disables the filter.</param>
+/// <summary>Eliminates part of a band, usually vocals. All members optional, server defaults: level 1.0, monoLevel 1.0, filterBand 220.0, filterWidth 100.0.</summary>
+/// <param name="Level">0.0-1.0, 0.0 disables the filter.</param>
 /// <param name="MonoLevel">0.0-1.0.</param>
 /// <param name="FilterBand">Band, in Hz.</param>
 /// <param name="FilterWidth">Width, in Hz.</param>

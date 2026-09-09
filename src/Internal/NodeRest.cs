@@ -16,11 +16,11 @@ internal sealed record ServerInfo(
     IReadOnlySet<string> Plugins
 )
 {
-    /// <summary>Whether Lavalink reported the given plugin as loaded; NodeLink has no plugin list.</summary>
+    /// <summary>Whether Lavalink reported the given plugin as loaded, NodeLink has no plugin list.</summary>
     internal bool HasPlugin(string name) => Plugins.Contains(name);
 }
 
-/// <summary>REST client of a node; the process-wide <see cref="HttpClient"/> is shared by all nodes.</summary>
+/// <summary>REST client of a node, the process-wide <see cref="HttpClient"/> is shared by all nodes.</summary>
 internal sealed class RestClient
 {
     private static readonly HttpClient Http = new(
@@ -32,7 +32,7 @@ internal sealed class RestClient
         }
     )
     {
-        // Bounds the buffered response of a hostile node; the default would allow gigabytes.
+        // Bounds the buffered response of a hostile node, the default would allow gigabytes.
         MaxResponseContentBufferSize = 64 * 1024 * 1024,
     };
 
@@ -45,7 +45,7 @@ internal sealed class RestClient
         _baseUri = node.Endpoint.ToRestUri();
     }
 
-    // Response shapes differ between the servers; the detected kind picks the converters.
+    // Response shapes differ between the servers, the detected kind picks the converters.
     private JsonSerializerOptions Options => NyraJson.OptionsFor(_node.IsNodeLink);
 
     public async Task<ServerInfo> GetServerInfoAsync(CancellationToken cancellationToken)
@@ -59,7 +59,7 @@ internal sealed class RestClient
         return ParseServerInfo(json);
     }
 
-    // NodeLink sets "isNodelink": true; both servers report "version" -> "semver".
+    // NodeLink sets "isNodelink": true, both servers report "version" -> "semver".
     // Lavalink additionally reports "plugins": [{ "name": ... }] for loaded plugins.
     private static ServerInfo ParseServerInfo(byte[] json)
     {
@@ -116,20 +116,20 @@ internal sealed class RestClient
                 }
             }
 
-            // Dev builds report a commit hash instead of a semver; the version stays null there.
+            // Dev builds report a commit hash instead of a semver, the version stays null there.
             NodeVersion? version = NodeVersion.TryParse(semver, out var parsed) ? parsed : null;
             return new ServerInfo(isNodeLink, semver ?? "", version, plugins);
         }
         catch (JsonException exception)
         {
             throw new InvalidOperationException(
-                $"The server at {Endpoints.Info} returned a body that is not valid JSON; only Lavalink v4 and NodeLink v3+ are supported.",
+                $"The server at {Endpoints.Info} returned a body that is not valid JSON, only Lavalink v4+ and NodeLink v3+ are supported.",
                 exception
             );
         }
     }
 
-    /// <summary>Gets the authoritative player state; null when the server has no player for the guild.</summary>
+    /// <summary>Gets the authoritative player state, null when the server has no player for the guild.</summary>
     public async Task<Player?> GetPlayerAsync(ulong guildId, CancellationToken cancellationToken)
     {
         var path = BuildPlayerPath(guildId);
@@ -187,7 +187,7 @@ internal sealed class RestClient
             );
     }
 
-    /// <summary>End-time-only player patch; a separate method because the payload shape differs from <see cref="PlayerUpdatePayload"/>.</summary>
+    /// <summary>End-time-only player patch, a separate method because the payload shape differs from <see cref="PlayerUpdatePayload"/>.</summary>
     public async Task<Player> UpdatePlayerEndTimeAsync(
         ulong guildId,
         EndTimeUpdate payload,
@@ -213,7 +213,7 @@ internal sealed class RestClient
             cancellationToken: cancellationToken
         );
 
-    // NodeLink wraps the lyrics in a { loadType, data } envelope; LavaLyrics answers with a bare
+    // NodeLink wraps the lyrics in a { loadType, data } envelope, LavaLyrics answers with a bare
     // Lyrics object and 204 when nothing was found.
     public async Task<LyricsResult> LoadLyricsAsync(
         string encodedTrack,
@@ -395,7 +395,7 @@ internal sealed class RestClient
     {
         if (string.IsNullOrEmpty(_node.SessionId))
             throw new InvalidOperationException(
-                $"Node '{_node.Name}' has no session id yet; it is not ready."
+                $"Node '{_node.Name}' has no session id yet, it is not ready."
             );
 
         var path = string.Format(
@@ -473,7 +473,7 @@ internal sealed class RestClient
     {
         if (string.IsNullOrEmpty(_node.SessionId))
             throw new InvalidOperationException(
-                $"Node '{_node.Name}' has no session id yet; it is not ready."
+                $"Node '{_node.Name}' has no session id yet, it is not ready."
             );
 
         return string.Format(
@@ -544,7 +544,7 @@ internal sealed class RestClient
     {
         if (string.IsNullOrEmpty(_node.SessionId))
             throw new InvalidOperationException(
-                $"Node '{_node.Name}' has no session id yet; it is not ready."
+                $"Node '{_node.Name}' has no session id yet, it is not ready."
             );
 
         return string.Format(CultureInfo.InvariantCulture, Endpoints.Mix, _node.SessionId, guildId);
@@ -554,7 +554,7 @@ internal sealed class RestClient
     {
         if (string.IsNullOrEmpty(_node.SessionId))
             throw new InvalidOperationException(
-                $"Node '{_node.Name}' has no session id yet; it is not ready."
+                $"Node '{_node.Name}' has no session id yet, it is not ready."
             );
 
         return string.Format(
@@ -591,7 +591,7 @@ internal sealed class RestClient
     {
         if (string.IsNullOrEmpty(_node.SessionId))
             throw new InvalidOperationException(
-                $"Node '{_node.Name}' has no session id yet; it is not ready."
+                $"Node '{_node.Name}' has no session id yet, it is not ready."
             );
 
         return string.Format(CultureInfo.InvariantCulture, Endpoints.Players, _node.SessionId);
@@ -601,7 +601,7 @@ internal sealed class RestClient
     {
         if (string.IsNullOrEmpty(_node.SessionId))
             throw new InvalidOperationException(
-                $"Node '{_node.Name}' has no session id yet; it is not ready."
+                $"Node '{_node.Name}' has no session id yet, it is not ready."
             );
 
         return string.Format(
@@ -616,7 +616,7 @@ internal sealed class RestClient
     {
         if (string.IsNullOrEmpty(_node.SessionId))
             throw new InvalidOperationException(
-                $"Node '{_node.Name}' has no session id yet; it is not ready."
+                $"Node '{_node.Name}' has no session id yet, it is not ready."
             );
 
         return string.Format(CultureInfo.InvariantCulture, Endpoints.Session, _node.SessionId);
@@ -638,7 +638,7 @@ internal sealed class RestClient
         }
     }
 
-    /// <summary>Sends the request and returns the raw response body; only successful responses get here.</summary>
+    /// <summary>Sends the request and returns the raw response body, only successful responses get here.</summary>
     private async Task<byte[]> SendAsync(
         HttpMethod method,
         string path,

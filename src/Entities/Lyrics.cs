@@ -19,7 +19,7 @@ public enum LyricsLoadType
     Error,
 }
 
-/// <summary>One timed line of a lyrics result; NodeLink's load response shape.</summary>
+/// <summary>One timed line of a lyrics result, NodeLink's load response shape.</summary>
 public sealed record LyricsLine
 {
     [JsonPropertyName("text")]
@@ -54,18 +54,18 @@ public sealed record LyricsData
     [JsonPropertyName("provider")]
     public string? Provider { get; init; }
 
-    /// <summary>Plain lyrics text, when there are no timed lines; filled by LavaLyrics.</summary>
+    /// <summary>Plain lyrics text, when there are no timed lines, filled by LavaLyrics.</summary>
     [JsonPropertyName("text")]
     public string? Text { get; init; }
 }
 
-/// <summary>Result of a lyrics load; the data shape depends on <see cref="LoadType"/>.</summary>
+/// <summary>Result of a lyrics load, the data shape depends on <see cref="LoadType"/>.</summary>
 public sealed record LyricsResult
 {
     [JsonPropertyName("loadType")]
     public LyricsLoadType LoadType { get; init; }
 
-    /// <summary>The lyrics; null unless <see cref="LyricsLoadType.Lyrics"/>.</summary>
+    /// <summary>The lyrics, null unless <see cref="LyricsLoadType.Lyrics"/>.</summary>
     [JsonPropertyName("data")]
     public LyricsData? Data { get; init; }
 }

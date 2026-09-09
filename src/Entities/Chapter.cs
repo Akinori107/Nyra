@@ -13,7 +13,7 @@ public sealed record Chapter
     [JsonPropertyName("startTime")]
     public long StartTime { get; init; }
 
-    /// <summary>Chapter length, in milliseconds; absent on the last chapter of some sources.</summary>
+    /// <summary>Chapter length, in milliseconds, absent on the last chapter of some sources.</summary>
     [JsonPropertyName("duration")]
     public long? Duration { get; init; }
 

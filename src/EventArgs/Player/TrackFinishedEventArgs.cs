@@ -8,7 +8,7 @@ public sealed class TrackFinishedEventArgs : System.EventArgs
     [JsonPropertyName("guildId")]
     public ulong GuildId { get; init; }
 
-    /// <summary>The track that ended; null when NodeLink reports the end after the track was already reset.</summary>
+    /// <summary>The track that ended, null when NodeLink reports the end after the track was already reset.</summary>
     [JsonPropertyName("track")]
     public Track? Track { get; init; }
 

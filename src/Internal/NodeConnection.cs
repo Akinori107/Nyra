@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Net.WebSockets;
 using Microsoft.Extensions.Logging;
-using Nyra.Exceptions;
 using Nyra.WebSocket;
 
 namespace Nyra.Internal;
@@ -32,6 +31,7 @@ internal sealed class NodeConnection : IDisposable
         string? Description,
         Exception? Exception
     ) _lastCloseInfo;
+    private Exception? _initialConnectException;
     private volatile bool _stopped;
     private bool _everConnected;
     private int _reconnectAttempts;
@@ -83,11 +83,14 @@ internal sealed class NodeConnection : IDisposable
         {
             await ConnectOnceAsync(lifetimeCts.Token).ConfigureAwait(false);
         }
-        catch
+        catch (Exception exception)
         {
             // Leave the supervision loop running: it retries the whole connect (probe included)
             // with the normal backoff, so a node that was down at startup recovers on its own.
-            // ConnectAsync still throws so the caller knows the node is not usable yet.
+            // ConnectAsync still throws so the caller knows the node is not usable yet. The
+            // failure itself is logged by the supervision loop, not here, so it lands in order
+            // with the "reconnecting" message that follows it instead of racing it.
+            _initialConnectException = exception;
             _disconnectSignal.TrySetResult();
             throw;
         }
@@ -125,12 +128,12 @@ internal sealed class NodeConnection : IDisposable
             }
             catch (Exception)
             {
-                // The supervision loop never throws; this only guards against races.
+                // The supervision loop never throws, this only guards against races.
             }
         }
 
         // A reconnect that raced this stop may have published a fresh client after the
-        // snapshot above; stop that one too so nothing survives the stop.
+        // snapshot above, stop that one too so nothing survives the stop.
         lock (_lock)
         {
             client = _client;
@@ -168,7 +171,7 @@ internal sealed class NodeConnection : IDisposable
             _supervisionTask = null;
         }
 
-        // Disposing waits for the receive loop to unwind; doing it under the lock would stall IsConnected.
+        // Disposing waits for the receive loop to unwind, doing it under the lock would stall IsConnected.
         client?.Dispose();
 
         _disconnectSignal.TrySetResult();
@@ -204,7 +207,7 @@ internal sealed class NodeConnection : IDisposable
             _everConnected = true;
         }
 
-        // The replaced client is closed — that is why a new one was created — and its events
+        // The replaced client is closed, that is why a new one was created, and its events
         // are unwired first so a still-live receive loop cannot re-signal a disconnect.
         if (previous is not null)
             await StopClientAsync(previous, CancellationToken.None).ConfigureAwait(false);
@@ -259,14 +262,18 @@ internal sealed class NodeConnection : IDisposable
                     );
                     _node.HandleDisconnected(closeStatus, closeDescription, final: false);
                 }
+                // The initial connect failed before a websocket ever opened, there was no
+                // connection to lose, so no Disconnected event, just the retry. Logged here
+                // rather than by the caller of ConnectAsync so it lands in order with the
+                // "reconnecting" message that follows instead of racing it.
                 else
                 {
-                    // The initial connect failed before a websocket ever opened; there was no
-                    // connection to lose, so no Disconnected event — just the retry.
-                    _node.Logger?.LogWarning(
-                        closeException,
-                        "Node {NodeName} failed to connect; retrying.",
-                        _node.Name
+                    ConnectionFailure.Log(
+                        _node.Logger,
+                        _node.Name,
+                        _node.Endpoint,
+                        initial: true,
+                        _initialConnectException!
                     );
                 }
 
@@ -282,7 +289,7 @@ internal sealed class NodeConnection : IDisposable
                     )
                     {
                         _node.Logger?.LogError(
-                            "Node {NodeName} exceeded the maximum of {MaxAttempts} reconnect attempts; giving up.",
+                            "Node {NodeName} exceeded the maximum of {MaxAttempts} reconnect attempts, giving up.",
                             _node.Name,
                             _options.MaxReconnectAttempts
                         );
@@ -295,7 +302,8 @@ internal sealed class NodeConnection : IDisposable
                     _node.Logger?.LogInformation(
                         "Node {NodeName} reconnecting in {Delay} (attempt {Attempt}).",
                         _node.Name,
-                        delay,
+                        // Round for the log, the jittered delay below is what actually runs.
+                        TimeSpan.FromSeconds(Math.Round(delay.TotalSeconds)),
                         _options.MaxReconnectAttempts < 0
                             ? attempt.ToString()
                             : $"{attempt}/{_options.MaxReconnectAttempts}"
@@ -314,7 +322,7 @@ internal sealed class NodeConnection : IDisposable
                     {
                         await ConnectOnceAsync(lifetimeCt).ConfigureAwait(false);
 
-                        // A stop that raced the connect may have missed the fresh client; take
+                        // A stop that raced the connect may have missed the fresh client, take
                         // it over here so nothing survives the stop.
                         WebSocketClient? orphan;
                         lock (_lock)
@@ -339,41 +347,14 @@ internal sealed class NodeConnection : IDisposable
                         // Stopping, not a failed attempt.
                         return;
                     }
-                    catch (HttpRequestException exception)
-                    {
-                        _node.Logger?.LogWarning(
-                            "Node {NodeName} not reachable (attempt {Attempt}): {Reason}.",
-                            _node.Name,
-                            attempt,
-                            exception.Message
-                        );
-                    }
-                    catch (WebSocketException exception)
-                        when (exception.InnerException is HttpRequestException httpException)
-                    {
-                        _node.Logger?.LogWarning(
-                            "Node {NodeName} not reachable (attempt {Attempt}): {Reason}.",
-                            _node.Name,
-                            attempt,
-                            httpException.Message
-                        );
-                    }
-                    catch (RestException exception) when (exception.StatusCode is 401 or 403)
-                    {
-                        _node.Logger?.LogWarning(
-                            "Node {NodeName} rejected the connection (attempt {Attempt}): {Reason}. Check the node's configured password.",
-                            _node.Name,
-                            attempt,
-                            exception.Message
-                        );
-                    }
                     catch (Exception exception)
                     {
-                        _node.Logger?.LogError(
-                            exception,
-                            "Node {NodeName} failed to reconnect (attempt {Attempt}).",
+                        ConnectionFailure.Log(
+                            _node.Logger,
                             _node.Name,
-                            attempt
+                            _node.Endpoint,
+                            initial: false,
+                            exception
                         );
                     }
                 }
@@ -381,7 +362,7 @@ internal sealed class NodeConnection : IDisposable
         }
         catch (OperationCanceledException)
         {
-            // Stopping; nothing to do.
+            // Stopping, nothing to do.
         }
         catch (Exception exception)
         {

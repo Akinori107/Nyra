@@ -10,7 +10,7 @@ public sealed class SyncedLyricsLine
     [JsonPropertyName("timestamp")]
     public long Time { get; init; }
 
-    /// <summary>Line duration, in milliseconds; null when the server does not know it.</summary>
+    /// <summary>Line duration, in milliseconds, null when the server does not know it.</summary>
     [JsonPropertyName("duration")]
     public long? Duration { get; init; }
 
@@ -31,11 +31,11 @@ public sealed class SubscribedLyrics
     [JsonPropertyName("provider")]
     public string? Provider { get; init; }
 
-    /// <summary>The lyrics as plain text; NodeLink joins the lines, LavaLyrics sends it directly.</summary>
+    /// <summary>The lyrics as plain text, NodeLink joins the lines, LavaLyrics sends it directly.</summary>
     [JsonPropertyName("text")]
     public string? Text { get; init; }
 
-    /// <summary>Timed lines; null when the provider returned text only.</summary>
+    /// <summary>Timed lines, null when the provider returned text only.</summary>
     [JsonPropertyName("lines")]
     public IReadOnlyList<SyncedLyricsLine>? Lines { get; init; }
 }

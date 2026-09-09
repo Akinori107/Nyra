@@ -9,7 +9,7 @@ public readonly struct EqualizerBand
     [JsonPropertyName("band")]
     public int BandId { get; }
 
-    /// <summary>The band gain, -0.25 (muted) to +1.0; +0.25 doubles the band.</summary>
+    /// <summary>The band gain, -0.25 (muted) to +1.0, +0.25 doubles the band.</summary>
     [JsonPropertyName("gain")]
     public float Gain { get; }
 

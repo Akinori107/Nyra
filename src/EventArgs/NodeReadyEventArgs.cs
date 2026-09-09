@@ -8,7 +8,7 @@ public sealed class NodeReadyEventArgs : System.EventArgs
     [JsonPropertyName("resumed")]
     public bool Resumed { get; init; }
 
-    /// <summary>The node session id; not a Discord voice session id.</summary>
+    /// <summary>The node session id, not a Discord voice session id.</summary>
     [JsonPropertyName("sessionId")]
     public string SessionId { get; init; } = string.Empty;
 }

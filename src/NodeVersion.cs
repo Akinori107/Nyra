@@ -17,7 +17,7 @@ public readonly struct NodeVersion(int major, int minor, int patch)
     public int Patch { get; } = patch;
 
     /// <summary>
-    /// Parses <c>major.minor.patch</c>; missing components default to zero and a trailing
+    /// Parses <c>major.minor.patch</c>, missing components default to zero and a trailing
     /// pre-release tag or patch metadata (<c>-</c>/<c>+</c>) is ignored. Returns false for
     /// anything else, such as the plain commit hash a dev patch reports.
     /// </summary>
@@ -36,7 +36,7 @@ public readonly struct NodeVersion(int major, int minor, int patch)
             return false;
         if (ConsumeDot(text, ref index) && !TryReadNumber(text, ref index, out patch))
             return false;
-        // Only a pre-release tag or patch metadata may follow; 1.2.3.4 is not a version.
+        // Only a pre-release tag or patch metadata may follow, 1.2.3.4 is not a version.
         if (index < text.Length && text[index] is not ('-' or '+'))
             return false;
         version = new NodeVersion(major, minor, patch);

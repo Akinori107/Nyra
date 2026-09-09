@@ -12,7 +12,7 @@ public sealed class TrackSoughtEventArgs : System.EventArgs
     [JsonPropertyName("position")]
     public long PositionMilliseconds { get; init; }
 
-    /// <summary>Signed distance the position moved by, in milliseconds; negative for a seek backwards.</summary>
+    /// <summary>Signed distance the position moved by, in milliseconds, negative for a seek backwards.</summary>
     [JsonPropertyName("duration")]
     public long DeltaMilliseconds { get; init; }
 

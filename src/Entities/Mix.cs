@@ -5,7 +5,7 @@ namespace Nyra.Entities;
 /// <summary>Why a mix layer ended.</summary>
 public enum MixEndReason
 {
-    /// <summary>Played through to the end; only fires when auto-cleanup is on.</summary>
+    /// <summary>Played through to the end, only fires when auto-cleanup is on.</summary>
     [JsonPropertyName("FINISHED")]
     Finished,
 
@@ -16,7 +16,7 @@ public enum MixEndReason
     [JsonPropertyName("ERROR")]
     Error,
 
-    /// <summary>The main track ended; only fires when auto-cleanup is on.</summary>
+    /// <summary>The main track ended, only fires when auto-cleanup is on.</summary>
     [JsonPropertyName("MAIN_ENDED")]
     MainEnded,
 
@@ -42,11 +42,11 @@ public sealed record MixLayer
     [JsonPropertyName("volume")]
     public float Volume { get; init; }
 
-    /// <summary>Playback position, in milliseconds. Only set by <see cref="GuildConnection.GetMixLayersAsync"/>; null right after creation.</summary>
+    /// <summary>Playback position, in milliseconds. Only set by <see cref="GuildConnection.GetMixLayersAsync"/>, null right after creation.</summary>
     [JsonPropertyName("position")]
     public long? PositionMilliseconds { get; init; }
 
-    /// <summary>Unix timestamp of when the layer started, in milliseconds. Only set by <see cref="GuildConnection.GetMixLayersAsync"/>; null right after creation.</summary>
+    /// <summary>Unix timestamp of when the layer started, in milliseconds. Only set by <see cref="GuildConnection.GetMixLayersAsync"/>, null right after creation.</summary>
     [JsonPropertyName("startTime")]
     public long? StartTimeMilliseconds { get; init; }
 }

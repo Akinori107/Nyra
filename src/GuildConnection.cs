@@ -52,7 +52,7 @@ public sealed class GuildConnection
 
     public DiscordGuild? Guild => Channel?.Guild;
 
-    /// <summary>Discord voice session id captured at join; updated when Discord rotates it on a channel move.</summary>
+    /// <summary>Discord voice session id captured at join, updated when Discord rotates it on a channel move.</summary>
     public string VoiceSessionId { get; internal set; }
 
     /// <summary>Discord voice server endpoint captured at join.</summary>
@@ -61,7 +61,7 @@ public sealed class GuildConnection
     /// <summary>Discord voice token captured at join (Discord's, not the node password).</summary>
     public string VoiceToken { get; }
 
-    /// <summary>Whether the bot is in a Discord voice channel on this connection; not the node websocket (see <see cref="Node.IsConnected"/>).</summary>
+    /// <summary>Whether the bot is in a Discord voice channel on this connection, not the node websocket (see <see cref="Node.IsConnected"/>).</summary>
     public bool IsConnected => Channel is not null;
 
     /// <summary>The node this connection plays through.</summary>
@@ -76,7 +76,7 @@ public sealed class GuildConnection
     /// <summary>Whether playback is paused, as last confirmed by the server.</summary>
     public bool IsPaused { get; internal set; }
 
-    /// <summary>The player volume (0-1000), as last confirmed by the server; 100 is the default.</summary>
+    /// <summary>The player volume (0-1000), as last confirmed by the server, 100 is the default.</summary>
     public int Volume { get; internal set; } = 100;
 
     /// <summary>
@@ -118,7 +118,7 @@ public sealed class GuildConnection
     /// <summary>Raised when the server started playing the current track.</summary>
     public event EventHandler<TrackStartedEventArgs>? TrackStarted;
 
-    /// <summary>Raised when the current track ended; <see cref="TrackFinishedEventArgs.EndReason"/> says why.</summary>
+    /// <summary>Raised when the current track ended, <see cref="TrackFinishedEventArgs.EndReason"/> says why.</summary>
     public event EventHandler<TrackFinishedEventArgs>? TrackFinished;
 
     /// <summary>Raised when the server failed to load or play the current track.</summary>
@@ -163,7 +163,7 @@ public sealed class GuildConnection
     /// <summary>Raised when the playback position of the current track was sought.</summary>
     public event EventHandler<TrackSoughtEventArgs>? TrackSought;
 
-    /// <summary>Raised on both pausing and resuming; <see cref="PauseChangedEventArgs.IsPaused"/> tells them apart.</summary>
+    /// <summary>Raised on both pausing and resuming, <see cref="PauseChangedEventArgs.IsPaused"/> tells them apart.</summary>
     public event EventHandler<PauseChangedEventArgs>? PauseChanged;
 
     /// <summary>Raised when the server created the player for this guild.</summary>
@@ -193,7 +193,7 @@ public sealed class GuildConnection
     /// <summary>
     /// Plays a track, replacing whatever is playing unless <see cref="PlayOptions.NoReplace"/>
     /// is set. Uses <see cref="Track.StartPosition"/> as the position if set and no explicit
-    /// <see cref="PlayOptions.StartPosition"/> is given; consumed after the first accepted play.
+    /// <see cref="PlayOptions.StartPosition"/> is given, consumed after the first accepted play.
     /// </summary>
     /// <exception cref="NotSupportedException"><see cref="PlayOptions.AudioTrackId"/> was given and the node is not NodeLink.</exception>
     public async Task PlayAsync(
@@ -229,13 +229,13 @@ public sealed class GuildConnection
 
         EnsureActive();
 
-        // Falls back to the track's URL-derived offset; consumed only once the play is accepted.
+        // Falls back to the track's URL-derived offset, consumed only once the play is accepted.
         var positionMilliseconds = (long?)options?.StartPosition?.TotalMilliseconds;
         var urlStart = positionMilliseconds is null ? track.StartPosition : null;
         if (urlStart is not null)
             positionMilliseconds = (long)urlStart.Value.TotalMilliseconds;
 
-        // NodeLink ignores a re-sent identical track; stop it first to force a restart.
+        // NodeLink ignores a re-sent identical track, stop it first to force a restart.
         if (_node.IsNodeLink && options?.NoReplace != true && IsSameTrack(CurrentTrack, track))
             await _node
                 .Rest.UpdatePlayerAsync(
@@ -273,9 +273,9 @@ public sealed class GuildConnection
     }
 
     /// <summary>
-    /// Plays a track by its raw identifier, letting the server resolve and load it — no local
+    /// Plays a track by its raw identifier, letting the server resolve and load it, no local
     /// load needed. The identifier must resolve to a single track: a source URL, a video id.
-    /// Search queries and playlists are rejected by both servers. Identifier loading is Lavalink-only; NodeLink does not implement it and rejects the request.
+    /// Search queries and playlists are rejected by both servers. Identifier loading is Lavalink-only, NodeLink does not implement it and rejects the request.
     /// </summary>
     /// <exception cref="NotSupportedException">The node is a NodeLink server.</exception>
     public async Task<Track> PlayIdentifierAsync(
@@ -549,7 +549,7 @@ public sealed class GuildConnection
         return _node.Rest.SubscribeLyricsAsync(GuildId, skipTrackSource, cancellationToken);
     }
 
-    /// <summary>Ends the lyrics subscription; no further lyrics events arrive.</summary>
+    /// <summary>Ends the lyrics subscription, no further lyrics events arrive.</summary>
     /// <exception cref="NotSupportedException">The node is not NodeLink and does not have the LavaLyrics plugin.</exception>
     public Task UnsubscribeLyricsAsync(CancellationToken cancellationToken = default)
     {
@@ -578,7 +578,7 @@ public sealed class GuildConnection
         return _node.Rest.GetSponsorBlockAsync(GuildId, cancellationToken);
     }
 
-    /// <summary>Changes the SponsorBlock settings; members left null keep their current value.</summary>
+    /// <summary>Changes the SponsorBlock settings, members left null keep their current value.</summary>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
     public Task<SponsorBlockState> SetSponsorBlockAsync(
         SponsorBlockSettings settings,
@@ -665,7 +665,7 @@ public sealed class GuildConnection
         return _node.Rest.SetMixLayerVolumeAsync(GuildId, mixLayerId, volume, cancellationToken);
     }
 
-    /// <summary>Stops one mix layer; the main track keeps playing.</summary>
+    /// <summary>Stops one mix layer, the main track keeps playing.</summary>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
     public Task StopMixAsync(string mixLayerId, CancellationToken cancellationToken = default)
     {
@@ -739,7 +739,7 @@ public sealed class GuildConnection
     public Task RemoveFilterAsync<TFilter>(CancellationToken cancellationToken = default)
         where TFilter : IFilter => RemoveFilterAsync(typeof(TFilter), cancellationToken);
 
-    /// <summary>Removes the audio filter of the same kind as the given one; matching is by filter type, not by value.</summary>
+    /// <summary>Removes the audio filter of the same kind as the given one, matching is by filter type, not by value.</summary>
     public Task RemoveFilterAsync(IFilter filter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
@@ -763,7 +763,7 @@ public sealed class GuildConnection
         }
     }
 
-    /// <summary>Sets the equalizer bands, replacing the previous ones; an empty list clears the equalizer.</summary>
+    /// <summary>Sets the equalizer bands, replacing the previous ones, an empty list clears the equalizer.</summary>
     public async Task SetEqualizerAsync(
         IReadOnlyList<EqualizerBand>? bands = null,
         CancellationToken cancellationToken = default
@@ -787,8 +787,8 @@ public sealed class GuildConnection
     }
 
     /// <summary>
-    /// Sets the volume filter, 0.0-5.0 (1.0 disables it). Independent of the player volume;
-    /// values above 1.0 may clip. Lavalink only — NodeLink does not implement it.
+    /// Sets the volume filter, 0.0-5.0 (1.0 disables it). Independent of the player volume,
+    /// values above 1.0 may clip. Lavalink only, NodeLink does not implement it.
     /// </summary>
     /// <exception cref="NotSupportedException">The node is a NodeLink server.</exception>
     public async Task SetVolumeFilterAsync(
@@ -814,7 +814,7 @@ public sealed class GuildConnection
         }
     }
 
-    /// <summary>Applies a complete filter chain, replacing everything applied so far; filters left null are cleared.</summary>
+    /// <summary>Applies a complete filter chain, replacing everything applied so far, filters left null are cleared.</summary>
     public async Task ApplyFiltersAsync(
         FilterChain filters,
         CancellationToken cancellationToken = default
@@ -839,10 +839,10 @@ public sealed class GuildConnection
     }
 
     /// <summary>
-    /// Fetches the authoritative player from the server, adopts its state and returns it;
+    /// Fetches the authoritative player from the server, adopts its state and returns it,
     /// useful to re-synchronize a live connection after a resumed reconnect or when the player
-    /// was changed out-of-band. After a session loss there is nothing left to read — the
-    /// server destroyed the player — so reconnect the bot instead.
+    /// was changed out-of-band. After a session loss there is nothing left to read, the
+    /// server destroyed the player, so reconnect the bot instead.
     /// </summary>
     public async Task<Player> RefreshAsync(CancellationToken cancellationToken = default)
     {
@@ -926,7 +926,7 @@ public sealed class GuildConnection
     {
         WebSocketClosed.Raise(this, eventArgs, OnHandlerError);
 
-        // Without the voice websocket there is no audio either; tear the connection down.
+        // Without the voice websocket there is no audio either, tear the connection down.
         _ = DisconnectAfterVoiceClosedAsync();
     }
 
@@ -996,14 +996,14 @@ public sealed class GuildConnection
         }
     }
 
-    /// <summary>The node session was lost; the server destroyed every player bound to it.</summary>
+    /// <summary>The node session was lost, the server destroyed every player bound to it.</summary>
     internal void HandleSessionInvalidated()
     {
         ClearState();
         _node.Connections.TryRemove(GuildId, out _);
     }
 
-    /// <summary>Discord removed the bot from the voice channel; the player is destroyed best-effort.</summary>
+    /// <summary>Discord removed the bot from the voice channel, the player is destroyed best-effort.</summary>
     internal async Task HandleVoiceDisconnectedAsync()
     {
         ClearState();
@@ -1020,10 +1020,10 @@ public sealed class GuildConnection
             VoiceSessionId = sessionId;
     }
 
-    /// <summary>Discord re-targeted the voice server; forwards the fresh credentials to the node.</summary>
+    /// <summary>Discord re-targeted the voice server, forwards the fresh credentials to the node.</summary>
     internal async Task HandleVoiceServerUpdatedAsync(string token, string endpoint)
     {
-        // No channel means no complete voice state to forward; the connection is dying anyway.
+        // No channel means no complete voice state to forward, the connection is dying anyway.
         if (Channel is null)
             return;
 
@@ -1215,7 +1215,7 @@ public sealed class GuildConnection
         if (_node.IsNodeLink && player.Filters is { } effective)
         {
             // NodeLink drops filter changes while no track is loaded, so the response is the
-            // only source of truth there; a dropped chain is remembered and re-sent when the
+            // only source of truth there, a dropped chain is remembered and re-sent when the
             // next track starts. Lavalink applies exactly what was sent.
             _filters = effective;
             _pendingFilters = FiltersEqual(effective, desired) ? null : desired;
@@ -1252,7 +1252,7 @@ public sealed class GuildConnection
         }
         catch (Exception exception)
         {
-            // Best-effort on an event path; the next track start retries.
+            // Best-effort on an event path, the next track start retries.
             _node.HandleError(
                 new InvalidOperationException(
                     $"Failed to re-apply the filters of guild {GuildId}: {exception.Message}",
@@ -1266,7 +1266,7 @@ public sealed class GuildConnection
         }
     }
 
-    /// <summary>Value comparison of two chains; unset members count as their neutral defaults, and plugin filters are not tracked (NodeLink does not echo them).</summary>
+    /// <summary>Value comparison of two chains, unset members count as their neutral defaults, and plugin filters are not tracked (NodeLink does not echo them).</summary>
     private static bool FiltersEqual(FilterChain left, FilterChain right) =>
         left.Volume == right.Volume
         && left.Karaoke == right.Karaoke

@@ -7,7 +7,7 @@ namespace Nyra.Entities;
 /// <summary>
 /// Discord voice state of a player. When sent, <see cref="Token"/>, <see cref="Endpoint"/>,
 /// <see cref="SessionId"/> and <see cref="ChannelId"/> must be provided together: Lavalink
-/// rejects the update without a channel id; NodeLink only requires the first three.
+/// rejects the update without a channel id, NodeLink only requires the first three.
 /// </summary>
 public sealed record VoiceState
 {
@@ -20,7 +20,7 @@ public sealed record VoiceState
     [JsonPropertyName("sessionId")]
     public string? SessionId { get; init; }
 
-    /// <summary>Sent by Lavalink v4.2.0+ and NodeLink; older servers omit it.</summary>
+    /// <summary>Sent by Lavalink v4.2.0+ and NodeLink, older servers omit it.</summary>
     [JsonPropertyName("channelId")]
     public ulong? ChannelId { get; init; }
 }
@@ -44,7 +44,7 @@ public sealed record PlayerState
     /// <summary>Unix epoch milliseconds of <see cref="DateTimeOffset.MaxValue"/>.</summary>
     private const long MaxUnixMilliseconds = 253_402_300_799_999;
 
-    /// <summary>Playback position in milliseconds; 0 when nothing is playing.</summary>
+    /// <summary>Playback position in milliseconds, 0 when nothing is playing.</summary>
     [JsonPropertyName("position")]
     public long PositionMilliseconds { get; init; }
 
@@ -69,11 +69,11 @@ public sealed record PlayerState
 /// </summary>
 public sealed record FilterChain
 {
-    /// <summary>Volume filter, 0.0-5.0, where 1.0 disables it. Independent of the player volume (0-1000); values above 1.0 may clip. Lavalink only — NodeLink accepts the member but never applies it.</summary>
+    /// <summary>Volume filter, 0.0-5.0, where 1.0 disables it. Independent of the player volume (0-1000), values above 1.0 may clip. Lavalink only, NodeLink accepts the member but never applies it.</summary>
     [JsonPropertyName("volume")]
     public float? Volume { get; init; }
 
-    /// <summary>Equalizer bands; band ids range from 0 to 14.</summary>
+    /// <summary>Equalizer bands, band ids range from 0 to 14.</summary>
     [JsonPropertyName("equalizer")]
     public IReadOnlyList<EqualizerBand>? Equalizer { get; init; }
 
@@ -153,7 +153,7 @@ public sealed record FilterChain
     public Dictionary<string, JsonElement>? PluginFilters { get; init; }
 }
 
-/// <summary>Base of the track portion of an update-player request; the derived records pick the wire form.</summary>
+/// <summary>Base of the track portion of an update-player request, the derived records pick the wire form.</summary>
 [JsonDerivedType(typeof(PlayerUpdateTrack))]
 [JsonDerivedType(typeof(PlayerIdentifierUpdateTrack))]
 internal abstract record PlayerUpdateTrackBase
@@ -170,7 +170,7 @@ internal sealed record PlayerUpdateTrack : PlayerUpdateTrackBase
     [JsonPropertyName("encoded"), JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? Encoded { get; init; }
 
-    /// <summary>Selects a dub or alternate audio track on sources that expose more than one; NodeLink only.</summary>
+    /// <summary>Selects a dub or alternate audio track on sources that expose more than one, NodeLink only.</summary>
     [JsonPropertyName("audioTrackId")]
     public string? AudioTrackId { get; init; }
 }
@@ -188,8 +188,8 @@ internal sealed record PlayerIdentifierUpdateTrack : PlayerUpdateTrackBase
 }
 
 /// <summary>
-/// Update-player request body; omitted members leave the player untouched. Uses the
-/// <c>track</c> member (Lavalink 4.0.5+), the only form both servers accept.
+/// Update-player request body, omitted members leave the player untouched. Uses the
+/// <c>track</c> member, the only form both servers accept.
 /// </summary>
 internal sealed record PlayerUpdatePayload
 {
@@ -197,11 +197,11 @@ internal sealed record PlayerUpdatePayload
     [JsonPropertyName("track")]
     public PlayerUpdateTrackBase? Track { get; init; }
 
-    /// <summary>Seek position in milliseconds; with a new track, starts it at that offset.</summary>
+    /// <summary>Seek position in milliseconds, with a new track, starts it at that offset.</summary>
     [JsonPropertyName("position")]
     public long? Position { get; init; }
 
-    /// <summary>End time marker in milliseconds; must be greater than zero.</summary>
+    /// <summary>End time marker in milliseconds, must be greater than zero.</summary>
     [JsonPropertyName("endTime")]
     public long? EndTime { get; init; }
 
@@ -225,7 +225,7 @@ internal sealed record PlayerUpdatePayload
     public bool? LoudnessNormalizer { get; init; }
 
     /// <summary>
-    /// Turns speaking-detection ducking on or off; the duck depth and timing are set through
+    /// Turns speaking-detection ducking on or off, the duck depth and timing are set through
     /// <see cref="FadingOptions.Ducking"/> instead. NodeLink 3.9+.
     /// </summary>
     [JsonPropertyName("ducking")]
@@ -235,7 +235,7 @@ internal sealed record PlayerUpdatePayload
     public VoiceState? Voice { get; init; }
 }
 
-/// <summary>End-time-only update body; a null member clears the end time.</summary>
+/// <summary>End-time-only update body, a null member clears the end time.</summary>
 internal sealed record EndTimeUpdate
 {
     // Null must reach the wire: it is how the end time is cleared.
@@ -269,16 +269,16 @@ public sealed record Player
     [JsonPropertyName("filters")]
     public FilterChain? Filters { get; init; }
 
-    /// <summary>The player's fade configuration; NodeLink only, null on Lavalink.</summary>
+    /// <summary>The player's fade configuration, NodeLink only, null on Lavalink.</summary>
     [JsonPropertyName("fading")]
     public FadingOptions? Fading { get; init; }
 
-    /// <summary>Whether loudness normalization is on; NodeLink only, null on Lavalink.</summary>
+    /// <summary>Whether loudness normalization is on, NodeLink only, null on Lavalink.</summary>
     [JsonPropertyName("loudnessNormalizer")]
     public bool? LoudnessNormalizer { get; init; }
 }
 
-/// <summary>Session resuming configuration; request body and response of a session update.</summary>
+/// <summary>Session resuming configuration, request body and response of a session update.</summary>
 public sealed record Session
 {
     [JsonPropertyName("resuming")]
@@ -298,7 +298,7 @@ public sealed record Session
 /// <param name="NoReplace">When true, does not replace a track that is already playing.</param>
 /// <param name="UserData">Client data the server attaches to the track and echoes back on every response.</param>
 /// <param name="AudioTrackId">
-/// Selects a dub or alternate audio track on sources that expose more than one; NodeLink only.
+/// Selects a dub or alternate audio track on sources that expose more than one, NodeLink only.
 /// Not usable with <see cref="GuildConnection.PlayIdentifierAsync"/>, which is Lavalink-only.
 /// </param>
 public sealed record PlayOptions(

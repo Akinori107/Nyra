@@ -30,13 +30,13 @@ internal sealed class VoiceHandshakeCoordinator
             pending.State.TrySetResult(eventArgs);
     }
 
-    /// <summary>Feeds a voice server update to a pending handshake; false when none was waiting for it.</summary>
+    /// <summary>Feeds a voice server update to a pending handshake, false when none was waiting for it.</summary>
     public bool HandleVoiceServerUpdate(VoiceServerUpdateEventArgs eventArgs)
     {
         if (eventArgs.Guild is null)
             return false;
 
-        // Discord sometimes sends a partial voice server update with an empty endpoint; both
+        // Discord sometimes sends a partial voice server update with an empty endpoint, both
         // audio servers reject it (400), so wait for the complete update instead of failing.
         if (string.IsNullOrWhiteSpace(eventArgs.Endpoint))
             return false;
@@ -102,14 +102,14 @@ internal sealed class VoiceHandshakeCoordinator
         }
         catch
         {
-            // The join already went to Discord; leave or the bot parks in the channel with no player.
+            // The join already went to Discord, leave or the bot parks in the channel with no player.
             try
             {
                 await SendVoiceStateUpdateAsync(discord, guildId, null).ConfigureAwait(false);
             }
             catch (Exception)
             {
-                // The gateway is gone too; nothing left to compensate.
+                // The gateway is gone too, nothing left to compensate.
             }
 
             throw;
@@ -137,7 +137,7 @@ internal sealed class VoiceHandshakeCoordinator
             ["self_deaf"] = false,
         };
 
-        // The only public DSharpPlus API that can send the voice state update (op 4); obsolete
+        // The only public DSharpPlus API that can send the voice state update (op 4), obsolete
         // only because it bypasses validation that no specialized voice method offers anyway.
 #pragma warning disable CS0618
         return discord.SendPayloadAsync(GatewayOpCode.VoiceStateUpdate, payload);

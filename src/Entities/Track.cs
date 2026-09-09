@@ -10,7 +10,7 @@ namespace Nyra.Entities;
 /// URL is never valid.</summary>
 public enum SearchType
 {
-    /// <summary>Sends URLs raw and everything else to <c>ytsearch:</c>; the default.</summary>
+    /// <summary>Sends URLs raw and everything else to <c>ytsearch:</c>, the default.</summary>
     Auto,
 
     /// <summary>Prefixes the query with <c>ytsearch:</c>.</summary>
@@ -149,7 +149,7 @@ public enum SearchType
 
 /// <summary>
 /// Outcome of a load-tracks operation. NodeLink reports extra types (episode, album, artist,
-/// station, podcast, show); Nyra maps them onto <see cref="Track"/> and <see cref="Playlist"/>.
+/// station, podcast, show), Nyra maps them onto <see cref="Track"/> and <see cref="Playlist"/>.
 /// </summary>
 public enum LoadType
 {
@@ -169,14 +169,15 @@ public enum LoadType
     Error,
 }
 
-/// <summary>Why a track ended. The first five values are Lavalink's; the last two are NodeLink's.</summary>
+/// <summary>Why a track ended. The first five values are Lavalink's, the next two are
+/// NodeLink's, and the last is Nyra's fallback for a reason it doesn't recognize.</summary>
 public enum TrackEndReason
 {
-    /// <summary>Finished playing; a next track may be started.</summary>
+    /// <summary>Finished playing, a next track may be started.</summary>
     [JsonPropertyName("finished")]
     Finished,
 
-    /// <summary>Failed loading; a next track may be started.</summary>
+    /// <summary>Failed loading, a next track may be started.</summary>
     [JsonPropertyName("loadFailed")]
     LoadFailed,
 
@@ -233,7 +234,7 @@ public sealed record ErrorInfo
     [JsonPropertyName("cause")]
     public string? Cause { get; init; }
 
-    /// <summary>Lavalink only, since v4.1.0.</summary>
+    /// <summary>Lavalink only.</summary>
     [JsonPropertyName("causeStackTrace")]
     public string? CauseStackTrace { get; init; }
 
@@ -274,7 +275,7 @@ public sealed record Track
     /// <summary>
     /// Start offset from the source link's <c>t</c>/<c>start</c> parameter, client-side only.
     /// Applied on the track's first <see cref="GuildConnection.PlayAsync"/> unless an explicit
-    /// <see cref="PlayOptions.StartPosition"/> is given; consumed after that first play.
+    /// <see cref="PlayOptions.StartPosition"/> is given, consumed after that first play.
     /// </summary>
     [JsonIgnore]
     public TimeSpan? StartPosition { get; internal set; }
@@ -336,7 +337,7 @@ public sealed record Track
             var sourceName = reader.ReadModifiedUtf8();
 
             // Everything between the source name and the final 8 bytes is source-specific
-            // payload (Lavalink) or track details (NodeLink); the position is always the
+            // payload (Lavalink) or track details (NodeLink), the position is always the
             // last 8 bytes, big-endian.
             if (reader.Remaining < 8)
                 throw new InvalidTrackException("The encoded track is truncated.");
@@ -352,7 +353,7 @@ public sealed record Track
                     LengthMilliseconds = length,
                     Identifier = identifier,
                     IsStream = isStream,
-                    // The binary format carries no seekability; derive it from the stream flag, like NodeLink.
+                    // The binary format carries no seekability, derive it from the stream flag, like NodeLink.
                     IsSeekable = !isStream,
                     Uri = uri,
                     ArtworkUrl = artworkUrl,
@@ -378,7 +379,7 @@ public sealed record Track
     /// <summary>
     /// Removes the legacy 16-byte <c>NLK:seekable</c> trailer that old NodeLink versions wrote
     /// after the position: <c>[present=0x01][utflen=0x000D]["NLK:seekable" + Y|N]</c>. The full
-    /// structure is validated — not just the marker — so tracks that merely contain the marker
+    /// structure is validated, not just the marker, so tracks that merely contain the marker
     /// bytes in their payload are left untouched.
     /// </summary>
     private static ReadOnlySpan<byte> TrimLegacyNodeLinkTrailer(ReadOnlySpan<byte> raw)
@@ -410,7 +411,7 @@ public sealed record TrackInfo
 
     /// <summary>
     /// Duration in milliseconds. Lavalink reports <see cref="long.MaxValue"/> for streams and
-    /// NodeLink reports 0; <see cref="Length"/> returns zero for both.
+    /// NodeLink reports 0, <see cref="Length"/> returns zero for both.
     /// </summary>
     [JsonPropertyName("length")]
     public long LengthMilliseconds { get; init; }
@@ -421,7 +422,7 @@ public sealed record TrackInfo
             ? TimeSpan.FromMilliseconds(LengthMilliseconds)
             : TimeSpan.Zero;
 
-    /// <summary>Largest millisecond value <see cref="TimeSpan"/> can hold; anything above it is a stream marker.</summary>
+    /// <summary>Largest millisecond value <see cref="TimeSpan"/> can hold, anything above it is a stream marker.</summary>
     internal const long MaxTimeSpanMilliseconds = 922_337_203_685_477;
 
     [JsonPropertyName("isStream")]
@@ -461,7 +462,7 @@ public sealed record TrackInfo
 /// <summary>
 /// Request body for <see cref="Node.EncodeTrackAsync"/>. NodeLink's validator rejects the
 /// request unless <c>uri</c>/<c>artworkUrl</c>/<c>isrc</c> are present as null rather than
-/// omitted, and <c>details</c> is always an array — Nyra doesn't model track details, so it
+/// omitted, and <c>details</c> is always an array, since Nyra doesn't model track details, so it
 /// always sends an empty one.
 /// </summary>
 internal sealed record TrackEncodeRequest
@@ -503,7 +504,7 @@ internal sealed record TrackEncodeRequest
     public IReadOnlyList<string?> Details { get; init; } = [];
 }
 
-/// <summary>Result of a load-tracks operation; pattern-match on the derived record type.</summary>
+/// <summary>Result of a load-tracks operation, pattern-match on the derived record type.</summary>
 public abstract record LoadResult
 {
     public abstract LoadType LoadType { get; }

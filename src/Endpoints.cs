@@ -5,7 +5,7 @@ internal static class Endpoints
 {
     public const string WebSocketPath = "/v4/websocket";
 
-    // Served by both servers; the JSON body carries the server kind (NodeLink adds
+    // Served by both servers, the JSON body carries the server kind (NodeLink adds
     // "isNodelink": true) and the version under "version.semver".
     public const string Info = "/v4/info";
 
@@ -34,7 +34,7 @@ internal static class Endpoints
 
     public const string Session = "/v4/sessions/{0}";
 
-    // {0} = session id; served by both servers.
+    // {0} = session id, served by both servers.
     public const string Players = "/v4/sessions/{0}/players";
 
     // Served by both servers.
@@ -43,15 +43,15 @@ internal static class Endpoints
     // {0} = session id, {1} = guild id.
     public const string Player = "/v4/sessions/{0}/players/{1}";
 
-    // {0} = session id, {1} = guild id; NodeLink, or Lavalink with the LavaLyrics plugin.
+    // {0} = session id, {1} = guild id, NodeLink, or Lavalink with the LavaLyrics plugin.
     public const string LyricsSubscription = "/v4/sessions/{0}/players/{1}/lyrics/subscribe";
 
-    // {0} = session id, {1} = guild id; NodeLink only.
+    // {0} = session id, {1} = guild id, NodeLink only.
     public const string SponsorBlock = "/v4/sessions/{0}/players/{1}/sponsorblock";
 
-    // {0} = session id, {1} = guild id; NodeLink only.
+    // {0} = session id, {1} = guild id, NodeLink only.
     public const string Mix = "/v4/sessions/{0}/players/{1}/mix";
 
-    // {0} = session id, {1} = guild id, {2} = mix layer id; NodeLink only.
+    // {0} = session id, {1} = guild id, {2} = mix layer id, NodeLink only.
     public const string MixLayer = "/v4/sessions/{0}/players/{1}/mix/{2}";
 }

@@ -25,7 +25,7 @@ internal sealed class FiltersConverter(bool isNodeLink) : JsonConverter<FilterCh
 
         if (isNodeLink)
         {
-            // NodeLink nests the flat state under a literal "filters" member; without any
+            // NodeLink nests the flat state under a literal "filters" member, without any
             // filter state it answers an empty object, which parses as the flat shape too.
             FilterChain? chain = null;
             var root = reader; // copy for the envelope-less fallback
@@ -62,7 +62,7 @@ internal sealed class FiltersConverter(bool isNodeLink) : JsonConverter<FilterCh
         // Every filter is written, always with every member: Lavalink resets absent members to
         // their defaults while NodeLink merges a partial object into the previous state, so a
         // fully-specified object is the only form both servers interpret identically. Null
-        // members become the neutral defaults; volume and equalizer cannot be null on the wire
+        // members become the neutral defaults, volume and equalizer cannot be null on the wire
         // (Lavalink answers 400), so their inactive form is volume 1.0 and an empty band list.
         writer.WritePropertyName("volume");
         writer.WriteNumberValue(value.Volume ?? 1.0f);
@@ -173,7 +173,7 @@ internal sealed class FiltersConverter(bool isNodeLink) : JsonConverter<FilterCh
         else
             WriteNull(writer, "lowPass");
 
-        // The NodeLink-only filters follow; Lavalink ignores the members it does not know, and
+        // The NodeLink-only filters follow, Lavalink ignores the members it does not know, and
         // NodeLink disables a filter whose member arrives null.
         if (value.Echo is { } echo)
         {
@@ -519,7 +519,7 @@ internal sealed class FiltersConverter(bool isNodeLink) : JsonConverter<FilterCh
         JsonSerializerOptions options
     )
     {
-        // Requests (the flat shape) send the bare array; NodeLink responses wrap it in a "bands" object.
+        // Requests (the flat shape) send the bare array, NodeLink responses wrap it in a "bands" object.
         if (reader.TokenType == JsonTokenType.StartArray)
             return JsonSerializer.Deserialize<List<EqualizerBand>>(ref reader, options);
 
@@ -561,7 +561,7 @@ internal sealed class FiltersConverter(bool isNodeLink) : JsonConverter<FilterCh
         if (!isNodeLink)
             return JsonSerializer.Deserialize<TFilter>(ref reader, options);
 
-        // NodeLink marks disabled filters with a _disabled tombstone instead of nulling them;
+        // NodeLink marks disabled filters with a _disabled tombstone instead of nulling them,
         // scan a copy so the original reader stays positioned for the typed deserialize.
         var peek = reader;
         while (peek.Read() && peek.TokenType != JsonTokenType.EndObject)

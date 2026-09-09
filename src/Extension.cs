@@ -1,9 +1,6 @@
-using System.Net.WebSockets;
 using DSharpPlus;
 using DSharpPlus.EventArgs;
-using Microsoft.Extensions.Logging;
 using Nyra.EventArgs;
-using Nyra.Exceptions;
 using Nyra.Internal;
 
 namespace Nyra;
@@ -43,7 +40,7 @@ public sealed class NyraExtension : BaseExtension
         Client = client;
     }
 
-    /// <summary>Adds a node; it connects when <see cref="ConnectAllNodesAsync"/> runs.</summary>
+    /// <summary>Adds a node, it connects when <see cref="ConnectAllNodesAsync"/> runs.</summary>
     public void AddNode(Node node)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -52,6 +49,13 @@ public sealed class NyraExtension : BaseExtension
         {
             if (_nodes.Contains(node))
                 return;
+
+            if (_nodes.Any(existing => existing.Name == node.Name))
+            {
+                throw new InvalidOperationException(
+                    $"A node named '{node.Name}' is already registered on this client."
+                );
+            }
 
             if (
                 _nodes.Any(existing =>
@@ -75,7 +79,7 @@ public sealed class NyraExtension : BaseExtension
         node.Error += OnNodeError;
     }
 
-    /// <summary>Removes a node and disconnects it; guild connections living on it are left untouched.</summary>
+    /// <summary>Removes a node and disconnects it, guild connections living on it are left untouched.</summary>
     public async Task RemoveNodeAsync(Node node)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -91,7 +95,7 @@ public sealed class NyraExtension : BaseExtension
         await node.DisconnectAsync().ConfigureAwait(false);
     }
 
-    /// <summary>Connects every added node; a node that fails to connect is logged and skipped.</summary>
+    /// <summary>Connects every added node, a node that fails to connect is logged and skipped.</summary>
     public async Task ConnectAllNodesAsync(CancellationToken cancellationToken = default)
     {
         if (Client is null)
@@ -128,44 +132,16 @@ public sealed class NyraExtension : BaseExtension
             {
                 await node.ConnectAsync(Client, cancellationToken).ConfigureAwait(false);
             }
-            catch (HttpRequestException exception)
+            catch (Exception)
             {
-                Client.Logger.LogWarning(
-                    "Node {NodeName} not reachable yet: {Reason}.",
-                    node.Name,
-                    exception.Message
-                );
-            }
-            catch (WebSocketException exception)
-                when (exception.InnerException is HttpRequestException httpException)
-            {
-                Client.Logger.LogWarning(
-                    "Node {NodeName} not reachable yet: {Reason}.",
-                    node.Name,
-                    httpException.Message
-                );
-            }
-            catch (RestException exception) when (exception.StatusCode is 401 or 403)
-            {
-                Client.Logger.LogWarning(
-                    "Node {NodeName} rejected the connection: {Reason}. Check the node's configured password.",
-                    node.Name,
-                    exception.Message
-                );
-            }
-            catch (Exception exception)
-            {
-                Client.Logger.LogError(
-                    exception,
-                    "Node {NodeName} failed to connect unexpectedly.",
-                    node.Name
-                );
+                // Already logged, in order with the delay before its first retry, by the
+                // node's own reconnect loop, nothing further to do than move on.
             }
         }
     }
 
     /// <summary>
-    /// Gets the ready node with the fewest playing players; nodes that have not reported
+    /// Gets the ready node with the fewest playing players, nodes that have not reported
     /// statistics yet rank last. Null while no node is ready.
     /// </summary>
     public Node? GetNode()

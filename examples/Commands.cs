@@ -19,7 +19,7 @@ public sealed class MusicCommands : ApplicationCommandModule
     [SlashCommand("join", "Joins the voice channel you are in")]
     public async Task JoinAsync(InteractionContext context)
     {
-        // The voice handshake can take seconds; acknowledge within the deadline first.
+        // The voice handshake can take seconds, acknowledge within the deadline first.
         await context.DeferAsync().ConfigureAwait(false);
 
         var connection = await ConnectToCallerAsync(context).ConfigureAwait(false);
@@ -61,7 +61,7 @@ public sealed class MusicCommands : ApplicationCommandModule
         [Option("query", "A direct link, or a term to search for")] string query
     )
     {
-        // Track loading round-trips the audio node; acknowledge within the deadline first.
+        // Track loading round-trips the audio node, acknowledge within the deadline first.
         await context.DeferAsync().ConfigureAwait(false);
 
         var connection = await ConnectToCallerAsync(context).ConfigureAwait(false);
@@ -282,7 +282,7 @@ public sealed class MusicCommands : ApplicationCommandModule
         if (nyra is null)
             return null;
 
-        // A guild plays on one node; reuse its existing connection instead of joining a
+        // A guild plays on one node, reuse its existing connection instead of joining a
         // second time through the least-loaded node.
         if (context.Guild is not null && nyra.GetConnection(context.Guild.Id) is { } existing)
             return existing;

@@ -8,7 +8,7 @@ public sealed class TrackStuckEventArgs : System.EventArgs
     [JsonPropertyName("guildId")]
     public ulong GuildId { get; init; }
 
-    /// <summary>The stuck track; null when the server did not include it.</summary>
+    /// <summary>The stuck track, null when the server did not include it.</summary>
     [JsonPropertyName("track")]
     public Track? Track { get; init; }
 
@@ -16,7 +16,7 @@ public sealed class TrackStuckEventArgs : System.EventArgs
     [JsonPropertyName("thresholdMs")]
     public long ThresholdMilliseconds { get; init; }
 
-    /// <summary>What the node reported as the cause; NodeLink only, null on Lavalink.</summary>
+    /// <summary>What the node reported as the cause, NodeLink only, null on Lavalink.</summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 }

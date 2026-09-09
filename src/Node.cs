@@ -11,7 +11,7 @@ using Nyra.Internal;
 namespace Nyra;
 
 /// <summary>
-/// A connection to a Lavalink v4 or NodeLink v3+ server. The kind is detected at runtime on
+/// A connection to a Lavalink v4+ or NodeLink v3+ server. The kind is detected at runtime on
 /// connect (GET /v4/info) so nothing needs to be declared. Owns the websocket lifecycle, the
 /// REST client and the voice handshake coordination, and exposes the guild connections
 /// created through it.
@@ -91,7 +91,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <summary>The node session id of the current connection, or null before the node became ready. Not a Discord voice session id.</summary>
     public string? SessionId { get; internal set; }
 
-    /// <summary>Whether the websocket to the server is open; wait for <see cref="IsReady"/> before issuing requests.</summary>
+    /// <summary>Whether the websocket to the server is open, wait for <see cref="IsReady"/> before issuing requests.</summary>
     public bool IsConnected => _connection.IsConnected;
 
     /// <summary>Whether the node received the <c>ready</c> operation and can serve requests.</summary>
@@ -108,24 +108,24 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     internal ConcurrentDictionary<ulong, GuildConnection> Connections { get; } = new();
 
-    /// <summary>The websocket connection was established; the node is not ready yet, wait for <see cref="Ready"/>.</summary>
+    /// <summary>The websocket connection was established, the node is not ready yet, wait for <see cref="Ready"/>.</summary>
     public event EventHandler<NodeConnectedEventArgs>? Connected;
 
     /// <summary>Raised once per connection when the server sent its <c>ready</c> operation.</summary>
     public event EventHandler<NodeReadyEventArgs>? Ready;
 
-    /// <summary>The websocket connection was lost; reconnection attempts follow. <see cref="NodeDisconnectedEventArgs.Final"/> marks the last one.</summary>
+    /// <summary>The websocket connection was lost, reconnection attempts follow. <see cref="NodeDisconnectedEventArgs.Final"/> marks the last one.</summary>
     public event EventHandler<NodeDisconnectedEventArgs>? Disconnected;
 
     /// <summary>Raised for internal errors: malformed payloads, failed reconnects, handlers that threw.</summary>
     public event EventHandler<NodeErrorEventArgs>? Error;
 
-    /// <summary>Raised whenever the server reports its statistics; the latest report is also <see cref="Stats"/>.</summary>
+    /// <summary>Raised whenever the server reports its statistics, the latest report is also <see cref="Stats"/>.</summary>
     public event EventHandler<NodeStatsEventArgs>? StatsUpdated;
 
     /// <summary>
     /// Attaches the node to a Discord client, opens the websocket and waits for the server's
-    /// <c>ready</c> operation. Called by <see cref="NyraExtension.ConnectAllNodesAsync"/>; calling
+    /// <c>ready</c> operation. Called by <see cref="NyraExtension.ConnectAllNodesAsync"/>, calling
     /// it again on a ready node is a no-op, and a concurrent or later call waits for the connect
     /// already in flight. When the initial connect fails, the exception is rethrown and the node
     /// keeps retrying in the background with the configured backoff.
@@ -200,7 +200,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
-    /// Probes /v4/info once and remembers the result. Concurrent calls may probe twice; the
+    /// Probes /v4/info once and remembers the result. Concurrent calls may probe twice, the
     /// request is idempotent.
     /// </summary>
     internal async Task EnsureServerInfoAsync(CancellationToken cancellationToken)
@@ -215,18 +215,18 @@ public sealed class Node : IAsyncDisposable, IDisposable
         }
         catch (RestException exception) when (exception.StatusCode == 404)
         {
-            throw new InvalidOperationException(
-                $"The server at {Endpoint} does not expose /v4/info; only Lavalink v4 and NodeLink v3+ are supported.",
+            throw new IncompatibleServerException(
+                $"The server at {Endpoint} does not expose /v4/info, only Lavalink v4+ and NodeLink v3+ are supported.",
                 exception
             );
         }
 
         if (string.IsNullOrEmpty(info.RawVersion))
-            throw new InvalidOperationException(
+            throw new IncompatibleServerException(
                 $"The server at {Endpoint} did not report a version."
             );
 
-        // Dev builds report a commit hash; they are always current and skip the floor check.
+        // Dev builds report a commit hash, they are always current and skip the floor check.
         if (info.Version is { } version)
         {
             var minimum = info.IsNodeLink
@@ -235,8 +235,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
             if (version < minimum)
             {
                 var software = info.IsNodeLink ? "NodeLink" : "Lavalink";
-                throw new InvalidOperationException(
-                    $"{software} {version} at {Endpoint} is too old; {software} {minimum} or newer is required."
+                throw new IncompatibleServerException(
+                    $"{software} {version} at {Endpoint} is too old, {software} {minimum} or newer is required."
                 );
             }
         }
@@ -252,8 +252,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
-    /// Loads tracks for a query. Direct http(s) URLs are always sent as-is — prefixing a URL
-    /// with a search prefix is never valid — while plain terms resolve according to
+    /// Loads tracks for a query. Direct http(s) URLs are always sent as-is, prefixing a URL
+    /// with a search prefix is never valid, while plain terms resolve according to
     /// <paramref name="searchType"/> (<see cref="SearchType.Auto"/> searches YouTube). A URL's
     /// <c>t</c>/<c>start</c> parameter carries over to <see cref="Track.StartPosition"/>.
     /// </summary>
@@ -338,7 +338,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
-    /// The search sources NodeLink serves; a few of them (Spotify, Apple Music, Deezer, Yandex
+    /// The search sources NodeLink serves, a few of them (Spotify, Apple Music, Deezer, Yandex
     /// Music, VK Music, Tidal, Qobuz, JioSaavn) are also served by Lavalink with the LavaSrc plugin.
     /// </summary>
     private void RequireNodeLinkSearchSource(SearchType searchType)
@@ -423,7 +423,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
             .ConfigureAwait(false);
     }
 
-    /// <summary>Loads the chapters of a track, in milliseconds; mostly YouTube videos carry them.</summary>
+    /// <summary>Loads the chapters of a track, in milliseconds, mostly YouTube videos carry them.</summary>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
     public async Task<IReadOnlyList<Chapter>> LoadChaptersAsync(
         Track track,
@@ -474,7 +474,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
-    /// Encodes track information into a base64 track the node can play — the counterpart of
+    /// Encodes track information into a base64 track the node can play, the counterpart of
     /// decoding, only NodeLink serves it.
     /// </summary>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
@@ -530,7 +530,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>
     /// Lists every player of this node's session, including guilds this client is not connected
-    /// to; useful after a resume that adopted players from a previous session.
+    /// to, useful after a resume that adopted players from a previous session.
     /// </summary>
     public async Task<IReadOnlyList<Player>> ListPlayersAsync(
         CancellationToken cancellationToken = default
@@ -542,7 +542,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
-    /// Fetches the node's statistics over REST — CPU, memory, uptime, per-frame loss counts.
+    /// Fetches the node's statistics over REST: CPU, memory, uptime, per-frame loss counts.
     /// The server also pushes periodic reports over the websocket, delivered through
     /// <see cref="StatsUpdated"/> and kept in <see cref="Stats"/>.
     /// </summary>
@@ -583,7 +583,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         }
     }
 
-    /// <summary>Probes the server version if it was not detected yet; null on dev builds without a parseable semver.</summary>
+    /// <summary>Probes the server version if it was not detected yet, null on dev builds without a parseable semver.</summary>
     public async Task<NodeVersion?> GetVersionAsync(CancellationToken cancellationToken = default)
     {
         await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
@@ -612,7 +612,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
         if (Discord is null)
             throw new InvalidOperationException(
-                "The node is not attached to a Discord client yet; start it through the extension first."
+                "The node is not attached to a Discord client yet, start it through the extension first."
             );
 
         if (!IsReady)
@@ -620,7 +620,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
         var guildId = channel.GuildId.Value;
 
-        // Serialize the connects of one guild; racing connects would both register and leak a player.
+        // Serialize the connects of one guild, racing connects would both register and leak a player.
         var gate = AcquireGate(guildId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -743,7 +743,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         await gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            // Another connection already claimed the guild; its player must survive.
+            // Another connection already claimed the guild, its player must survive.
             if (
                 Connections.TryGetValue(connection.GuildId, out var current)
                 && !ReferenceEquals(current, connection)
@@ -760,11 +760,11 @@ public sealed class Node : IAsyncDisposable, IDisposable
             }
             catch (RestException exception) when (exception.StatusCode == 404)
             {
-                // The player was already gone on the server; nothing to clean up.
+                // The player was already gone on the server, nothing to clean up.
             }
             catch (Exception exception)
             {
-                // Best-effort cleanup; surface it through the error event.
+                // Best-effort cleanup, surface it through the error event.
                 HandleError(exception);
             }
         }
@@ -775,13 +775,13 @@ public sealed class Node : IAsyncDisposable, IDisposable
         }
     }
 
-    /// <summary>Stops the websocket connection; active guild connections are left untouched.</summary>
+    /// <summary>Stops the websocket connection, active guild connections are left untouched.</summary>
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
         _stopped = true;
         IsReady = false;
         await _connection.StopAsync(cancellationToken).ConfigureAwait(false);
-        // Release a connect still waiting on ready; the stop path cannot fail it anymore.
+        // Release a connect still waiting on ready, the stop path cannot fail it anymore.
         Interlocked.Exchange(ref _connectCompletion, null)?.TrySetResult(false);
         UnwireDiscordEvents();
     }
@@ -838,8 +838,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
         SessionId = eventArgs.SessionId;
         IsReady = true;
 
-        // A session that did not resume means the previous one — and every player on it — is
-        // gone; keep the local connections honest instead of claiming playback that no longer
+        // A session that did not resume means the previous one, and every player on it, is
+        // gone, keep the local connections honest instead of claiming playback that no longer
         // exists.
         if (!eventArgs.Resumed && !Connections.IsEmpty)
         {
@@ -849,7 +849,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
             Logger?.LogWarning(
                 Events.Node,
-                "The session of node {NodeName} was not resumed; {Count} guild connection(s) were invalidated. Reconnect the bot to the voice channels to resume playback.",
+                "The session of node {NodeName} was not resumed, {Count} guild connection(s) were invalidated. Reconnect the bot to the voice channels to resume playback.",
                 Name,
                 invalidated.Length
             );
@@ -967,7 +967,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
             return Task.CompletedTask;
 
         // No pending handshake and a complete update: Discord re-targeted the voice server of a
-        // live connection (channel move or voice server migration); forward the credentials.
+        // live connection (channel move or voice server migration), forward the credentials.
         if (
             !string.IsNullOrWhiteSpace(eventArgs.Endpoint)
             && GetConnection(eventArgs.Guild.Id) is { } connection

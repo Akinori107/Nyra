@@ -52,7 +52,7 @@ internal ref struct JavaBinaryReader
     }
 
     // Java's modified UTF-8: uint16 BE byte count, then that many bytes. Supplementary characters
-    // arrive as two 3-byte surrogate sequences; standard 4-byte UTF-8 is tolerated too, for
+    // arrive as two 3-byte surrogate sequences, standard 4-byte UTF-8 is tolerated too, for
     // robustness against non-conforming encoders.
     public string ReadModifiedUtf8()
     {

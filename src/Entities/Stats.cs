@@ -53,7 +53,7 @@ public sealed record Cpu
     [JsonPropertyName("cores")]
     public int Cores { get; init; }
 
-    /// <summary>System load. Lavalink normalizes to 0.0-1.0; NodeLink reports the raw OS load average, which can exceed 1.0.</summary>
+    /// <summary>System load. Lavalink normalizes to 0.0-1.0, NodeLink reports the raw OS load average, which can exceed 1.0.</summary>
     [JsonPropertyName("systemLoad")]
     public double SystemLoad { get; init; }
 
@@ -80,7 +80,7 @@ public sealed record FrameStats
     [JsonPropertyName("deficit")]
     public long Deficit { get; init; }
 
-    /// <summary>Frames the node expected to send in the interval; null when the server does not report it.</summary>
+    /// <summary>Frames the node expected to send in the interval, null when the server does not report it.</summary>
     [JsonPropertyName("expected")]
     public long? Expected { get; init; }
 }

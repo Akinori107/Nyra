@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Nyra.Entities;
 
-/// <summary>What a fade acts on; the server default is <see cref="Volume"/>.</summary>
+/// <summary>What a fade acts on, the server default is <see cref="Volume"/>.</summary>
 public enum FadeType
 {
     /// <summary>Fades the volume.</summary>
@@ -25,7 +25,7 @@ public enum FadeType
 /// <summary>One fade of a <see cref="FadingOptions"/> chain.</summary>
 public sealed record FadeSection
 {
-    /// <summary>Fade duration in milliseconds; 0 disables this fade.</summary>
+    /// <summary>Fade duration in milliseconds, 0 disables this fade.</summary>
     [JsonPropertyName("duration")]
     public int DurationMilliseconds { get; init; }
 
@@ -38,7 +38,7 @@ public sealed record FadeSection
 }
 
 /// <summary>
-/// Automatically lowers the music while someone is speaking; part of <see cref="FadingOptions"/>.
+/// Automatically lowers the music while someone is speaking, part of <see cref="FadingOptions"/>.
 /// NodeLink 3.9+.
 /// </summary>
 public sealed record DuckingOptions
@@ -46,11 +46,11 @@ public sealed record DuckingOptions
     [JsonPropertyName("enabled")]
     public bool? Enabled { get; init; }
 
-    /// <summary>How long the ducking takes, in milliseconds; the server default is 500.</summary>
+    /// <summary>How long the ducking takes, in milliseconds, the server default is 500.</summary>
     [JsonPropertyName("duration")]
     public int? DurationMilliseconds { get; init; }
 
-    /// <summary>Volume to duck to, 0-1; the server default is 0.3.</summary>
+    /// <summary>Volume to duck to, 0-1, the server default is 0.3.</summary>
     [JsonPropertyName("targetVolume")]
     public float? TargetVolume { get; init; }
 
@@ -86,7 +86,7 @@ public sealed record FadingOptions
     [JsonPropertyName("resume")]
     public FadeSection? Resume { get; init; }
 
-    /// <summary>Speaking-detection ducking; NodeLink 3.9+.</summary>
+    /// <summary>Speaking-detection ducking, NodeLink 3.9+.</summary>
     [JsonPropertyName("ducking")]
     public DuckingOptions? Ducking { get; init; }
 }

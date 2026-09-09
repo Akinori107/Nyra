@@ -72,7 +72,7 @@ internal sealed class SnowflakeConverter : JsonConverter<ulong>
         {
             case JsonTokenType.String:
             {
-                // Hot path of every guild id in every message; parse without allocating.
+                // Hot path of every guild id in every message, parse without allocating.
                 if (
                     !reader.HasValueSequence
                     && System.Buffers.Text.Utf8Parser.TryParse(

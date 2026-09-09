@@ -36,7 +36,7 @@ internal static class UrlStartPosition
         return null;
     }
 
-    /// <summary>Parses <c>90</c>, <c>45s</c>, <c>1m30s</c>, <c>1h2m3s</c> into milliseconds; zero or invalid → null.</summary>
+    /// <summary>Parses <c>90</c>, <c>45s</c>, <c>1m30s</c>, <c>1h2m3s</c> into milliseconds, zero or invalid → null.</summary>
     private static long? ParseValue(ReadOnlySpan<char> value)
     {
         var end = value.IndexOfAny('&', '#');
@@ -60,7 +60,7 @@ internal static class UrlStartPosition
                 'h' => 3600,
                 'm' => 60,
                 's' => 1,
-                // A bare number after a unit (1m30) isn't a real form; only allow it as the whole value.
+                // A bare number after a unit (1m30) isn't a real form, only allow it as the whole value.
                 '\0' when !hasUnit => 1,
                 _ => -1,
             };
