@@ -181,6 +181,12 @@ public sealed class GuildConnection
     /// <summary>A live stream announced new station metadata while playing.</summary>
     public event EventHandler<StreamMetadataUpdatedEventArgs>? StreamMetadataUpdated;
 
+    /// <summary>Raised when the node reports EternalBox context for the track that just started playing.</summary>
+    public event EventHandler<EternalBoxInfoUpdatedEventArgs>? EternalBoxInfoUpdated;
+
+    /// <summary>Raised when the EternalBox engine jumps to a different beat of the playing track.</summary>
+    public event EventHandler<EternalBoxJumpedEventArgs>? EternalBoxJumped;
+
     /// <summary>Raised when a handler of one of the other events of this connection threw.</summary>
     public event EventHandler<PlaybackErrorEventArgs>? PlaybackError;
 
@@ -971,6 +977,12 @@ public sealed class GuildConnection
 
     internal void HandleStreamMetadataUpdated(StreamMetadataUpdatedEventArgs eventArgs) =>
         StreamMetadataUpdated.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleEternalBoxInfoUpdated(EternalBoxInfoUpdatedEventArgs eventArgs) =>
+        EternalBoxInfoUpdated.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleEternalBoxJumped(EternalBoxJumpedEventArgs eventArgs) =>
+        EternalBoxJumped.Raise(this, eventArgs, OnHandlerError);
 
     private async Task DisconnectAfterVoiceClosedAsync()
     {

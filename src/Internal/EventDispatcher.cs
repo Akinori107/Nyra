@@ -37,6 +37,8 @@ internal sealed class NodeEventDispatcher
     private const int EventPlayerReconnecting = 19;
     private const int EventPlayerConnected = 20;
     private const int EventStreamMetadata = 21;
+    private const int EventEternalBoxInfo = 22;
+    private const int EventEternalBoxJump = 23;
 
     private readonly Node _node;
 
@@ -300,6 +302,22 @@ internal sealed class NodeEventDispatcher
                 break;
             }
 
+            case EventEternalBoxInfo:
+            {
+                var args = Deserialize<EternalBoxInfoUpdatedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleEternalBoxInfoUpdated(args);
+                break;
+            }
+
+            case EventEternalBoxJump:
+            {
+                var args = Deserialize<EternalBoxJumpedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleEternalBoxJumped(args);
+                break;
+            }
+
             default:
                 // NodeLink emits further event types outside player lifecycle and playback
                 // state; they are not part of the shared protocol and are ignored.
@@ -405,6 +423,12 @@ internal sealed class NodeEventDispatcher
 
         if (reader.ValueTextEquals("StreamMetadataEvent"u8))
             return EventStreamMetadata;
+
+        if (reader.ValueTextEquals("EternalBoxInfoEvent"u8))
+            return EventEternalBoxInfo;
+
+        if (reader.ValueTextEquals("EternalBoxJumpEvent"u8))
+            return EventEternalBoxJump;
 
         return 0;
     }
