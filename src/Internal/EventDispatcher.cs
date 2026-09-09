@@ -28,6 +28,14 @@ internal sealed class NodeEventDispatcher
     private const int EventSponsorBlockSegmentSkipped = 10;
     private const int EventMixStarted = 11;
     private const int EventMixEnded = 12;
+    private const int EventVolumeChanged = 13;
+    private const int EventFiltersChanged = 14;
+    private const int EventSeek = 15;
+    private const int EventPause = 16;
+    private const int EventPlayerCreated = 17;
+    private const int EventPlayerDestroyed = 18;
+    private const int EventPlayerReconnecting = 19;
+    private const int EventPlayerConnected = 20;
 
     private readonly Node _node;
 
@@ -210,9 +218,82 @@ internal sealed class NodeEventDispatcher
                 break;
             }
 
+            case EventVolumeChanged:
+            {
+                var args = Deserialize<VolumeChangedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleVolumeChanged(args);
+                break;
+            }
+
+            case EventFiltersChanged:
+            {
+                // The filters member needs the server-kind converter, so this one event
+                // deserializes with the per-kind options instead of the shared ones.
+                var args = Deserialize<FiltersChangedEventArgs>(
+                    ref payload,
+                    NyraJson.OptionsFor(_node.IsNodeLink)
+                );
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleFiltersChanged(args);
+                break;
+            }
+
+            case EventSeek:
+            {
+                var args = Deserialize<TrackSoughtEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandleTrackSought(args);
+                break;
+            }
+
+            case EventPause:
+            {
+                var args = Deserialize<PauseChangedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandlePauseChanged(args);
+                break;
+            }
+
+            case EventPlayerCreated:
+            {
+                // Player.Filters needs the server-kind converter, same as FiltersChangedEvent.
+                var args = Deserialize<PlayerCreatedEventArgs>(
+                    ref payload,
+                    NyraJson.OptionsFor(_node.IsNodeLink)
+                );
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandlePlayerCreated(args);
+                break;
+            }
+
+            case EventPlayerDestroyed:
+            {
+                var args = Deserialize<PlayerDestroyedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandlePlayerDestroyed(args);
+                break;
+            }
+
+            case EventPlayerReconnecting:
+            {
+                var args = Deserialize<PlayerReconnectingEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandlePlayerReconnecting(args);
+                break;
+            }
+
+            case EventPlayerConnected:
+            {
+                var args = Deserialize<PlayerConnectedEventArgs>(ref payload);
+                if (args is not null)
+                    _node.GetConnection(args.GuildId)?.HandlePlayerConnected(args);
+                break;
+            }
+
             default:
-                // NodeLink emits extra event types (player lifecycle, seek, volume and so on);
-                // they are not part of the shared protocol and are ignored.
+                // NodeLink emits further event types outside player lifecycle and playback
+                // state; they are not part of the shared protocol and are ignored.
                 if (_node.Logger?.IsEnabled(LogLevel.Debug) == true)
                     _node.Logger.LogDebug(
                         "Node {NodeName} sent an unknown event type '{EventType}'.",
@@ -289,6 +370,30 @@ internal sealed class NodeEventDispatcher
         if (reader.ValueTextEquals("MixEndedEvent"u8))
             return EventMixEnded;
 
+        if (reader.ValueTextEquals("VolumeChangedEvent"u8))
+            return EventVolumeChanged;
+
+        if (reader.ValueTextEquals("FiltersChangedEvent"u8))
+            return EventFiltersChanged;
+
+        if (reader.ValueTextEquals("SeekEvent"u8))
+            return EventSeek;
+
+        if (reader.ValueTextEquals("PauseEvent"u8))
+            return EventPause;
+
+        if (reader.ValueTextEquals("PlayerCreatedEvent"u8))
+            return EventPlayerCreated;
+
+        if (reader.ValueTextEquals("PlayerDestroyedEvent"u8))
+            return EventPlayerDestroyed;
+
+        if (reader.ValueTextEquals("PlayerReconnectingEvent"u8))
+            return EventPlayerReconnecting;
+
+        if (reader.ValueTextEquals("PlayerConnectedEvent"u8))
+            return EventPlayerConnected;
+
         return 0;
     }
 
@@ -331,4 +436,7 @@ internal sealed class NodeEventDispatcher
 
     private static T? Deserialize<T>(ref Utf8JsonReader reader) =>
         JsonSerializer.Deserialize<T>(ref reader, NyraJson.SerializerOptions);
+
+    private static T? Deserialize<T>(ref Utf8JsonReader reader, JsonSerializerOptions options) =>
+        JsonSerializer.Deserialize<T>(ref reader, options);
 }

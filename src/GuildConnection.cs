@@ -154,6 +154,30 @@ public sealed class GuildConnection
     /// <summary>Raised when a mix layer ended.</summary>
     public event EventHandler<MixEndedEventArgs>? MixEnded;
 
+    /// <summary>Raised when the player's volume changed.</summary>
+    public event EventHandler<VolumeChangedEventArgs>? VolumeChanged;
+
+    /// <summary>Raised when the server's applied filter chain changed.</summary>
+    public event EventHandler<FiltersChangedEventArgs>? FiltersChanged;
+
+    /// <summary>Raised when the playback position of the current track was sought.</summary>
+    public event EventHandler<TrackSoughtEventArgs>? TrackSought;
+
+    /// <summary>Raised on both pausing and resuming; <see cref="PauseChangedEventArgs.IsPaused"/> tells them apart.</summary>
+    public event EventHandler<PauseChangedEventArgs>? PauseChanged;
+
+    /// <summary>Raised when the server created the player for this guild.</summary>
+    public event EventHandler<PlayerCreatedEventArgs>? PlayerCreated;
+
+    /// <summary>Raised when the server destroyed the player for this guild.</summary>
+    public event EventHandler<PlayerDestroyedEventArgs>? PlayerDestroyed;
+
+    /// <summary>The voice connection dropped and is being re-established.</summary>
+    public event EventHandler<PlayerReconnectingEventArgs>? PlayerReconnecting;
+
+    /// <summary>The voice connection became established.</summary>
+    public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
+
     /// <summary>Raised when a handler of one of the other events of this connection threw.</summary>
     public event EventHandler<PlaybackErrorEventArgs>? PlaybackError;
 
@@ -845,6 +869,30 @@ public sealed class GuildConnection
 
     internal void HandleMixEnded(MixEndedEventArgs eventArgs) =>
         MixEnded.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleVolumeChanged(VolumeChangedEventArgs eventArgs) =>
+        VolumeChanged.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleFiltersChanged(FiltersChangedEventArgs eventArgs) =>
+        FiltersChanged.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandleTrackSought(TrackSoughtEventArgs eventArgs) =>
+        TrackSought.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandlePauseChanged(PauseChangedEventArgs eventArgs) =>
+        PauseChanged.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandlePlayerCreated(PlayerCreatedEventArgs eventArgs) =>
+        PlayerCreated.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandlePlayerDestroyed(PlayerDestroyedEventArgs eventArgs) =>
+        PlayerDestroyed.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandlePlayerReconnecting(PlayerReconnectingEventArgs eventArgs) =>
+        PlayerReconnecting.Raise(this, eventArgs, OnHandlerError);
+
+    internal void HandlePlayerConnected(PlayerConnectedEventArgs eventArgs) =>
+        PlayerConnected.Raise(this, eventArgs, OnHandlerError);
 
     private async Task DisconnectAfterVoiceClosedAsync()
     {
