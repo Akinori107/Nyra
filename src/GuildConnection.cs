@@ -449,6 +449,80 @@ public sealed class GuildConnection
     }
 
     /// <summary>
+    /// Configures the fades around the player lifecycle (track start/end, stop, seek, pause,
+    /// resume). Pass null to disable every fade.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink, or <paramref name="options"/> sets ducking and the node runs a version older than 3.9.</exception>
+    public async Task SetFadingAsync(
+        FadingOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // The nested ducking config landed in the same NodeLink release as the standalone
+        // ducking toggle, so it needs the same 3.9 floor.
+        if (options?.Ducking is not null)
+            NodeGuards.RequireNodeLink(_node, "ducking", new NodeVersion(3, 9, 0));
+        else
+            NodeGuards.RequireNodeLink(_node, "fading");
+        EnsureActive();
+
+        // The server rejects a literal null fading value as a malformed request, so disabling
+        // fades means sending an explicit empty configuration instead of null.
+        var player = await _node
+            .Rest.UpdatePlayerAsync(
+                GuildId,
+                new PlayerUpdatePayload { Fading = options ?? new FadingOptions() },
+                noReplace: false,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        CaptureState(player);
+    }
+
+    /// <summary>Turns loudness normalization (EBU R128-ish leveling) on or off.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public async Task SetLoudnessNormalizerAsync(
+        bool enabled,
+        CancellationToken cancellationToken = default
+    )
+    {
+        NodeGuards.RequireNodeLink(_node, "loudness normalization");
+        EnsureActive();
+
+        var player = await _node
+            .Rest.UpdatePlayerAsync(
+                GuildId,
+                new PlayerUpdatePayload { LoudnessNormalizer = enabled },
+                noReplace: false,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        CaptureState(player);
+    }
+
+    /// <summary>
+    /// Turns speaking-detection ducking on or off: the music dips while someone talks. The duck
+    /// depth and timing are set through <see cref="FadingOptions.Ducking"/> in
+    /// <see cref="SetFadingAsync"/> instead.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink, or runs a version older than 3.9.</exception>
+    public async Task SetDuckingAsync(bool enabled, CancellationToken cancellationToken = default)
+    {
+        NodeGuards.RequireNodeLink(_node, "ducking", new NodeVersion(3, 9, 0));
+        EnsureActive();
+
+        var player = await _node
+            .Rest.UpdatePlayerAsync(
+                GuildId,
+                new PlayerUpdatePayload { Ducking = enabled },
+                noReplace: false,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        CaptureState(player);
+    }
+
+    /// <summary>
     /// Subscribes to lyrics updates: <see cref="LyricsFound"/> delivers the full lyrics,
     /// <see cref="LyricsLine"/> the current line as playback advances.
     /// <paramref name="skipTrackSource"/> skips the track source's own lyrics.
@@ -612,7 +686,6 @@ public sealed class GuildConnection
                 Spatial = filter as SpatialFilter,
                 Compressor = filter as CompressorFilter,
                 Phonograph = filter as PhonographFilter,
-                Tape = filter as TapeFilter,
                 Tesseract = filter as TesseractFilter,
             }
         );
@@ -641,7 +714,6 @@ public sealed class GuildConnection
                 SpatialFilter spatial => DesiredFilters() with { Spatial = spatial },
                 CompressorFilter compressor => DesiredFilters() with { Compressor = compressor },
                 PhonographFilter phonograph => DesiredFilters() with { Phonograph = phonograph },
-                TapeFilter tape => DesiredFilters() with { Tape = tape },
                 TesseractFilter tesseract => DesiredFilters() with { Tesseract = tesseract },
                 _ => throw new ArgumentException(
                     $"The filter type '{filter.GetType().Name}' is not supported.",
@@ -1021,7 +1093,6 @@ public sealed class GuildConnection
             || filters.Spatial is not null
             || filters.Compressor is not null
             || filters.Phonograph is not null
-            || filters.Tape is not null
         )
             NodeGuards.RequireNodeLink(_node, "this audio filter");
     }
@@ -1100,7 +1171,6 @@ public sealed class GuildConnection
                 {
                     Phonograph = null,
                 },
-                _ when filterType == typeof(TapeFilter) => DesiredFilters() with { Tape = null },
                 _ when filterType == typeof(TesseractFilter) => DesiredFilters() with
                 {
                     Tesseract = null,

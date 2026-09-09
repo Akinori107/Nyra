@@ -312,26 +312,6 @@ internal sealed class FiltersConverter(bool isNodeLink) : JsonConverter<FilterCh
         else
             WriteNull(writer, "phonograph");
 
-        if (value.Tape is { } tape)
-        {
-            writer.WritePropertyName("tape");
-            writer.WriteStartObject();
-            WriteMember(writer, "duration", tape.DurationMilliseconds, 0.0f);
-            writer.WritePropertyName("type");
-            if (tape.Type is { } tapeType)
-                JsonSerializer.Serialize(writer, tapeType, options);
-            else
-                writer.WriteNullValue();
-            writer.WritePropertyName("curve");
-            if (tape.Curve is { } tapeCurve)
-                writer.WriteStringValue(tapeCurve);
-            else
-                writer.WriteNullValue();
-            writer.WriteEndObject();
-        }
-        else
-            WriteNull(writer, "tape");
-
         if (value.Tesseract is { } tesseract)
         {
             writer.WritePropertyName("tesseract");
@@ -400,7 +380,6 @@ internal sealed class FiltersConverter(bool isNodeLink) : JsonConverter<FilterCh
         SpatialFilter? spatial = null;
         CompressorFilter? compressor = null;
         PhonographFilter? phonograph = null;
-        TapeFilter? tape = null;
         TesseractFilter? tesseract = null;
         Dictionary<string, JsonElement>? pluginFilters = null;
 
@@ -489,10 +468,6 @@ internal sealed class FiltersConverter(bool isNodeLink) : JsonConverter<FilterCh
             {
                 phonograph = ReadFilter<PhonographFilter>(ref reader, options);
             }
-            else if (name.ValueTextEquals("tape"u8))
-            {
-                tape = ReadFilter<TapeFilter>(ref reader, options);
-            }
             else if (name.ValueTextEquals("tesseract"u8))
             {
                 tesseract = ReadFilter<TesseractFilter>(ref reader, options);
@@ -534,7 +509,6 @@ internal sealed class FiltersConverter(bool isNodeLink) : JsonConverter<FilterCh
             Spatial = spatial,
             Compressor = compressor,
             Phonograph = phonograph,
-            Tape = tape,
             Tesseract = tesseract,
             PluginFilters = pluginFilters,
         };

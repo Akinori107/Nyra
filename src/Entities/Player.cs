@@ -144,10 +144,6 @@ public sealed record FilterChain
     [JsonPropertyName("phonograph")]
     public PhonographFilter? Phonograph { get; init; }
 
-    /// <summary>Simulates a tape ramp. NodeLink only.</summary>
-    [JsonPropertyName("tape")]
-    public TapeFilter? Tape { get; init; }
-
     /// <summary>Rotates the audio through four dimensions. NodeLink 3.9+.</summary>
     [JsonPropertyName("tesseract")]
     public TesseractFilter? Tesseract { get; init; }
@@ -220,6 +216,21 @@ internal sealed record PlayerUpdatePayload
     [JsonPropertyName("filters")]
     public FilterChain? Filters { get; init; }
 
+    /// <summary>Replaces the whole fade configuration around the player lifecycle. NodeLink only.</summary>
+    [JsonPropertyName("fading")]
+    public FadingOptions? Fading { get; init; }
+
+    /// <summary>Turns loudness normalization on or off. NodeLink only.</summary>
+    [JsonPropertyName("loudnessNormalizer")]
+    public bool? LoudnessNormalizer { get; init; }
+
+    /// <summary>
+    /// Turns speaking-detection ducking on or off; the duck depth and timing are set through
+    /// <see cref="FadingOptions.Ducking"/> instead. NodeLink 3.9+.
+    /// </summary>
+    [JsonPropertyName("ducking")]
+    public bool? Ducking { get; init; }
+
     [JsonPropertyName("voice")]
     public VoiceState? Voice { get; init; }
 }
@@ -257,6 +268,14 @@ public sealed record Player
     /// <summary>Only the filters that were explicitly configured.</summary>
     [JsonPropertyName("filters")]
     public FilterChain? Filters { get; init; }
+
+    /// <summary>The player's fade configuration; NodeLink only, null on Lavalink.</summary>
+    [JsonPropertyName("fading")]
+    public FadingOptions? Fading { get; init; }
+
+    /// <summary>Whether loudness normalization is on; NodeLink only, null on Lavalink.</summary>
+    [JsonPropertyName("loudnessNormalizer")]
+    public bool? LoudnessNormalizer { get; init; }
 }
 
 /// <summary>Session resuming configuration; request body and response of a session update.</summary>
