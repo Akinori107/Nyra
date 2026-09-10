@@ -5,3 +5,6 @@
 # VScode / Rider
 .vscode/
 .idea/
+
+# Credentials
+.env

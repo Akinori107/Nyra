@@ -7,10 +7,28 @@ using Nyra;
 using Nyra.Examples;
 using Nyra.Exceptions;
 
-// The whole configuration of the example: a bot token and one audio node.
-// Lavalink and NodeLink need no declaration, the node detects which one it is talking to.
-var token = "your token here";
-var endpoint = new Endpoint("localhost", 2333, "youshallnotpass"); // NodeLink default port: 3000
+var envFile = ParseEnvFile(".env");
+
+var token = envFile.GetValueOrDefault("DISCORD_TOKEN");
+if (string.IsNullOrEmpty(token))
+    return Fail("token not configured");
+
+var nodeHost = envFile.GetValueOrDefault("NODE_HOST");
+if (string.IsNullOrEmpty(nodeHost))
+    return Fail("node host not configured");
+
+var nodePortValue = envFile.GetValueOrDefault("NODE_PORT");
+if (!int.TryParse(nodePortValue, out var nodePort))
+    return Fail("node port not configured");
+
+var nodePassword = envFile.GetValueOrDefault("NODE_PASSWORD");
+if (string.IsNullOrEmpty(nodePassword))
+    return Fail("node password not configured");
+
+var nodeSecure =
+    bool.TryParse(envFile.GetValueOrDefault("NODE_SECURE"), out var parsedSecure) && parsedSecure;
+
+var endpoint = new Endpoint(nodeHost, nodePort, nodePassword, nodeSecure);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArgs) =>
@@ -68,6 +86,33 @@ finally
 }
 
 return 0;
+
+static int Fail(string message)
+{
+    Console.Error.WriteLine(message);
+    return 1;
+}
+
+static Dictionary<string, string> ParseEnvFile(string path)
+{
+    var values = new Dictionary<string, string>();
+    if (!File.Exists(path))
+        return values;
+
+    foreach (var line in File.ReadAllLines(path))
+    {
+        if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#'))
+            continue;
+
+        var separatorIndex = line.IndexOf('=');
+        if (separatorIndex < 0)
+            continue;
+
+        values[line[..separatorIndex]] = line[(separatorIndex + 1)..];
+    }
+
+    return values;
+}
 
 // Known library errors carry messages meant for the user (wrong channel, node not ready,
 // unsupported feature), everything else stays generic while the details go to the logger.
