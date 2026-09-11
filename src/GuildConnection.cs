@@ -172,6 +172,9 @@ public sealed class GuildConnection
     /// <summary>Raised when the server destroyed the player for this guild.</summary>
     public event EventHandler<PlayerDestroyedEventArgs>? PlayerDestroyed;
 
+    /// <summary>Raised when the node's session could not be resumed, this guild's player is gone as a result.</summary>
+    public event EventHandler<GuildConnectionInvalidatedEventArgs>? GuildConnectionInvalidated;
+
     /// <summary>The voice connection dropped and is being re-established.</summary>
     public event EventHandler<PlayerReconnectingEventArgs>? PlayerReconnecting;
 
@@ -1001,6 +1004,11 @@ public sealed class GuildConnection
     {
         ClearState();
         _node.Connections.TryRemove(GuildId, out _);
+        GuildConnectionInvalidated.Raise(
+            this,
+            new GuildConnectionInvalidatedEventArgs(),
+            OnHandlerError
+        );
     }
 
     /// <summary>Discord removed the bot from the voice channel, the player is destroyed best-effort.</summary>

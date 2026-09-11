@@ -80,6 +80,16 @@ internal static partial class ConnectionFailure
                     endpointText
                 );
                 break;
+            case WebSocketException webSocketException
+                when TryGetHandshakeStatusCode(webSocketException, out var statusCode)
+                    && statusCode is 502 or 504 or (>= 520 and <= 526) or 529 or 530:
+                logger?.LogWarning(
+                    "Node {NodeName} ({Endpoint}) not reachable: reverse proxy in front of it returned {StatusCode}.",
+                    nodeName,
+                    endpointText,
+                    statusCode
+                );
+                break;
             // Reverse proxies commonly return this exact text when the port expects HTTPS but IsSecure is off.
             case RestException { StatusCode: 400, ResponseBody: var httpsBody }
                 when httpsBody?.Contains("sent to HTTPS port", StringComparison.OrdinalIgnoreCase)
