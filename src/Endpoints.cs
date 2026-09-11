@@ -40,6 +40,9 @@ internal static class Endpoints
     // Served by both servers.
     public const string Stats = "/v4/stats";
 
+    // NodeLink only.
+    public const string Connection = "/v4/connection";
+
     // {0} = session id, {1} = guild id.
     public const string Player = "/v4/sessions/{0}/players/{1}";
 

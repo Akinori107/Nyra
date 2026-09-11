@@ -39,6 +39,7 @@ internal sealed class NodeEventDispatcher
     private const int EventStreamMetadata = 21;
     private const int EventEternalBoxInfo = 22;
     private const int EventEternalBoxJump = 23;
+    private const int EventConnectionStatus = 24;
 
     private readonly Node _node;
 
@@ -318,6 +319,18 @@ internal sealed class NodeEventDispatcher
                 break;
             }
 
+            case EventConnectionStatus:
+            {
+                // Node-wide data disguised as a guild-scoped event: on NodeLink 3.9+, guildId
+                // identifies the first player of whichever session got the push, not a voice
+                // connection (3.8 omits the field entirely), so this is routed to the node
+                // instead of _node.GetConnection(guildId).
+                var status = Deserialize<ConnectionStatus>(ref payload);
+                if (status is not null)
+                    _node.HandleConnectionStatus(status);
+                break;
+            }
+
             default:
                 // NodeLink emits further event types outside player lifecycle and playback
                 // state, they are not part of the shared protocol and are ignored.
@@ -429,6 +442,9 @@ internal sealed class NodeEventDispatcher
 
         if (reader.ValueTextEquals("EternalBoxJumpEvent"u8))
             return EventEternalBoxJump;
+
+        if (reader.ValueTextEquals("ConnectionStatusEvent"u8))
+            return EventConnectionStatus;
 
         return 0;
     }

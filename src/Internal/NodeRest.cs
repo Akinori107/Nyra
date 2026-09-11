@@ -373,6 +373,25 @@ internal sealed class RestClient
             );
     }
 
+    // NodeLink only.
+    public async Task<ConnectionStatus> GetConnectionStatusAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        var json = await SendAsync(
+                HttpMethod.Get,
+                Endpoints.Connection,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        return Deserialize<ConnectionStatus>(json, Endpoints.Connection)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                Endpoints.Connection,
+                "The server returned an empty connection status report."
+            );
+    }
+
     public Task SubscribeLyricsAsync(
         ulong guildId,
         bool skipTrackSource,

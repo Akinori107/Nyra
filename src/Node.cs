@@ -100,6 +100,12 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <summary>The last statistics reported by the server, or null before the first <c>stats</c> operation.</summary>
     public Stats? Stats { get; internal set; }
 
+    /// <summary>
+    /// The node's last reported outbound connection status, or null before the first
+    /// <c>ConnectionStatusEvent</c>. NodeLink only.
+    /// </summary>
+    public ConnectionStatus? ConnectionStatus { get; internal set; }
+
     internal DiscordClient? Discord { get; private set; }
 
     internal RestClient Rest => _rest;
@@ -122,6 +128,14 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>Raised whenever the server reports its statistics, the latest report is also <see cref="Stats"/>.</summary>
     public event EventHandler<NodeStatsEventArgs>? StatsUpdated;
+
+    /// <summary>
+    /// Raised whenever the server pushes a <c>ConnectionStatusEvent</c>, the latest report is also
+    /// <see cref="ConnectionStatus"/>. NodeLink only. The event's <c>guildId</c> is node-wide data
+    /// disguised as a guild-scoped payload (it identifies the first player of whichever session
+    /// received the push), so it is intentionally not exposed here.
+    /// </summary>
+    public event EventHandler<NodeConnectionStatusEventArgs>? ConnectionStatusUpdated;
 
     /// <summary>
     /// Attaches the node to a Discord client, opens the websocket and waits for the server's
@@ -554,6 +568,22 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// Fetches the node's own outbound connection health over REST, the same report also arrives
+    /// over the websocket through <see cref="ConnectionStatusUpdated"/> and is kept in
+    /// <see cref="ConnectionStatus"/>. NodeLink only.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public async Task<ConnectionStatus> GetConnectionStatusAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        NodeGuards.RequireNodeLink(this, "connection status");
+
+        return await _rest.GetConnectionStatusAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Attaches the source link's offset to the loaded track(s): all of a search result,
     /// but only the selected entry of a playlist.
     /// </summary>
@@ -903,6 +933,16 @@ public sealed class Node : IAsyncDisposable, IDisposable
     {
         Stats = stats;
         StatsUpdated.Raise(this, new NodeStatsEventArgs(stats), OnEventError);
+    }
+
+    internal void HandleConnectionStatus(ConnectionStatus status)
+    {
+        ConnectionStatus = status;
+        ConnectionStatusUpdated.Raise(
+            this,
+            new NodeConnectionStatusEventArgs(status),
+            OnEventError
+        );
     }
 
     internal void HandleDisconnected(
