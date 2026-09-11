@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
-using DSharpPlus;
-using DSharpPlus.Entities;
-using DSharpPlus.EventArgs;
 using Microsoft.Extensions.Logging;
+using Nyra.Abstractions;
 using Nyra.Entities;
 using Nyra.EventArgs;
 using Nyra.Exceptions;
@@ -106,11 +104,20 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// </summary>
     public ConnectionStatus? ConnectionStatus { get; internal set; }
 
-    internal DiscordClient? Discord { get; private set; }
+    internal IDiscordBridge? Client { get; private set; }
+
+    /// <summary>The extension that added this node, used to keep one guild on one node.</summary>
+    internal NyraExtension? Extension { get; set; }
+
+    /// <summary>
+    /// The current user id, set when the node attaches to a client, the websocket User-Id header
+    /// needs it.
+    /// </summary>
+    internal ulong CurrentUserId { get; private set; }
 
     internal RestClient Rest => _rest;
 
-    internal ILogger? Logger => Discord?.Logger;
+    internal ILogger? Logger => Client?.Logger;
 
     internal ConcurrentDictionary<ulong, GuildConnection> Connections { get; } = new();
 
@@ -144,16 +151,11 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// already in flight. When the initial connect fails, the exception is rethrown and the node
     /// keeps retrying in the background with the configured backoff.
     /// </summary>
-    internal async Task ConnectAsync(DiscordClient client, CancellationToken cancellationToken)
+    internal async Task ConnectAsync(IDiscordBridge client, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(client);
 
-        if (client.CurrentUser is null)
-            throw new InvalidOperationException(
-                "The Discord client is not ready yet (no current user)."
-            );
-
-        if (Discord is not null && !ReferenceEquals(Discord, client))
+        if (Client is not null && !ReferenceEquals(Client, client))
             throw new InvalidOperationException(
                 $"The node '{Name}' is already attached to another Discord client."
             );
@@ -164,7 +166,14 @@ public sealed class Node : IAsyncDisposable, IDisposable
             if (IsReady)
                 return;
 
-            Discord = client;
+            // The User-Id websocket header needs the current user, so the gateway has to be
+            // ready before the connection can even start.
+            var clientInformation = await client
+                .WaitForReadyAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            Client = client;
+            CurrentUserId = clientInformation.CurrentUserId;
             _stopped = false;
 
             if (!_discordEventsWired)
@@ -622,33 +631,22 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>
     /// Connects the bot to the specified voice channel and creates a guild connection on this
-    /// node, forwarding the voice credentials to the server.
+    /// node, forwarding the voice credentials to the server. Validating that the channel is a
+    /// guild voice channel is up to the library adapters, the core only sees ids.
     /// </summary>
     public async Task<GuildConnection> ConnectAsync(
-        DiscordChannel channel,
+        ulong guildId,
+        ulong channelId,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(channel);
-
-        if (channel.Type is not (ChannelType.Voice or ChannelType.Stage))
-            throw new ArgumentException(
-                "The channel must be a voice or stage channel.",
-                nameof(channel)
-            );
-
-        if (channel.GuildId is null)
-            throw new ArgumentException("The channel does not belong to a guild.", nameof(channel));
-
-        if (Discord is null)
+        if (Client is null)
             throw new InvalidOperationException(
                 "The node is not attached to a Discord client yet, start it through the extension first."
             );
 
         if (!IsReady)
             throw new InvalidOperationException($"The node '{Name}' is not ready yet.");
-
-        var guildId = channel.GuildId.Value;
 
         // Serialize the connects of one guild, racing connects would both register and leak a player.
         var gate = AcquireGate(guildId);
@@ -657,17 +655,17 @@ public sealed class Node : IAsyncDisposable, IDisposable
         {
             if (Connections.TryGetValue(guildId, out var existing))
             {
-                if (existing.Channel?.Id == channel.Id)
+                if (existing.ChannelId == channelId)
                     return existing;
 
                 throw new InvalidOperationException(
-                    $"The bot is already connected to {existing.Channel} in this guild. Disconnect it before connecting to {channel}."
+                    $"The bot is already connected to channel {existing.ChannelId} in this guild. Disconnect it before connecting to channel {channelId}."
                 );
             }
 
             // One guild, one node: two nodes holding the same voice credentials fight over the
             // Discord voice connection.
-            if (Discord.GetNyra() is { } extension)
+            if (Extension is { } extension)
                 foreach (var other in extension.Nodes)
                 {
                     if (!ReferenceEquals(other, this) && other.GetConnection(guildId) is { })
@@ -676,17 +674,17 @@ public sealed class Node : IAsyncDisposable, IDisposable
                         );
                 }
 
-            var (stateUpdate, serverUpdate) = await _voiceHandshake
-                .WaitForUpdatesAsync(guildId, channel.Id, Discord, cancellationToken)
+            var (state, server) = await _voiceHandshake
+                .WaitForUpdatesAsync(guildId, channelId, Client, cancellationToken)
                 .ConfigureAwait(false);
 
             var connection = new GuildConnection(
                 this,
                 guildId,
-                channel,
-                stateUpdate.SessionId,
-                serverUpdate.Endpoint,
-                serverUpdate.VoiceToken
+                channelId,
+                state.SessionId!,
+                server.Endpoint,
+                server.Token
             );
 
             try
@@ -696,12 +694,12 @@ public sealed class Node : IAsyncDisposable, IDisposable
                         guildId,
                         new PlayerUpdatePayload
                         {
-                            Voice = new VoiceState
+                            Voice = new Entities.VoiceState
                             {
-                                Token = serverUpdate.VoiceToken,
-                                Endpoint = serverUpdate.Endpoint,
-                                SessionId = stateUpdate.SessionId,
-                                ChannelId = channel.Id,
+                                Token = server.Token,
+                                Endpoint = server.Endpoint,
+                                SessionId = state.SessionId,
+                                ChannelId = channelId,
                             },
                         },
                         noReplace: false,
@@ -713,7 +711,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
             {
                 // Do not leave the bot parked in the voice channel when the server rejects the
                 // player update.
-                await _voiceHandshake.LeaveChannelAsync(Discord, guildId).ConfigureAwait(false);
+                await _voiceHandshake.LeaveChannelAsync(Client, guildId).ConfigureAwait(false);
                 throw;
             }
 
@@ -970,53 +968,44 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     internal Task SendVoiceLeaveAsync(ulong guildId) =>
-        _voiceHandshake.LeaveChannelAsync(Discord!, guildId);
+        _voiceHandshake.LeaveChannelAsync(Client!, guildId);
 
     internal void OnEventError(Exception exception) =>
         Logger?.LogError(exception, "An event handler of node {NodeName} threw.", Name);
 
-    private Task OnDiscordVoiceStateUpdated(
-        DiscordClient sender,
-        VoiceStateUpdateEventArgs eventArgs
-    )
+    private void OnDiscordVoiceStateUpdated(object? sender, VoiceStateUpdatedEventArgs eventArgs)
     {
         // Track our own voice state: Discord moving or removing the bot changes or kills the
         // guild connection without any REST call of ours.
-        if (
-            eventArgs.User?.Id == Discord!.CurrentUser.Id
-            && GetConnection(eventArgs.Guild.Id) is { } connection
-        )
+        if (GetConnection(eventArgs.GuildId) is { } connection)
         {
-            var channel = eventArgs.After?.Channel;
-            if (channel is null)
+            var channelId = eventArgs.VoiceState.ChannelId;
+            if (channelId is null)
                 _ = connection.HandleVoiceDisconnectedAsync();
-            else if (channel.Id != connection.Channel?.Id)
-                connection.HandleVoiceMoved(channel, eventArgs.SessionId);
+            else if (channelId != connection.ChannelId)
+                connection.HandleVoiceMoved(channelId.Value, eventArgs.VoiceState.SessionId);
         }
 
-        _voiceHandshake.HandleVoiceStateUpdate(Discord!, eventArgs);
-        return Task.CompletedTask;
+        _voiceHandshake.HandleVoiceStateUpdate(eventArgs);
     }
 
-    private Task OnDiscordVoiceServerUpdated(
-        DiscordClient sender,
-        VoiceServerUpdateEventArgs eventArgs
-    )
+    private void OnDiscordVoiceServerUpdated(object? sender, VoiceServerUpdatedEventArgs eventArgs)
     {
         if (_voiceHandshake.HandleVoiceServerUpdate(eventArgs))
-            return Task.CompletedTask;
+            return;
 
         // No pending handshake and a complete update: Discord re-targeted the voice server of a
         // live connection (channel move or voice server migration), forward the credentials.
         if (
-            !string.IsNullOrWhiteSpace(eventArgs.Endpoint)
-            && GetConnection(eventArgs.Guild.Id) is { } connection
+            !string.IsNullOrWhiteSpace(eventArgs.VoiceServer.Endpoint)
+            && GetConnection(eventArgs.GuildId) is { } connection
         )
         {
-            _ = connection.HandleVoiceServerUpdatedAsync(eventArgs.VoiceToken, eventArgs.Endpoint);
+            _ = connection.HandleVoiceServerUpdatedAsync(
+                eventArgs.VoiceServer.Token,
+                eventArgs.VoiceServer.Endpoint
+            );
         }
-
-        return Task.CompletedTask;
     }
 
     private void UnwireDiscordEvents()
@@ -1024,9 +1013,9 @@ public sealed class Node : IAsyncDisposable, IDisposable
         if (!_discordEventsWired)
             return;
 
-        var discord = Discord!;
-        discord.VoiceStateUpdated -= OnDiscordVoiceStateUpdated;
-        discord.VoiceServerUpdated -= OnDiscordVoiceServerUpdated;
+        var client = Client!;
+        client.VoiceStateUpdated -= OnDiscordVoiceStateUpdated;
+        client.VoiceServerUpdated -= OnDiscordVoiceServerUpdated;
         _discordEventsWired = false;
     }
 }

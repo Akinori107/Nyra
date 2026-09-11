@@ -15,4 +15,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet pack src/Nyra.csproj --configuration Release -o ./nupkg
+      - run: dotnet pack src/Clients/DSharpPlus/Nyra.DSharpPlus.csproj --configuration Release -o ./nupkg
+      - run: dotnet pack src/Clients/DiscordNet/Nyra.DiscordNet.csproj --configuration Release -o ./nupkg
+      - run: dotnet pack src/Clients/NetCord/Nyra.NetCord.csproj --configuration Release -o ./nupkg
       - run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_APIKEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

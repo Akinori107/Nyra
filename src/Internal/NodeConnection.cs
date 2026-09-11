@@ -397,12 +397,10 @@ internal sealed class NodeConnection : IDisposable
 
     private Dictionary<string, string> BuildHeaders()
     {
-        var discord = _node.Discord!;
-
         var headers = new Dictionary<string, string>
         {
             ["Authorization"] = _node.Endpoint.Password,
-            ["User-Id"] = discord.CurrentUser.Id.ToString(CultureInfo.InvariantCulture),
+            ["User-Id"] = _node.CurrentUserId.ToString(CultureInfo.InvariantCulture),
             ["Client-Name"] = ClientInfo.UserAgent,
             // NodeLink logs this to identify the client.
             ["User-Agent"] = ClientInfo.UserAgent,

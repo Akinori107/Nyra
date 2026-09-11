@@ -10,8 +10,8 @@
     <Version>0.1.0</Version>
     <PackageId>Nyra</PackageId>
     <Authors>Akinori107</Authors>
-    <Description>A Lavalink v4+ and NodeLink v3+ client for DSharpPlus.</Description>
-    <PackageTags>discord;lavalink;nodelink;audio;music;dsharpplus</PackageTags>
+    <Description>A Lavalink v4+ and NodeLink v3+ client, bring the adapter for your Discord library.</Description>
+    <PackageTags>discord;lavalink;nodelink;audio;music</PackageTags>
     <PackageLicenseExpression>BlueOak-1.0.0</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/Akinori107/Nyra</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Akinori107/Nyra</RepositoryUrl>
@@ -22,10 +22,12 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- The library adapters live in Clients/ with projects of their own, keep them out of the core. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);Clients\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="DSharpPlus" Version="4.5.3" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
     <PackageReference
       Include="Microsoft.SourceLink.GitHub"
       Version="10.0.400"

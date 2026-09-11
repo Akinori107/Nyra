@@ -1,12 +1,14 @@
-using DSharpPlus;
+using System.Runtime.CompilerServices;
+using global::DSharpPlus;
 using Microsoft.Extensions.Logging;
 
-namespace Nyra;
+namespace Nyra.DSharpPlus;
 
-/// <summary>Entry points for enabling and accessing the Nyra extension on Discord clients.</summary>
+/// <summary>Entry points for enabling and accessing Nyra on DSharpPlus clients.</summary>
 public static class DiscordClientExtensions
 {
     private static readonly Lock UseNyraGate = new();
+    private static readonly ConditionalWeakTable<DiscordClient, NyraExtension> Extensions = new();
 
     /// <summary>Enables Nyra on the client.</summary>
     public static NyraExtension UseNyra(this DiscordClient client)
@@ -15,7 +17,7 @@ public static class DiscordClientExtensions
 
         lock (UseNyraGate)
         {
-            if (client.GetExtension<NyraExtension>() is { } existing)
+            if (Extensions.TryGetValue(client, out var existing))
                 return existing;
 
             // Without the guilds intent the voice channel is never cached, turning a move into a spurious disconnect.
@@ -30,8 +32,8 @@ public static class DiscordClientExtensions
                 );
             }
 
-            var extension = new NyraExtension();
-            client.AddExtension(extension);
+            var extension = new NyraExtension(new DSharpPlusBridge(client));
+            Extensions.Add(client, extension);
             return extension;
         }
     }
@@ -40,7 +42,7 @@ public static class DiscordClientExtensions
     public static NyraExtension? GetNyra(this DiscordClient client)
     {
         ArgumentNullException.ThrowIfNull(client);
-        return client.GetExtension<NyraExtension>();
+        return Extensions.TryGetValue(client, out var extension) ? extension : null;
     }
 
     /// <summary>Enables Nyra on every initialized shard.</summary>
@@ -71,7 +73,7 @@ public static class DiscordClientExtensions
         var extensions = new Dictionary<int, NyraExtension>();
         foreach (var shard in client.ShardClients.Values)
         {
-            if (shard.GetExtension<NyraExtension>() is { } extension)
+            if (shard.GetNyra() is { } extension)
                 extensions[shard.ShardId] = extension;
         }
 

@@ -4,6 +4,7 @@ using DSharpPlus.SlashCommands;
 using DSharpPlus.SlashCommands.EventArgs;
 using Microsoft.Extensions.Logging;
 using Nyra;
+using Nyra.DSharpPlus;
 using Nyra.Examples;
 using Nyra.Exceptions;
 

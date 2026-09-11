@@ -1,5 +1,4 @@
 using System.Text.Json;
-using DSharpPlus.Entities;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
 using Nyra.EventArgs;
@@ -30,7 +29,7 @@ public sealed class GuildConnection
     internal GuildConnection(
         Node node,
         ulong guildId,
-        DiscordChannel channel,
+        ulong channelId,
         string sessionId,
         string voiceEndpoint,
         string voiceToken
@@ -38,7 +37,7 @@ public sealed class GuildConnection
     {
         _node = node;
         GuildId = guildId;
-        Channel = channel;
+        ChannelId = channelId;
         VoiceSessionId = sessionId;
         VoiceEndpoint = voiceEndpoint;
         VoiceToken = voiceToken;
@@ -47,10 +46,8 @@ public sealed class GuildConnection
     /// <summary>The guild this connection plays in.</summary>
     public ulong GuildId { get; }
 
-    /// <summary>The voice channel the bot is connected to, or null after the connection was disconnected.</summary>
-    public DiscordChannel? Channel { get; internal set; }
-
-    public DiscordGuild? Guild => Channel?.Guild;
+    /// <summary>The voice channel id the bot is connected to, or null after the connection was disconnected.</summary>
+    public ulong? ChannelId { get; internal set; }
 
     /// <summary>Discord voice session id captured at join, updated when Discord rotates it on a channel move.</summary>
     public string VoiceSessionId { get; internal set; }
@@ -62,7 +59,7 @@ public sealed class GuildConnection
     public string VoiceToken { get; }
 
     /// <summary>Whether the bot is in a Discord voice channel on this connection, not the node websocket (see <see cref="Node.IsConnected"/>).</summary>
-    public bool IsConnected => Channel is not null;
+    public bool IsConnected => ChannelId is not null;
 
     /// <summary>The node this connection plays through.</summary>
     public Node Node => _node;
@@ -1021,9 +1018,9 @@ public sealed class GuildConnection
     }
 
     /// <summary>Discord moved the bot to another voice channel of the guild.</summary>
-    internal void HandleVoiceMoved(DiscordChannel channel, string? sessionId)
+    internal void HandleVoiceMoved(ulong channelId, string? sessionId)
     {
-        Channel = channel;
+        ChannelId = channelId;
         if (!string.IsNullOrEmpty(sessionId))
             VoiceSessionId = sessionId;
     }
@@ -1032,7 +1029,7 @@ public sealed class GuildConnection
     internal async Task HandleVoiceServerUpdatedAsync(string token, string endpoint)
     {
         // No channel means no complete voice state to forward, the connection is dying anyway.
-        if (Channel is null)
+        if (ChannelId is not { } channelId)
             return;
 
         try
@@ -1047,7 +1044,7 @@ public sealed class GuildConnection
                             Token = token,
                             Endpoint = endpoint,
                             SessionId = VoiceSessionId,
-                            ChannelId = Channel.Id,
+                            ChannelId = channelId,
                         },
                     },
                     noReplace: false,
@@ -1307,7 +1304,7 @@ public sealed class GuildConnection
 
     private void ClearState()
     {
-        Channel = null;
+        ChannelId = null;
         CurrentTrack = null;
         IsPaused = false;
         _positionAdvancing = false;

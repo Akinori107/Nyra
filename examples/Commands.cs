@@ -1,5 +1,6 @@
 using DSharpPlus.Entities;
 using DSharpPlus.SlashCommands;
+using Nyra.DSharpPlus;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
 
@@ -33,11 +34,10 @@ public sealed class MusicCommands : ApplicationCommandModule
             return;
         }
 
-        await EditResponseAsync(
-                context,
-                $"Joined {connection.Channel?.Mention ?? "the voice channel"}."
-            )
-            .ConfigureAwait(false);
+        var mention = connection.ChannelId is { } channelId
+            ? $"<#{channelId}>"
+            : "the voice channel";
+        await EditResponseAsync(context, $"Joined {mention}.").ConfigureAwait(false);
     }
 
     [SlashCommand("leave", "Leaves the voice channel")]

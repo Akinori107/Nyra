@@ -1,12 +1,11 @@
-using DSharpPlus;
-using DSharpPlus.EventArgs;
+using Nyra.Abstractions;
 using Nyra.EventArgs;
 using Nyra.Internal;
 
 namespace Nyra;
 
-/// <summary>The DSharpPlus extension that owns the audio nodes of a client.</summary>
-public sealed class NyraExtension : BaseExtension
+/// <summary>The extension that owns the audio nodes of a Discord client.</summary>
+public sealed class NyraExtension : IAsyncDisposable, IDisposable
 {
     private readonly Lock _lock = new();
     private readonly List<Node> _nodes = [];
@@ -23,6 +22,9 @@ public sealed class NyraExtension : BaseExtension
     /// <summary>Forwarded from every node on internal errors, with the node as sender.</summary>
     public event EventHandler<NodeErrorEventArgs>? NodeError;
 
+    /// <summary>The Discord client bridge the nodes attach to.</summary>
+    public IDiscordBridge Client { get; }
+
     /// <summary>Snapshot of the nodes added to this client.</summary>
     public IReadOnlyList<Node> Nodes
     {
@@ -33,8 +35,8 @@ public sealed class NyraExtension : BaseExtension
         }
     }
 
-    /// <inheritdoc />
-    protected override void Setup(DiscordClient client)
+    /// <summary>Creates an extension bound to a Discord client bridge.</summary>
+    public NyraExtension(IDiscordBridge client)
     {
         ArgumentNullException.ThrowIfNull(client);
         Client = client;
@@ -73,6 +75,8 @@ public sealed class NyraExtension : BaseExtension
             _nodes.Add(node);
         }
 
+        node.Extension = this;
+
         node.Connected += OnNodeConnected;
         node.Ready += OnNodeReady;
         node.Disconnected += OnNodeDisconnected;
@@ -98,33 +102,9 @@ public sealed class NyraExtension : BaseExtension
     /// <summary>Connects every added node, a node that fails to connect is logged and skipped.</summary>
     public async Task ConnectAllNodesAsync(CancellationToken cancellationToken = default)
     {
-        if (Client is null)
-            throw new InvalidOperationException("The extension is not set up on a client yet.");
-
         // Connecting requires the current user (the User-Id websocket header). When called
         // before the gateway is ready, wait for it instead of permanently skipping every node.
-        if (Client.CurrentUser is null)
-        {
-            var ready = new TaskCompletionSource(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            Task OnClientReady(DiscordClient sender, ReadyEventArgs eventArgs)
-            {
-                ready.TrySetResult();
-                return Task.CompletedTask;
-            }
-
-            Client.Ready += OnClientReady;
-            try
-            {
-                if (Client.CurrentUser is null)
-                    await ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                Client.Ready -= OnClientReady;
-            }
-        }
+        await Client.WaitForReadyAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var node in Nodes)
         {
@@ -198,7 +178,7 @@ public sealed class NyraExtension : BaseExtension
     }
 
     /// <inheritdoc />
-    public override void Dispose()
+    public void Dispose()
     {
         Node[] nodes;
         lock (_lock)

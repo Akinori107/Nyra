@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
-using DSharpPlus;
-using DSharpPlus.EventArgs;
-using DSharpPlus.Net.Abstractions;
+using Nyra.Abstractions;
 using Nyra.Exceptions;
 
 namespace Nyra.Internal;
@@ -21,42 +19,33 @@ internal sealed class VoiceHandshakeCoordinator
         _timeout = timeout;
     }
 
-    public void HandleVoiceStateUpdate(DiscordClient client, VoiceStateUpdateEventArgs eventArgs)
+    public void HandleVoiceStateUpdate(VoiceStateUpdatedEventArgs eventArgs)
     {
-        if (eventArgs.Guild is null || eventArgs.User?.Id != client.CurrentUser.Id)
-            return;
-
-        if (_pending.TryGetValue(eventArgs.Guild.Id, out var pending))
-            pending.State.TrySetResult(eventArgs);
+        if (_pending.TryGetValue(eventArgs.GuildId, out var pending))
+            pending.State.TrySetResult(eventArgs.VoiceState);
     }
 
     /// <summary>Feeds a voice server update to a pending handshake, false when none was waiting for it.</summary>
-    public bool HandleVoiceServerUpdate(VoiceServerUpdateEventArgs eventArgs)
+    public bool HandleVoiceServerUpdate(VoiceServerUpdatedEventArgs eventArgs)
     {
-        if (eventArgs.Guild is null)
-            return false;
-
         // Discord sometimes sends a partial voice server update with an empty endpoint, both
         // audio servers reject it (400), so wait for the complete update instead of failing.
-        if (string.IsNullOrWhiteSpace(eventArgs.Endpoint))
+        if (string.IsNullOrWhiteSpace(eventArgs.VoiceServer.Endpoint))
             return false;
 
-        if (_pending.TryGetValue(eventArgs.Guild.Id, out var pending))
+        if (_pending.TryGetValue(eventArgs.GuildId, out var pending))
         {
-            pending.Server.TrySetResult(eventArgs);
+            pending.Server.TrySetResult(eventArgs.VoiceServer);
             return true;
         }
 
         return false;
     }
 
-    public async Task<(
-        VoiceStateUpdateEventArgs State,
-        VoiceServerUpdateEventArgs Server
-    )> WaitForUpdatesAsync(
+    public async Task<(VoiceState State, VoiceServer Server)> WaitForUpdatesAsync(
         ulong guildId,
         ulong channelId,
-        DiscordClient discord,
+        IDiscordBridge client,
         CancellationToken cancellationToken
     )
     {
@@ -68,7 +57,7 @@ internal sealed class VoiceHandshakeCoordinator
 
         try
         {
-            await SendVoiceStateUpdateAsync(discord, guildId, channelId).ConfigureAwait(false);
+            await client.SendVoiceUpdateAsync(guildId, channelId).ConfigureAwait(false);
 
             var stateTask = pending.State.Task;
             var serverTask = pending.Server.Task;
@@ -105,7 +94,7 @@ internal sealed class VoiceHandshakeCoordinator
             // The join already went to Discord, leave or the bot parks in the channel with no player.
             try
             {
-                await SendVoiceStateUpdateAsync(discord, guildId, null).ConfigureAwait(false);
+                await client.SendVoiceUpdateAsync(guildId, null).ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -120,36 +109,15 @@ internal sealed class VoiceHandshakeCoordinator
         }
     }
 
-    public Task LeaveChannelAsync(DiscordClient discord, ulong guildId) =>
-        SendVoiceStateUpdateAsync(discord, guildId, null);
-
-    private static Task SendVoiceStateUpdateAsync(
-        DiscordClient discord,
-        ulong guildId,
-        ulong? channelId
-    )
-    {
-        var payload = new Dictionary<string, object?>
-        {
-            ["guild_id"] = guildId.ToString(),
-            ["channel_id"] = channelId?.ToString(),
-            ["self_mute"] = false,
-            ["self_deaf"] = false,
-        };
-
-        // The only public DSharpPlus API that can send the voice state update (op 4), obsolete
-        // only because it bypasses validation that no specialized voice method offers anyway.
-#pragma warning disable CS0618
-        return discord.SendPayloadAsync(GatewayOpCode.VoiceStateUpdate, payload);
-#pragma warning restore CS0618
-    }
+    public Task LeaveChannelAsync(IDiscordBridge client, ulong guildId) =>
+        client.SendVoiceUpdateAsync(guildId, null);
 
     private sealed class PendingHandshake
     {
-        public TaskCompletionSource<VoiceStateUpdateEventArgs> State { get; } =
+        public TaskCompletionSource<VoiceState> State { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public TaskCompletionSource<VoiceServerUpdateEventArgs> Server { get; } =
+        public TaskCompletionSource<VoiceServer> Server { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }
