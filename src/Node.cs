@@ -593,6 +593,52 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// Fetches the status of the server's IP route planner: the strategy, the IP block it draws
+    /// from and the addresses it currently treats as failing. Served by both servers.
+    /// </summary>
+    /// <exception cref="RestException">The server has no route planner configured.</exception>
+    /// <exception cref="NotSupportedException">The node is NodeLink and runs a version older than 3.9.</exception>
+    public async Task<RoutePlannerStatus> GetRoutePlannerStatusAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        // A filename-registration bug on NodeLink 3.8.0 puts these routes behind a single wrong
+        // static path, so every call 404s regardless of your routePlanner config. Fixed in 3.9.0.
+        NodeGuards.RequireMinimumIfNodeLink(this, new NodeVersion(3, 9, 0), "route planner");
+
+        return await _rest.GetRoutePlannerStatusAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Removes one address from the server's list of failing addresses.</summary>
+    /// <exception cref="RestException">The server has no route planner configured, or rejected the address.</exception>
+    /// <exception cref="NotSupportedException">The node is NodeLink and runs a version older than 3.9.</exception>
+    public async Task FreeRoutePlannerAddressAsync(
+        string address,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(address);
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        // Same NodeLink 3.8.0 routing bug as GetRoutePlannerStatusAsync.
+        NodeGuards.RequireMinimumIfNodeLink(this, new NodeVersion(3, 9, 0), "route planner");
+
+        await _rest.FreeRoutePlannerAddressAsync(address, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Clears the server's list of failing addresses.</summary>
+    /// <exception cref="RestException">The server has no route planner configured.</exception>
+    /// <exception cref="NotSupportedException">The node is NodeLink and runs a version older than 3.9.</exception>
+    public async Task FreeRoutePlannerAddressesAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        // Same NodeLink 3.8.0 routing bug as GetRoutePlannerStatusAsync.
+        NodeGuards.RequireMinimumIfNodeLink(this, new NodeVersion(3, 9, 0), "route planner");
+
+        await _rest.FreeRoutePlannerAddressesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Attaches the source link's offset to the loaded track(s): all of a search result,
     /// but only the selected entry of a playlist.
     /// </summary>

@@ -43,6 +43,15 @@ internal static class Endpoints
     // NodeLink only.
     public const string Connection = "/v4/connection";
 
+    // Served by both servers.
+    public const string RoutePlannerStatus = "/v4/routeplanner/status";
+
+    // Served by both servers.
+    public const string RoutePlannerFreeAddress = "/v4/routeplanner/free/address";
+
+    // Served by both servers.
+    public const string RoutePlannerFreeAll = "/v4/routeplanner/free/all";
+
     // {0} = session id, {1} = guild id.
     public const string Player = "/v4/sessions/{0}/players/{1}";
 

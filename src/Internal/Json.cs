@@ -130,6 +130,38 @@ internal sealed class NullableSnowflakeConverter : JsonConverter<ulong?>
 }
 
 /// <summary>
+/// Reads a value as a string whether the server sent it as a JSON string or a JSON number.
+/// Unlike <see cref="SnowflakeConverter"/> this isn't registered on the shared options: it only
+/// applies where a <see cref="JsonConverterAttribute"/> targets it directly on the property, since
+/// every other string in the protocol really is always a string.
+/// </summary>
+internal sealed class StringOrNumberConverter : JsonConverter<string?>
+{
+    public override string? Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    ) =>
+        reader.TokenType switch
+        {
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.Number => reader.GetInt64().ToString(CultureInfo.InvariantCulture),
+            JsonTokenType.Null => null,
+            _ => throw new JsonException(
+                $"Cannot read string-or-number value from token type '{reader.TokenType}'."
+            ),
+        };
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+            writer.WriteNullValue();
+        else
+            writer.WriteStringValue(value);
+    }
+}
+
+/// <summary>
 /// Converts protocol enums through their <see cref="JsonPropertyNameAttribute"/> wire names,
 /// unlike <see cref="JsonStringEnumConverter"/>, so members like <c>loadFailed</c> keep
 /// idiomatic C# names. Unknown wire values fall back to the <c>Unknown</c> member when the

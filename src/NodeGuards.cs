@@ -31,6 +31,23 @@ internal static class NodeGuards
             );
     }
 
+    /// <summary>
+    /// Throws when the node is NodeLink and runs a version older than <paramref name="minimum"/>,
+    /// a no-op for Lavalink. Unlike <see cref="RequireNodeLink"/>, this is for a feature both
+    /// server kinds support where NodeLink alone lags behind on a specific version.
+    /// </summary>
+    internal static void RequireMinimumIfNodeLink(
+        Node node,
+        NodeVersion minimum,
+        string? feature = null
+    )
+    {
+        if (node.IsNodeLink && node.Version is { } version && version < minimum)
+            throw new NotSupportedException(
+                $"{feature ?? "This operation"} requires NodeLink {minimum} or newer, the node '{node.Name}' runs {version}."
+            );
+    }
+
     /// <summary>Throws when the node is neither NodeLink nor Lavalink with the given plugin loaded.</summary>
     internal static void RequireNodeLinkOrPlugin(
         Node node,

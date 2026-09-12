@@ -392,6 +392,54 @@ internal sealed class RestClient
             );
     }
 
+    // Lavalink answers 204 with no body when no route planner is configured. NodeLink always
+    // answers with a status object.
+    public async Task<RoutePlannerStatus> GetRoutePlannerStatusAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        var json = await SendAsync(
+                HttpMethod.Get,
+                Endpoints.RoutePlannerStatus,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (json.Length == 0)
+            throw new RestException(
+                (int)HttpStatusCode.OK,
+                Endpoints.RoutePlannerStatus,
+                "The server has no route planner configured."
+            );
+
+        return Deserialize<RoutePlannerStatus>(json, Endpoints.RoutePlannerStatus)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                Endpoints.RoutePlannerStatus,
+                "The server returned an empty route planner status."
+            );
+    }
+
+    public Task FreeRoutePlannerAddressAsync(string address, CancellationToken cancellationToken)
+    {
+        var body = JsonSerializer.SerializeToUtf8Bytes(
+            new RoutePlannerFreeAddress(address),
+            Options
+        );
+        return SendAsync(
+            HttpMethod.Post,
+            Endpoints.RoutePlannerFreeAddress,
+            body,
+            cancellationToken
+        );
+    }
+
+    public Task FreeRoutePlannerAddressesAsync(CancellationToken cancellationToken) =>
+        SendAsync(
+            HttpMethod.Post,
+            Endpoints.RoutePlannerFreeAll,
+            cancellationToken: cancellationToken
+        );
+
     public Task SubscribeLyricsAsync(
         ulong guildId,
         bool skipTrackSource,
