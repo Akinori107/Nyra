@@ -303,6 +303,30 @@ internal sealed class RestClient
         return Deserialize<List<Chapter>>(json, path) ?? [];
     }
 
+    public async Task<MeaningResult> LoadMeaningAsync(
+        string encodedTrack,
+        string? language,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = string.Concat(
+            Endpoints.Meaning,
+            "?encodedTrack=",
+            Uri.EscapeDataString(encodedTrack)
+        );
+        if (!string.IsNullOrWhiteSpace(language))
+            path = string.Concat(path, "&lang=", Uri.EscapeDataString(language));
+
+        var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<MeaningResult>(json, path)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                path,
+                "The server returned an empty meaning result."
+            );
+    }
+
     public async Task<Track> DecodeTrackAsync(
         string encodedTrack,
         CancellationToken cancellationToken

@@ -43,6 +43,9 @@ internal static class Endpoints
     // NodeLink only.
     public const string Connection = "/v4/connection";
 
+    // NodeLink only.
+    public const string Meaning = "/v4/meaning";
+
     // Served by both servers.
     public const string RoutePlannerStatus = "/v4/routeplanner/status";
 

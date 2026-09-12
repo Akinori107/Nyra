@@ -462,6 +462,23 @@ public sealed class Node : IAsyncDisposable, IDisposable
             .ConfigureAwait(false);
     }
 
+    /// <summary>Loads the meaning of a track: song lore, translations and cross-references, as its providers resolve them.</summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public async Task<MeaningResult> LoadMeaningAsync(
+        Track track,
+        string? language = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(track);
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        NodeGuards.RequireNodeLink(this, "track meanings");
+
+        return await _rest
+            .LoadMeaningAsync(track.Encoded, language, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Decodes a base64 track through the server, returning it with server-side metadata. For
     /// decoding tracks this library understands, <see cref="Track.Decode"/> works without a
