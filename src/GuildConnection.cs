@@ -529,6 +529,57 @@ public sealed class GuildConnection
     }
 
     /// <summary>
+    /// Configures the crossfade between consecutive tracks. Pass null to turn it off.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink, or runs a version older than 3.9.</exception>
+    public async Task SetCrossfadeAsync(
+        CrossfadeOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        NodeGuards.RequireNodeLink(_node, "crossfade", new NodeVersion(3, 9, 0));
+        EnsureActive();
+
+        // The server rejects a literal null crossfade value as a malformed request, so turning
+        // the crossfade off means sending an explicit empty configuration instead of null.
+        var player = await _node
+            .Rest.UpdatePlayerAsync(
+                GuildId,
+                new PlayerUpdatePayload { Crossfade = options ?? new CrossfadeOptions() },
+                noReplace: false,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        CaptureState(player);
+    }
+
+    /// <summary>
+    /// Preloads the next track so the server transitions into it when the current one ends,
+    /// gapless or crossfaded. Pass null to clear the preload. The track must have been loaded
+    /// from the same node.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
+    public async Task SetNextTrackAsync(
+        Track? nextTrack,
+        CancellationToken cancellationToken = default
+    )
+    {
+        NodeGuards.RequireNodeLink(_node, "next track preloading");
+        EnsureActive();
+
+        var payload = nextTrack is null
+            ? new NextTrackUpdate()
+            : new NextTrackUpdate
+            {
+                NextTrack = new PlayerUpdateTrack { Encoded = nextTrack.Encoded },
+            };
+        var player = await _node
+            .Rest.UpdatePlayerNextTrackAsync(GuildId, payload, cancellationToken)
+            .ConfigureAwait(false);
+        CaptureState(player);
+    }
+
+    /// <summary>
     /// Subscribes to lyrics updates: <see cref="LyricsFound"/> delivers the full lyrics,
     /// <see cref="LyricsLine"/> the current line as playback advances.
     /// <paramref name="skipTrackSource"/> skips the track source's own lyrics.

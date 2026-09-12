@@ -231,6 +231,10 @@ internal sealed record PlayerUpdatePayload
     [JsonPropertyName("ducking")]
     public bool? Ducking { get; init; }
 
+    /// <summary>Replaces the whole crossfade configuration between consecutive tracks. NodeLink 3.9+.</summary>
+    [JsonPropertyName("crossfade")]
+    public CrossfadeOptions? Crossfade { get; init; }
+
     [JsonPropertyName("voice")]
     public VoiceState? Voice { get; init; }
 }
@@ -241,6 +245,14 @@ internal sealed record EndTimeUpdate
     // Null must reach the wire: it is how the end time is cleared.
     [JsonPropertyName("endTime"), JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public long? EndTime { get; init; }
+}
+
+/// <summary>Next-track-only update body, a null member clears the preloaded track. NodeLink only.</summary>
+internal sealed record NextTrackUpdate
+{
+    // Null must reach the wire: it is how the preload is cleared.
+    [JsonPropertyName("nextTrack"), JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public PlayerUpdateTrack? NextTrack { get; init; }
 }
 
 /// <summary>A player as returned by the audio node.</summary>
@@ -276,6 +288,10 @@ public sealed record Player
     /// <summary>Whether loudness normalization is on, NodeLink only, null on Lavalink.</summary>
     [JsonPropertyName("loudnessNormalizer")]
     public bool? LoudnessNormalizer { get; init; }
+
+    /// <summary>The player's crossfade configuration, NodeLink 3.9+, null on Lavalink and older NodeLink.</summary>
+    [JsonPropertyName("crossfade")]
+    public CrossfadeOptions? Crossfade { get; init; }
 }
 
 /// <summary>Session resuming configuration, request body and response of a session update.</summary>

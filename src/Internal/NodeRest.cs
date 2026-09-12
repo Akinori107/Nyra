@@ -206,6 +206,25 @@ internal sealed class RestClient
             );
     }
 
+    /// <summary>Next-track-only player patch, a separate method because the payload shape differs from <see cref="PlayerUpdatePayload"/>.</summary>
+    public async Task<Player> UpdatePlayerNextTrackAsync(
+        ulong guildId,
+        NextTrackUpdate payload,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = BuildPlayerPath(guildId);
+        var body = JsonSerializer.SerializeToUtf8Bytes(payload, Options);
+        var json = await SendAsync(HttpMethod.Patch, path, body, cancellationToken)
+            .ConfigureAwait(false);
+        return Deserialize<Player>(json, path)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                path,
+                "The server returned an empty player response."
+            );
+    }
+
     public Task DestroyPlayerAsync(ulong guildId, CancellationToken cancellationToken) =>
         SendAsync(
             HttpMethod.Delete,
