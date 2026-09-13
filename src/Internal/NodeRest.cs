@@ -59,6 +59,24 @@ internal sealed class RestClient
         return ParseServerInfo(json);
     }
 
+    // Full info payload for consumers, the kind detection above reads the same endpoint
+    // through a reduced shape.
+    public async Task<NodeInfo> GetNodeInfoAsync(CancellationToken cancellationToken)
+    {
+        var json = await SendAsync(
+                HttpMethod.Get,
+                Endpoints.Info,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        return Deserialize<NodeInfo>(json, Endpoints.Info)
+            ?? throw new RestException(
+                (int)HttpStatusCode.OK,
+                Endpoints.Info,
+                "The server returned an empty info response."
+            );
+    }
+
     // NodeLink sets "isNodelink": true, both servers report "version" -> "semver".
     // Lavalink additionally reports "plugins": [{ "name": ... }] for loaded plugins.
     private static ServerInfo ParseServerInfo(byte[] json)

@@ -582,6 +582,18 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// Fetches the node's descriptive information over REST: version, build time, git revision,
+    /// runtime and the sources, filters and plugins it has enabled. Served by both servers, with
+    /// server-specific members null on the other kind.
+    /// </summary>
+    public async Task<NodeInfo> GetNodeInfoAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+
+        return await _rest.GetNodeInfoAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Fetches the node's statistics over REST: CPU, memory, uptime, per-frame loss counts.
     /// The server also pushes periodic reports over the websocket, delivered through
     /// <see cref="StatsUpdated"/> and kept in <see cref="Stats"/>.

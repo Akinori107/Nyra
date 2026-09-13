@@ -34,15 +34,9 @@ public sealed record PlayerState
 
     [JsonIgnore]
     public DateTimeOffset Time =>
-        TimeMilliseconds is >= MinUnixMilliseconds and <= MaxUnixMilliseconds
+        TimeMilliseconds is >= UnixTime.MinMilliseconds and <= UnixTime.MaxMilliseconds
             ? DateTimeOffset.FromUnixTimeMilliseconds(TimeMilliseconds)
             : DateTimeOffset.MinValue;
-
-    /// <summary>Unix epoch milliseconds of <see cref="DateTimeOffset.MinValue"/>.</summary>
-    private const long MinUnixMilliseconds = -62_135_596_800_000;
-
-    /// <summary>Unix epoch milliseconds of <see cref="DateTimeOffset.MaxValue"/>.</summary>
-    private const long MaxUnixMilliseconds = 253_402_300_799_999;
 
     /// <summary>Playback position in milliseconds, 0 when nothing is playing.</summary>
     [JsonPropertyName("position")]
