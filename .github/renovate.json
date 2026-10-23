@@ -1,0 +1,40 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":configMigration",
+    ":automergeAll",
+    ":disableDependencyDashboard",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":semanticCommitScopeDisabled"
+  ],
+  "ignorePresets": [":ignoreModulesAndTests"],
+  "baseBranchPatterns": ["dev"],
+  "automergeStrategy": "squash",
+  "packageRules": [
+    {
+      "description": "DSharpPlus and SlashCommands must stay on the same version",
+      "matchPackageNames": ["DSharpPlus", "DSharpPlus.SlashCommands"],
+      "groupName": "DSharpPlus"
+    },
+    {
+      "description": "Self explanatory",
+      "matchFileNames": ["src/Clients/DSharpPlus/Nightly/**"],
+      "matchPackageNames": ["DSharpPlus*"],
+      "groupName": "DSharpPlus Nightly",
+      "ignoreUnstable": false
+    },
+    {
+      "description": "NetCord only provides pre-release versions so far",
+      "matchPackageNames": ["NetCord"],
+      "ignoreUnstable": false
+    },
+    {
+      "description": "StyleCop.Analyzers has had no stable release in years, only betas",
+      "matchPackageNames": ["StyleCop.Analyzers"],
+      "ignoreUnstable": false
+    }
+  ]
+}
