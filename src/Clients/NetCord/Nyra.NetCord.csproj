@@ -14,6 +14,6 @@
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="NetCord" Version="1.0.0-beta.1" />
+    <PackageReference Include="NetCord" Version="1.0.0-beta.28" />
   </ItemGroup>
 </Project>
