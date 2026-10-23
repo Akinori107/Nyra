@@ -6,12 +6,7 @@ using Nyra.Entities.Filters;
 
 namespace Nyra.Examples;
 
-/// <summary>
-/// Slash-command audio module: join/leave voice, play links or search terms, control playback
-/// and apply filters. Slow operations defer the interaction first, well within Discord's
-/// three-second response deadline.
-/// </summary>
-public sealed class MusicCommands : ApplicationCommandModule
+internal sealed class MusicCommands : ApplicationCommandModule
 {
     [SlashCommand("ping", "Replies with pong")]
     public async Task PingAsync(InteractionContext context) =>
@@ -20,7 +15,6 @@ public sealed class MusicCommands : ApplicationCommandModule
     [SlashCommand("join", "Joins the voice channel you are in")]
     public async Task JoinAsync(InteractionContext context)
     {
-        // The voice handshake can take seconds, acknowledge within the deadline first.
         await context.DeferAsync().ConfigureAwait(false);
 
         var connection = await ConnectToCallerAsync(context).ConfigureAwait(false);
@@ -61,7 +55,6 @@ public sealed class MusicCommands : ApplicationCommandModule
         [Option("query", "A direct link, or a term to search for")] string query
     )
     {
-        // Track loading round-trips the audio node, acknowledge within the deadline first.
         await context.DeferAsync().ConfigureAwait(false);
 
         var connection = await ConnectToCallerAsync(context).ConfigureAwait(false);
@@ -74,8 +67,6 @@ public sealed class MusicCommands : ApplicationCommandModule
                 .ConfigureAwait(false);
             return;
         }
-
-        // SearchType.Auto (the default): links are sent as-is, plain terms search YouTube.
         var result = await connection.Node.LoadTracksAsync(query).ConfigureAwait(false);
 
         if (result is LoadResult.LoadFailed { Error.Message: { } failure })
@@ -88,10 +79,9 @@ public sealed class MusicCommands : ApplicationCommandModule
         var track = result switch
         {
             LoadResult.TrackLoaded loaded => loaded.Track,
-            LoadResult.SearchLoaded search => search.Tracks.FirstOrDefault(),
-            LoadResult.PlaylistLoaded playlist => playlist.PlaylistInfo.SelectedTrack >= 0
-                ? playlist.Tracks[playlist.PlaylistInfo.SelectedTrack]
-                : playlist.Tracks.FirstOrDefault(),
+            LoadResult.SearchLoaded { Tracks: [var first, ..] } => first,
+            LoadResult.PlaylistLoaded { Tracks: [var first, ..] } playlist =>
+                playlist.Tracks.ElementAtOrDefault(playlist.PlaylistInfo.SelectedTrack) ?? first,
             _ => null,
         };
 
@@ -232,7 +222,7 @@ public sealed class MusicCommands : ApplicationCommandModule
         }
 
         await connection
-            .AddFilterAsync(new TimescaleFilter(Speed: 1.5, Pitch: 1.5))
+            .Filters.AddAsync(new TimescaleFilter(Speed: 1.5, Pitch: 1.5))
             .ConfigureAwait(false);
         await context.CreateResponseAsync("Nightcore mode on.").ConfigureAwait(false);
     }
@@ -249,7 +239,7 @@ public sealed class MusicCommands : ApplicationCommandModule
         }
 
         await connection
-            .AddFilterAsync(new TimescaleFilter(Speed: 0.75, Pitch: 0.75))
+            .Filters.AddAsync(new TimescaleFilter(Speed: 0.75, Pitch: 0.75))
             .ConfigureAwait(false);
         await context.CreateResponseAsync("Daycore mode on.").ConfigureAwait(false);
     }
@@ -265,7 +255,7 @@ public sealed class MusicCommands : ApplicationCommandModule
             return;
         }
 
-        await connection.ClearFiltersAsync().ConfigureAwait(false);
+        await connection.Filters.ClearAsync().ConfigureAwait(false);
         await context.CreateResponseAsync("Filters cleared.").ConfigureAwait(false);
     }
 
@@ -281,9 +271,6 @@ public sealed class MusicCommands : ApplicationCommandModule
         var nyra = context.Client.GetNyra();
         if (nyra is null)
             return null;
-
-        // A guild plays on one node, reuse its existing connection instead of joining a
-        // second time through the least-loaded node.
         if (context.Guild is not null && nyra.GetConnection(context.Guild.Id) is { } existing)
             return existing;
 

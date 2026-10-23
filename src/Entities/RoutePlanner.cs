@@ -2,115 +2,196 @@ using System.Text.Json.Serialization;
 
 namespace Nyra.Entities;
 
-/// <summary>The rotation strategy the server's IP block planner uses.</summary>
+/// <summary>The route planner implementation the server reports.</summary>
+/// <remarks>NodeLink always says balancing, whatever its configured strategy is.</remarks>
 public enum RoutePlannerClass
 {
-    [JsonPropertyName("RotatingIpRoutePlanner")]
+    /// <summary>A planner class the library does not know, reported by a newer server.</summary>
+    /// <remarks>
+    /// It is the default, a response without a class reads as Unknown instead of fabricating a known one.
+    /// </remarks>
+    Unknown,
+
+    /// <summary>One address of the block per retry.</summary>
     Rotating,
 
-    [JsonPropertyName("NanoIpRoutePlanner")]
+    /// <summary>A random address of the block per request.</summary>
     Nano,
 
-    [JsonPropertyName("RotatingNanoIpRoutePlanner")]
+    /// <summary>
+    /// A random address of the current /64 sub-block per request, the sub-block rotates per failure.
+    /// </summary>
     RotatingNano,
 
-    [JsonPropertyName("BalancingIpRoutePlanner")]
+    /// <summary>A random address of the block per request.</summary>
     Balancing,
-
-    /// <summary>A strategy a newer server reported.</summary>
-    [JsonPropertyName("unknown")]
-    Unknown,
 }
 
 /// <summary>Address family of the planner's IP block.</summary>
 public enum IpBlockType
 {
-    [JsonPropertyName("Inet4Address")]
+    /// <summary>An address family the library does not know, reported by a newer server.</summary>
+    /// <remarks>
+    /// It is the default, a response without a type reads as Unknown instead of fabricating a known one.
+    /// </remarks>
+    Unknown,
+
+    /// <summary>The block holds IPv4 addresses.</summary>
     Inet4,
 
-    [JsonPropertyName("Inet6Address")]
+    /// <summary>The block holds IPv6 addresses.</summary>
     Inet6,
-
-    /// <summary>A family a newer server reported.</summary>
-    [JsonPropertyName("unknown")]
-    Unknown,
 }
 
 /// <summary>An address the planner currently treats as failing.</summary>
 public sealed record FailingAddress
 {
-    [JsonPropertyName("failingAddress")]
-    public string Address { get; init; } = string.Empty;
+    /// <summary>The failing address, in the server's own format.</summary>
+    /// <remarks>
+    /// Lavalink reports it via <c>InetAddress.toString()</c> with a leading slash ("/1.0.0.0"), NodeLink sends
+    /// plain addresses. The value is not normalized, it round-trips exactly as the server reported it.
+    /// <para>Absorbs a null the server sends, readers see the empty string.</para>
+    /// </remarks>
+    [JsonPropertyName("failingAddress"), JsonInclude]
+    public string Address
+    {
+        get;
+        internal set => field = value ?? string.Empty;
+    } = string.Empty;
 
     /// <summary>Unix timestamp, in milliseconds, since when the address fails.</summary>
-    [JsonPropertyName("failingTimestamp")]
-    public long FailingTimestampMilliseconds { get; init; }
+    [JsonPropertyName("failingTimestamp"), JsonInclude]
+    public long FailingTimestampMilliseconds { get; internal set; }
+
+    /// <summary>Since when the address fails, as a date.</summary>
+    /// <remarks>
+    /// <see cref="DateTimeOffset.MinValue"/> when the epoch value is out of the convertible range, which the
+    /// exact floor of the range reads as too, so the sentinel cannot be told apart from it.
+    /// </remarks>
+    [JsonIgnore]
+    public DateTimeOffset FailingTimestamp =>
+        UnixTime.ToDateTimeOffset(FailingTimestampMilliseconds);
 
     /// <summary>The same timestamp as the server formatted it.</summary>
-    [JsonPropertyName("failingTime")]
-    public string FailingTime { get; init; } = string.Empty;
+    [JsonPropertyName("failingTime"), JsonInclude]
+    public string FailingTime
+    {
+        get;
+        internal set => field = value ?? string.Empty;
+    } = string.Empty;
 }
 
 /// <summary>The IP pool the planner draws addresses from.</summary>
 public sealed record RoutePlannerIpBlock
 {
-    [JsonPropertyName("type")]
-    public IpBlockType Type { get; init; }
+    /// <summary>The kind of addresses the block holds.</summary>
+    [JsonPropertyName("type"), JsonInclude]
+    public IpBlockType Type { get; internal set; }
 
-    /// <summary>
-    /// Address count of the block. Lavalink formats it as a string (<c>ipBlock.size.toString()</c>),
-    /// NodeLink sends the raw <c>.length</c> as a JSON number, so this reads either.
-    /// </summary>
-    [JsonPropertyName("size")]
+    /// <summary>Block size as reported, the servers measure different things.</summary>
+    /// <remarks>
+    /// Lavalink formats the address count as a string, NodeLink sends the configured block count as a number,
+    /// either parses, but the values are not comparable across servers.
+    /// </remarks>
+    [JsonPropertyName("size"), JsonInclude]
     [JsonConverter(typeof(StringOrNumberConverter))]
-    public string? Size { get; init; }
+    public string? Size { get; internal set; }
 }
 
-/// <summary>Planner details. The strategy-specific members are present only for their strategies.</summary>
+/// <summary>Planner details.</summary>
+/// <remarks>The strategy-specific members are present only for their strategies.</remarks>
 public sealed record RoutePlannerDetails
 {
-    [JsonPropertyName("ipBlock")]
-    public RoutePlannerIpBlock? IpBlock { get; init; }
+    /// <summary>The block the planner draws from, null when the server sent none.</summary>
+    [JsonPropertyName("ipBlock"), JsonInclude]
+    public RoutePlannerIpBlock? IpBlock { get; internal set; }
 
-    [JsonPropertyName("failingAddresses")]
-    public IReadOnlyList<FailingAddress>? FailingAddresses { get; init; }
+    /// <summary>The addresses that failed, with the failure and when.</summary>
+    [JsonPropertyName("failingAddresses"), JsonInclude]
+    public IReadOnlyList<FailingAddress>? FailingAddresses
+    {
+        get;
+        internal set => field = value is null ? null : [.. value.Where(v => v is not null)];
+    }
 
-    /// <summary>NodeLink reports the configured strategy (RotateOnBan, RoundRobin, LoadBalance) under this member, Lavalink does not send it.</summary>
-    [JsonPropertyName("strategy")]
-    public string? Strategy { get; init; }
+    /// <summary>Indicates whether both details describe the same planner state.</summary>
+    /// <param name="other">The details to compare with.</param>
+    /// <returns>Whether the members match, the addresses compared by content.</returns>
+    public bool Equals(RoutePlannerDetails? other) =>
+        other is not null
+        && IpBlock == other.IpBlock
+        && Strategy == other.Strategy
+        && RotateIndex == other.RotateIndex
+        && IpIndex == other.IpIndex
+        && CurrentAddress == other.CurrentAddress
+        && CurrentAddressIndex == other.CurrentAddressIndex
+        && BlockIndex == other.BlockIndex
+        && ContentEquality.ListEquals(FailingAddresses, other.FailingAddresses);
 
-    /// <summary>Rotating planner: how far the block was rotated through.</summary>
-    [JsonPropertyName("rotateIndex")]
-    public string? RotateIndex { get; init; }
+    /// <summary>Returns a hash of the scalar members, the addresses stay out of it.</summary>
+    /// <returns>The hash code.</returns>
+    public override int GetHashCode() =>
+        HashCode.Combine(
+            IpBlock,
+            Strategy,
+            RotateIndex,
+            IpIndex,
+            CurrentAddress,
+            CurrentAddressIndex,
+            BlockIndex
+        );
 
-    /// <summary>Rotating planner: current index inside the block.</summary>
-    [JsonPropertyName("ipIndex")]
-    public string? IpIndex { get; init; }
+    /// <summary>
+    /// NodeLink reports the configured strategy (RotateOnBan, RoundRobin, LoadBalance) under this member,
+    /// Lavalink does not send it.
+    /// </summary>
+    [JsonPropertyName("strategy"), JsonInclude]
+    public string? Strategy { get; internal set; }
 
-    /// <summary>Rotating planner: the address currently in use.</summary>
-    [JsonPropertyName("currentAddress")]
-    public string? CurrentAddress { get; init; }
+    /// <summary>Rotating planner, the number of rotations performed so far.</summary>
+    [JsonPropertyName("rotateIndex"), JsonInclude]
+    public string? RotateIndex { get; internal set; }
 
-    /// <summary>Nano and rotating-nano planners: current position in the address space.</summary>
-    [JsonPropertyName("currentAddressIndex")]
-    public string? CurrentAddressIndex { get; init; }
+    /// <summary>Rotating planner, current index inside the block.</summary>
+    [JsonPropertyName("ipIndex"), JsonInclude]
+    public string? IpIndex { get; internal set; }
 
-    /// <summary>Rotating-nano planner: current block index.</summary>
-    [JsonPropertyName("blockIndex")]
-    public string? BlockIndex { get; init; }
+    /// <summary>
+    /// Rotating planner, the address currently in use, via <c>InetAddress.toString()</c> with a leading slash.
+    /// </summary>
+    /// <remarks>NodeLink always sends null here.</remarks>
+    [JsonPropertyName("currentAddress"), JsonInclude]
+    public string? CurrentAddress { get; internal set; }
+
+    /// <summary>
+    /// Nano planner, the offset the current address was drawn at, rotating-nano, the same offset within the
+    /// current /64 block.
+    /// </summary>
+    /// <remarks>Both are nano-time based, these planners switch address on every clock update.</remarks>
+    [JsonPropertyName("currentAddressIndex"), JsonInclude]
+    public string? CurrentAddressIndex { get; internal set; }
+
+    /// <summary>Rotating-nano planner, current block index.</summary>
+    [JsonPropertyName("blockIndex"), JsonInclude]
+    public string? BlockIndex { get; internal set; }
 }
 
-/// <summary>Status of the server's IP route planner. Served by both servers. The request fails when none is configured.</summary>
+/// <summary>Status of the server's IP route planner, served by both.</summary>
+/// <remarks>
+/// Lavalink answers 204 with no body when none is configured, which this client surfaces as an exception,
+/// NodeLink always answers a status object, an unconfigured planner showing up as a size of 0.
+/// </remarks>
 public sealed record RoutePlannerStatus
 {
-    [JsonPropertyName("class")]
-    public RoutePlannerClass Class { get; init; }
+    /// <summary>The planner the server uses.</summary>
+    [JsonPropertyName("class"), JsonInclude]
+    public RoutePlannerClass Class { get; internal set; }
 
-    [JsonPropertyName("details")]
-    public RoutePlannerDetails? Details { get; init; }
+    /// <summary>The details of the planner, null when the server sent none.</summary>
+    [JsonPropertyName("details"), JsonInclude]
+    public RoutePlannerDetails? Details { get; internal set; }
 }
 
-/// <summary>Body of the free-address request.</summary>
 internal sealed record RoutePlannerFreeAddress(
     [property: JsonPropertyName("address")] string Address
 );

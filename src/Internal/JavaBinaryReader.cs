@@ -1,11 +1,8 @@
 using System.Buffers.Binary;
+using System.Text;
 
 namespace Nyra.Internal;
 
-/// <summary>
-/// Big-endian reader for the Java data format of encoded tracks: big-endian primitives,
-/// <c>boolean</c> as one byte and strings in Java's modified UTF-8 (<c>DataOutputStream.writeUTF</c>).
-/// </summary>
 internal ref struct JavaBinaryReader
 {
     private readonly ReadOnlySpan<byte> _buffer;
@@ -51,9 +48,6 @@ internal ref struct JavaBinaryReader
         return value;
     }
 
-    // Java's modified UTF-8: uint16 BE byte count, then that many bytes. Supplementary characters
-    // arrive as two 3-byte surrogate sequences, standard 4-byte UTF-8 is tolerated too, for
-    // robustness against non-conforming encoders.
     public string ReadModifiedUtf8()
     {
         var byteCount = ReadUInt16();
@@ -67,6 +61,9 @@ internal ref struct JavaBinaryReader
 
     private static string DecodeModifiedUtf8(ReadOnlySpan<byte> bytes)
     {
+        if (bytes.IndexOfAnyExceptInRange((byte)0, (byte)0x7F) < 0)
+            return Encoding.ASCII.GetString(bytes);
+
         var chars = new char[bytes.Length];
         var length = 0;
 
@@ -80,9 +77,15 @@ internal ref struct JavaBinaryReader
             }
 
             if (i + 1 >= bytes.Length)
+            {
+                if (first is >= 0xC0 and <= 0xF7)
+                    throw new InvalidDataException(
+                        $"Truncated multi-byte sequence in modified UTF-8 string at byte {i} of {bytes.Length}."
+                    );
                 throw new InvalidDataException(
-                    "Truncated multi-byte sequence in modified UTF-8 string."
+                    $"Invalid byte 0x{first:X2} in modified UTF-8 string at byte {i}."
                 );
+            }
 
             var second = bytes[++i];
             if ((first & 0b1110_0000) == 0b1100_0000 && (second & 0b1100_0000) == 0b1000_0000)
@@ -91,10 +94,27 @@ internal ref struct JavaBinaryReader
                 continue;
             }
 
-            if (i + 1 >= bytes.Length)
+            if ((second & 0b1100_0000) != 0b1000_0000)
+            {
+                if (first is >= 0b1100_0000 and <= 0b1111_0111)
+                    throw new InvalidDataException(
+                        $"Invalid byte 0x{second:X2} in modified UTF-8 string at byte {i}."
+                    );
                 throw new InvalidDataException(
-                    "Truncated multi-byte sequence in modified UTF-8 string."
+                    $"Invalid byte 0x{first:X2} in modified UTF-8 string at byte {i - 1}."
                 );
+            }
+
+            if (i + 1 >= bytes.Length)
+            {
+                if (first is >= 0xE0 and <= 0xF7)
+                    throw new InvalidDataException(
+                        $"Truncated multi-byte sequence in modified UTF-8 string at byte {i} of {bytes.Length}."
+                    );
+                throw new InvalidDataException(
+                    $"Invalid byte 0x{first:X2} in modified UTF-8 string at byte {i - 1}."
+                );
+            }
 
             var third = bytes[++i];
             if (
@@ -111,23 +131,21 @@ internal ref struct JavaBinaryReader
                 continue;
             }
 
-            // Not valid modified UTF-8. Standard UTF-8 4-byte sequences are tolerated by
-            // decoding them into a surrogate pair, matching what non-Java encoders emit.
             if (
                 (first & 0b1111_1000) == 0b1111_0000
                 && (second & 0b1100_0000) == 0b1000_0000
                 && (third & 0b1100_0000) == 0b1000_0000
             )
             {
-                if (i + 2 >= bytes.Length)
+                if (i + 1 >= bytes.Length)
                     throw new InvalidDataException(
-                        "Truncated multi-byte sequence in modified UTF-8 string."
+                        $"Truncated multi-byte sequence in modified UTF-8 string at byte {i} of {bytes.Length}."
                     );
 
                 var fourth = bytes[++i];
                 if ((fourth & 0b1100_0000) != 0b1000_0000)
                     throw new InvalidDataException(
-                        "Invalid byte sequence in modified UTF-8 string."
+                        $"Invalid byte 0x{fourth:X2} in modified UTF-8 string at byte {i}."
                     );
 
                 var codePoint =
@@ -136,7 +154,9 @@ internal ref struct JavaBinaryReader
                     | ((third & 0b0011_1111) << 6)
                     | (fourth & 0b0011_1111);
                 if (codePoint is < 0x10000 or > 0x10FFFF)
-                    throw new InvalidDataException("Invalid code point in modified UTF-8 string.");
+                    throw new InvalidDataException(
+                        $"Invalid code point U+{codePoint:X} in modified UTF-8 string."
+                    );
 
                 codePoint -= 0x10000;
                 chars[length++] = (char)(0xD800 | (codePoint >> 10));
@@ -144,7 +164,9 @@ internal ref struct JavaBinaryReader
                 continue;
             }
 
-            throw new InvalidDataException("Invalid byte sequence in modified UTF-8 string.");
+            throw new InvalidDataException(
+                $"Invalid byte 0x{first:X2} in modified UTF-8 string at byte {i}."
+            );
         }
 
         return new string(chars, 0, length);
@@ -153,6 +175,8 @@ internal ref struct JavaBinaryReader
     private readonly void EnsureAvailable(int count)
     {
         if (_position + count > _buffer.Length)
-            throw new EndOfStreamException("The encoded track ended unexpectedly.");
+            throw new EndOfStreamException(
+                $"Unexpected end of the binary data at byte {_position} of {_buffer.Length}, {count} bytes were required."
+            );
     }
 }

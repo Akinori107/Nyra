@@ -2,25 +2,31 @@ using System.Net.WebSockets;
 
 namespace Nyra.WebSocket;
 
-/// <summary>
-/// Thin wrapper around <see cref="ClientWebSocket"/>: a dedicated receive loop that hands out
-/// raw UTF-8 payloads (no intermediate string allocations) and graceful closure. Single-use: one <see cref="ConnectAsync"/> per instance, reconnection policy lives in the node
-/// connection, which creates a fresh client per attempt.
-/// </summary>
 internal sealed class WebSocketClient : IDisposable
 {
-    // Protocol messages are small, buffering a larger one unboundedly would exhaust memory.
     private const int MaxMessageBytes = 1024 * 1024;
+
+    internal const string HandshakeStatusCodeKey = "Nyra.HandshakeStatusCode";
 
     private readonly Lock _lock = new();
     private ClientWebSocket? _websocket;
     private CancellationTokenSource? _receiveCts;
     private Task? _receiveTask;
 
-    /// <summary>Raw UTF-8 bytes of a text message. The memory is only valid until the handler returns.</summary>
+    private readonly AsyncLocal<bool> _onReceiveLoop = new();
+
     public event Action<ReadOnlyMemory<byte>>? TextMessageReceived;
 
     public event Action<WebSocketCloseStatus?, string?, Exception?>? Closed;
+
+    private void RaiseClosed(ClientWebSocket websocket, Exception? exception = null)
+    {
+        try
+        {
+            Closed?.Invoke(websocket.CloseStatus, websocket.CloseStatusDescription, exception);
+        }
+        catch { }
+    }
 
     public bool IsConnected
     {
@@ -45,35 +51,46 @@ internal sealed class WebSocketClient : IDisposable
             receiveCts = new CancellationTokenSource();
             _websocket = websocket;
             _receiveCts = receiveCts;
+            _receiveTask = null;
         }
-
-        websocket.Options.KeepAliveInterval = TimeSpan.FromMinutes(2);
-        foreach (var (key, value) in headers)
-            websocket.Options.SetRequestHeader(key, value);
 
         try
         {
-            await websocket.ConnectAsync(uri, cancellationToken).ConfigureAwait(false);
+            websocket.Options.KeepAliveInterval = TimeSpan.FromMinutes(2);
+            websocket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(30);
+            websocket.Options.CollectHttpResponseDetails = true;
 
-            // Direct invocation: the loop is fully async, a thread-pool hop would only add latency.
-            var receiveTask = ReceiveLoopAsync(websocket, receiveCts.Token);
-            lock (_lock)
-                _receiveTask = receiveTask;
+            foreach (var (key, value) in headers)
+                websocket.Options.SetRequestHeader(key, value);
+
+            await websocket.ConnectAsync(uri, cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception exception)
         {
+            if (websocket.HttpStatusCode != 0)
+                exception.Data[HandshakeStatusCodeKey] = (int)websocket.HttpStatusCode;
+
             lock (_lock)
-            {
                 if (ReferenceEquals(_websocket, websocket))
                 {
                     _websocket = null;
                     _receiveCts = null;
                 }
-            }
 
             receiveCts.Dispose();
             websocket.Dispose();
             throw;
+        }
+    }
+
+    public void StartReceiving()
+    {
+        lock (_lock)
+        {
+            if (_websocket is null || _receiveTask is not null)
+                return;
+
+            _receiveTask = ReceiveLoopAsync(_websocket, _receiveCts!.Token);
         }
     }
 
@@ -109,24 +126,14 @@ internal sealed class WebSocketClient : IDisposable
                     )
                     .ConfigureAwait(false);
             }
-            catch (Exception)
-            {
-                // The server may already be gone, the socket is discarded either way.
-            }
+            catch (Exception) { }
         }
 
         receiveCts?.Cancel();
-        if (receiveTask is not null)
-        {
-            try
-            {
-                await receiveTask.ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // The receive loop always settles its own exceptions before returning.
-            }
-        }
+        if (receiveTask is not null && !_onReceiveLoop.Value)
+            await receiveTask
+                .WaitAsync(TimeSpan.FromSeconds(5), cancellationToken)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
         receiveCts?.Dispose();
         websocket.Dispose();
@@ -149,15 +156,12 @@ internal sealed class WebSocketClient : IDisposable
 
         receiveCts?.Cancel();
 
-        // Brief wait outside the lock: the token already told the loop to unwind.
-        try
-        {
-            receiveTask?.Wait(TimeSpan.FromSeconds(5));
-        }
-        catch (Exception)
-        {
-            // Observe and ignore: the receive loop never throws unobserved.
-        }
+        if (!_onReceiveLoop.Value)
+            try
+            {
+                receiveTask?.Wait(TimeSpan.FromSeconds(5));
+            }
+            catch (Exception) { }
 
         receiveCts?.Dispose();
         websocket?.Dispose();
@@ -168,8 +172,10 @@ internal sealed class WebSocketClient : IDisposable
         CancellationToken cancellationToken
     )
     {
-        // Protocol messages are small (well under 16 KB), so virtually all of them arrive
-        // as a single frame and are dispatched straight from this buffer.
+        await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+
+        _onReceiveLoop.Value = true;
+
         var buffer = new byte[16 * 1024];
         try
         {
@@ -177,8 +183,6 @@ internal sealed class WebSocketClient : IDisposable
                 !cancellationToken.IsCancellationRequested && websocket.State == WebSocketState.Open
             )
             {
-                // The Memory overload returns a ValueTask and allocates nothing when the
-                // frame is already buffered, unlike the ArraySegment overload.
                 var result = await websocket
                     .ReceiveAsync((Memory<byte>)buffer, cancellationToken)
                     .ConfigureAwait(false);
@@ -186,19 +190,17 @@ internal sealed class WebSocketClient : IDisposable
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     await AcknowledgeCloseAsync(websocket).ConfigureAwait(false);
-                    Closed?.Invoke(websocket.CloseStatus, websocket.CloseStatusDescription, null);
+                    RaiseClosed(websocket);
                     return;
                 }
 
                 if (result.EndOfMessage)
                 {
-                    // Fast path: single-frame message, zero copies beyond the receive buffer.
                     if (result.MessageType == WebSocketMessageType.Text)
                         TextMessageReceived?.Invoke(buffer.AsMemory(0, result.Count));
                     continue;
                 }
 
-                // Fragmented message: assemble the frames before dispatching.
                 using var message = new MemoryStream();
                 message.Write(buffer, 0, result.Count);
                 while (true)
@@ -209,11 +211,7 @@ internal sealed class WebSocketClient : IDisposable
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         await AcknowledgeCloseAsync(websocket).ConfigureAwait(false);
-                        Closed?.Invoke(
-                            websocket.CloseStatus,
-                            websocket.CloseStatusDescription,
-                            null
-                        );
+                        RaiseClosed(websocket);
                         return;
                     }
 
@@ -231,40 +229,37 @@ internal sealed class WebSocketClient : IDisposable
                     TextMessageReceived?.Invoke(
                         message.GetBuffer().AsMemory(0, (int)message.Length)
                     );
-
-                // Binary frames are not part of the Lavalink/NodeLink protocol and are ignored.
             }
+
+            RaiseClosed(websocket);
         }
         catch (OperationCanceledException)
         {
-            Closed?.Invoke(websocket.CloseStatus, websocket.CloseStatusDescription, null);
+            RaiseClosed(websocket);
         }
         catch (Exception exception)
         {
-            Closed?.Invoke(websocket.CloseStatus, websocket.CloseStatusDescription, exception);
+            RaiseClosed(websocket, exception);
         }
         finally
         {
-            // The loop owns the socket once it ends, so a closed or errored connection never
-            // leaks one, Stop/Dispose also dispose it, and ClientWebSocket tolerates that.
             websocket.Dispose();
         }
     }
 
     private static async Task AcknowledgeCloseAsync(ClientWebSocket websocket)
     {
-        // Acknowledge the close frame so the server sees a clean disconnect.
         using var closeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var status = websocket.CloseStatus is { } received and not WebSocketCloseStatus.Empty
+            ? received
+            : WebSocketCloseStatus.NormalClosure;
+
         try
         {
             await websocket
-                .CloseAsync(WebSocketCloseStatus.NormalClosure, "Acknowledged", closeCts.Token)
+                .CloseAsync(status, "Acknowledged", closeCts.Token)
                 .ConfigureAwait(false);
         }
-        catch (Exception)
-        {
-            // The server did not complete the close handshake in time, or the socket is already
-            // dead, it is discarded either way.
-        }
+        catch (Exception) { }
     }
 }

@@ -1,35 +1,34 @@
-using global::NetCord.Gateway;
-using Microsoft.Extensions.Logging;
+using NetCord.Gateway;
 using Nyra.Abstractions;
-using VoiceState = Nyra.Abstractions.VoiceState;
 
 namespace Nyra.NetCord;
 
-/// <summary>
-/// Base of the NetCord gateway bridges: translates the library's voice models into Nyra's.
-/// </summary>
-internal abstract class GatewayBridgeBase : IDiscordBridge, IDisposable
+internal abstract class GatewayBridgeBase : IDisposable
 {
-    private readonly ILogger? _logger;
+    private readonly Action<VoiceServerUpdatedEventArgs> _onVoiceServerUpdated;
+    private readonly Action<VoiceStateUpdatedEventArgs> _onVoiceStateUpdated;
+    private readonly Action<GuildRemovedEventArgs> _onGuildRemoved;
+    private readonly TaskCompletionSource<ClientInformation> _ready = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
 
-    protected GatewayBridgeBase(ILogger? logger)
+    protected GatewayBridgeBase(
+        Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
+        Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
+        Action<GuildRemovedEventArgs> onGuildRemoved
+    )
     {
-        _logger = logger;
+        _onVoiceServerUpdated = onVoiceServerUpdated;
+        _onVoiceStateUpdated = onVoiceStateUpdated;
+        _onGuildRemoved = onGuildRemoved;
     }
 
-    public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated;
-    public event EventHandler<VoiceStateUpdatedEventArgs>? VoiceStateUpdated;
-
-    /// <inheritdoc />
-    public ILogger? Logger => _logger;
-
-    /// <inheritdoc />
     public async Task SendVoiceUpdateAsync(
         ulong guildId,
         ulong? channelId,
-        bool selfDeaf = false,
-        bool selfMute = false,
-        CancellationToken cancellationToken = default
+        bool selfDeaf,
+        bool selfMute,
+        CancellationToken cancellationToken
     )
     {
         var properties = new VoiceStateProperties(guildId, channelId)
@@ -43,24 +42,52 @@ internal abstract class GatewayBridgeBase : IDiscordBridge, IDisposable
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
-    public abstract Task<ClientInformation> WaitForReadyAsync(
-        CancellationToken cancellationToken = default
-    );
+    public Task<ClientInformation> WaitForReadyAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return _ready.Task.WaitAsync(cancellationToken);
+    }
 
-    /// <summary>Disconnects the bridge from the client's events.</summary>
-    public abstract void Dispose();
+    public void Dispose()
+    {
+        try
+        {
+            Unsubscribe();
+        }
+        catch (ObjectDisposedException) { }
+        _ready.TrySetCanceled();
+    }
+
+    protected abstract void Unsubscribe();
 
     protected abstract GatewayClient GetClient(ulong guildId);
 
+    protected ValueTask MarkReady(ulong currentUserId)
+    {
+        _ready.TrySetResult(new ClientInformation(currentUserId));
+        return ValueTask.CompletedTask;
+    }
+
+    protected ValueTask HandleDisconnectAsync(DisconnectEventArgs eventArgs)
+    {
+        if (!eventArgs.Reconnect)
+            _ready.TrySetException(
+                new InvalidOperationException(
+                    "The gateway closed without a reconnect (a fatal close code), no ready will follow."
+                )
+            );
+        return ValueTask.CompletedTask;
+    }
+
     protected ValueTask HandleVoiceServerUpdateAsync(VoiceServerUpdateEventArgs eventArgs)
     {
-        // A null endpoint means the update is partial, the bridge's contract is a non-null one.
-        if (eventArgs.Endpoint is null)
+        if (
+            string.IsNullOrWhiteSpace(eventArgs.Endpoint)
+            || string.IsNullOrWhiteSpace(eventArgs.Token)
+        )
             return ValueTask.CompletedTask;
 
-        VoiceServerUpdated?.Invoke(
-            this,
+        _onVoiceServerUpdated(
             new VoiceServerUpdatedEventArgs(
                 eventArgs.GuildId,
                 new VoiceServer(eventArgs.Token, eventArgs.Endpoint)
@@ -69,21 +96,34 @@ internal abstract class GatewayBridgeBase : IDiscordBridge, IDisposable
         return ValueTask.CompletedTask;
     }
 
-    protected ValueTask HandleVoiceStateUpdateAsync(
-        global::NetCord.Gateway.VoiceState eventArgs,
-        ulong currentUserId
-    )
+    protected ValueTask HandleVoiceStateUpdateAsync(VoiceState eventArgs, ulong currentUserId)
     {
         if (eventArgs.UserId != currentUserId)
             return ValueTask.CompletedTask;
 
-        VoiceStateUpdated?.Invoke(
-            this,
+        if (eventArgs.GuildId is 0)
+            return ValueTask.CompletedTask;
+
+        _onVoiceStateUpdated(
             new VoiceStateUpdatedEventArgs(
                 eventArgs.GuildId,
-                new VoiceState(eventArgs.ChannelId, eventArgs.SessionId)
+                new DiscordVoiceState(
+                    eventArgs.ChannelId,
+                    eventArgs.SessionId,
+                    eventArgs.IsSelfDeafened,
+                    eventArgs.IsSelfMuted
+                )
             )
         );
+        return ValueTask.CompletedTask;
+    }
+
+    protected ValueTask HandleGuildDeleteAsync(GuildDeleteEventArgs eventArgs)
+    {
+        if (eventArgs.IsUnavailable)
+            return ValueTask.CompletedTask;
+
+        _onGuildRemoved(new GuildRemovedEventArgs(eventArgs.GuildId));
         return ValueTask.CompletedTask;
     }
 }

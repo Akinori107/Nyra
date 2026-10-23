@@ -34,7 +34,6 @@ var endpoint = new Endpoint(nodeHost, nodePort, nodePassword, nodeSecure);
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArgs) =>
 {
-    // Every Ctrl+C triggers a graceful shutdown.
     eventArgs.Cancel = true;
     cancellation.Cancel();
 };
@@ -50,18 +49,13 @@ using var client = new DiscordClient(
 
 var nyra = client.UseNyra();
 nyra.AddNode(new Node(endpoint, new NodeOptions { Name = "main", Resuming = true }));
-
-// Registration must happen before ConnectAsync: command sync runs once, when the client
-// becomes ready.
 var commands = client.UseSlashCommands(new SlashCommandsConfiguration());
 commands.RegisterCommands<MusicCommands>();
 commands.SlashCommandErrored += OnSlashCommandErrored;
 
 client.Ready += async (_, _) =>
 {
-    // A node that fails to connect keeps retrying in the background, nodes that are up
-    // log their detected server kind here.
-    await nyra.ConnectAllNodesAsync();
+    await nyra.ConnectAllNodesAsync().ConfigureAwait(false);
 
     foreach (var node in nyra.Nodes)
         if (node.IsConnected)
@@ -73,17 +67,17 @@ client.Ready += async (_, _) =>
             );
 };
 
-await client.ConnectAsync();
+await client.ConnectAsync().ConfigureAwait(false);
 
 try
 {
-    await Task.Delay(Timeout.Infinite, cancellation.Token);
+    await Task.Delay(Timeout.Infinite, cancellation.Token).ConfigureAwait(false);
 }
 catch (OperationCanceledException) { }
 finally
 {
-    await client.DisconnectAsync();
-    await nyra.DisposeAsync();
+    await client.DisconnectAsync().ConfigureAwait(false);
+    await nyra.DisposeAsync().ConfigureAwait(false);
 }
 
 return 0;
@@ -114,9 +108,6 @@ static Dictionary<string, string> ParseEnvFile(string path)
 
     return values;
 }
-
-// Known library errors carry messages meant for the user (wrong channel, node not ready,
-// unsupported feature), everything else stays generic while the details go to the logger.
 static async Task OnSlashCommandErrored(
     SlashCommandsExtension extension,
     SlashCommandErrorEventArgs error
@@ -147,13 +138,14 @@ static async Task OnSlashCommandErrored(
 
     try
     {
-        await error.Context.CreateResponseAsync(embed, ephemeral: true);
+        await error.Context.CreateResponseAsync(embed, ephemeral: true).ConfigureAwait(false);
     }
     catch
     {
-        // The command already responded or deferred, fall back to a followup.
-        await error.Context.FollowUpAsync(
-            new DiscordFollowupMessageBuilder().AddEmbed(embed).AsEphemeral()
-        );
+        await error
+            .Context.FollowUpAsync(
+                new DiscordFollowupMessageBuilder().AddEmbed(embed).AsEphemeral()
+            )
+            .ConfigureAwait(false);
     }
 }

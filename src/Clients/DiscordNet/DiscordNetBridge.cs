@@ -6,56 +6,74 @@ using Nyra.Abstractions;
 
 namespace Nyra.DiscordNet;
 
-/// <summary>
-/// Wraps a <see cref="DiscordSocketClient"/> or <see cref="DiscordShardedClient"/> for Nyra. The
-/// voice state update goes through Discord.Net's public external-audio route, so the bridge
-/// keeps the audio channel of each guild to disconnect from later.
-/// </summary>
-public sealed class DiscordNetBridge : IDiscordBridge, IDisposable
+/// <summary>Wraps a <see cref="DiscordSocketClient"/> or <see cref="DiscordShardedClient"/> for Nyra.</summary>
+/// <remarks>
+/// The voice state update goes through Discord.Net's public external-audio route, so the bridge keeps the
+/// audio channel of each guild to disconnect from later.
+/// </remarks>
+public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDisposable
 {
     private readonly BaseSocketClient _client;
     private readonly ConcurrentDictionary<ulong, IAudioChannel> _audioChannels = new();
-    private readonly TaskCompletionSource<ClientInformation> _ready;
 
+    private readonly GuildRemovalFence _removalFence = new();
+
+    private readonly Lock _guildPinGate = new();
+
+    private bool _disposed;
+
+    private readonly TaskCompletionSource<ClientInformation> _ready = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+
+    /// <summary>Raised when Discord allocates or re-targets the voice server of a guild.</summary>
     public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated;
+
+    /// <summary>Raised when the voice state of the current user changes in a guild.</summary>
     public event EventHandler<VoiceStateUpdatedEventArgs>? VoiceStateUpdated;
 
+    /// <summary>Raised when the bot was removed from a guild.</summary>
+    /// <remarks>Not raised for guild outages.</remarks>
+    public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
+
+    /// <summary>Wraps a <see cref="DiscordSocketClient"/>, forwarding its voice events.</summary>
+    /// <param name="client">The client to wrap.</param>
+    /// <param name="logger">The logger to write the library's messages through, Discord.Net ships no logger.</param>
     public DiscordNetBridge(DiscordSocketClient client, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(client);
 
         _client = client;
         Logger = logger;
-        _ready = new TaskCompletionSource<ClientInformation>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
 
         client.VoiceServerUpdated += OnVoiceServerUpdated;
         client.UserVoiceStateUpdated += OnVoiceStateUpdated;
         client.Ready += OnClientReady;
         client.Log += OnClientLog;
+        client.LeftGuild += OnLeftGuild;
 
         if (client.CurrentUser is { } user)
-            _ready.TrySetResult(new ClientInformation("Discord.Net", user.Id));
+            PublishUserId(user.Id);
     }
 
+    /// <summary>Wraps a <see cref="DiscordShardedClient"/>, forwarding the voice events of every shard.</summary>
+    /// <param name="client">The sharded client to wrap.</param>
+    /// <param name="logger">The logger to write the library's messages through, Discord.Net ships no logger.</param>
     public DiscordNetBridge(DiscordShardedClient client, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(client);
 
         _client = client;
         Logger = logger;
-        _ready = new TaskCompletionSource<ClientInformation>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
 
         client.VoiceServerUpdated += OnVoiceServerUpdated;
         client.UserVoiceStateUpdated += OnVoiceStateUpdated;
         client.ShardReady += OnShardReady;
         client.Log += OnClientLog;
+        client.LeftGuild += OnLeftGuild;
 
         if (client.CurrentUser is { } shardedUser)
-            _ready.TrySetResult(new ClientInformation("Discord.Net", shardedUser.Id));
+            PublishUserId(shardedUser.Id);
     }
 
     /// <inheritdoc />
@@ -71,35 +89,94 @@ public sealed class DiscordNetBridge : IDiscordBridge, IDisposable
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var joinStartTick = Environment.TickCount64;
 
-        // Leave: only the channel kept from the join can be disconnected through the public
-        // route, there is nothing to send when Nyra never joined through this bridge.
         if (channelId is null)
         {
             if (_audioChannels.TryRemove(guildId, out var channel))
-                await channel.DisconnectAsync().ConfigureAwait(false);
+                await BoundedAsync(channel.DisconnectAsync(), cancellationToken)
+                    .ConfigureAwait(false);
+            else if (
+                _client.CurrentUser is not null
+                && GetGuildOrNull(guildId)?.CurrentUser?.VoiceChannel is { } current
+            )
+                await BoundedAsync(current.DisconnectAsync(), cancellationToken)
+                    .ConfigureAwait(false);
             return;
         }
 
         var guild =
-            _client.GetGuild(guildId)
+            GetGuildOrNull(guildId)
             ?? throw new InvalidOperationException(
                 $"Could not find the guild {guildId}, it is not available to the Discord.Net client."
             );
 
-        if (guild.GetChannel(channelId.Value) is not IAudioChannel audioChannel)
+        var resolvedChannel =
+            guild.GetChannel(channelId.Value)
+            ?? throw new InvalidOperationException(
+                $"The channel {channelId.Value} was not found in guild {guildId}, it may have been deleted."
+            );
+        if (resolvedChannel is not IAudioChannel audioChannel)
             throw new ArgumentException(
                 $"The channel {channelId.Value} is not a voice or stage channel.",
                 nameof(channelId)
             );
 
-        _audioChannels[guildId] = audioChannel;
+        lock (_guildPinGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
 
-        // The disconnect flag keeps Discord.Net from sending a voice state leave ahead of the
-        // join, which would surface as a spurious channel-less update to the handshake.
-        await audioChannel
-            .ConnectAsync(selfDeaf, selfMute, external: true, disconnect: false)
+            if (_removalFence.RemovedSince(guildId, joinStartTick))
+                throw new InvalidOperationException(
+                    $"The bot was removed from guild {guildId} while it was joining, the voice state update was not sent."
+                );
+
+            _audioChannels[guildId] = audioChannel;
+            _removalFence.Forget(guildId);
+        }
+
+        await BoundedAsync(
+                audioChannel.ConnectAsync(selfDeaf, selfMute, external: true, disconnect: false),
+                cancellationToken
+            )
             .ConfigureAwait(false);
+    }
+
+    private SocketGuild? GetGuildOrNull(ulong guildId)
+    {
+        try
+        {
+            return _client.GetGuild(guildId);
+        }
+        catch (NullReferenceException)
+        {
+            return null;
+        }
+        catch (DivideByZeroException exception)
+        {
+            throw new InvalidOperationException(
+                "The sharded client has not logged in or has logged out, its shard set is unknown, it cannot resolve guilds.",
+                exception
+            );
+        }
+    }
+
+    private static async Task BoundedAsync(Task send, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await send.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = send.ContinueWith(
+                static task => _ = task.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default
+            );
+            throw;
+        }
     }
 
     /// <inheritdoc />
@@ -115,23 +192,48 @@ public sealed class DiscordNetBridge : IDiscordBridge, IDisposable
         _client.VoiceServerUpdated -= OnVoiceServerUpdated;
         _client.UserVoiceStateUpdated -= OnVoiceStateUpdated;
         _client.Log -= OnClientLog;
+        _client.LeftGuild -= OnLeftGuild;
 
         if (_client is DiscordSocketClient socketClient)
             socketClient.Ready -= OnClientReady;
 
         if (_client is DiscordShardedClient shardedClient)
             shardedClient.ShardReady -= OnShardReady;
+
+        _ready.TrySetCanceled();
+
+        lock (_guildPinGate)
+        {
+            _disposed = true;
+
+            _audioChannels.Clear();
+            _removalFence.Clear();
+        }
     }
 
     private Task OnClientReady()
     {
-        _ready.TrySetResult(new ClientInformation("Discord.Net", _client.CurrentUser.Id));
+        PublishUserId(_client.CurrentUser.Id);
         return Task.CompletedTask;
     }
 
     private Task OnShardReady(DiscordSocketClient client)
     {
-        _ready.TrySetResult(new ClientInformation("Discord.Net", client.CurrentUser.Id));
+        PublishUserId(client.CurrentUser.Id);
+        return Task.CompletedTask;
+    }
+
+    private void PublishUserId(ulong userId) => _ready.TrySetResult(new ClientInformation(userId));
+
+    private Task OnLeftGuild(SocketGuild guild)
+    {
+        lock (_guildPinGate)
+        {
+            _removalFence.Mark(guild.Id);
+            _audioChannels.TryRemove(guild.Id, out _);
+        }
+
+        BridgeEvent.RaiseIsolated(GuildRemoved, this, new GuildRemovedEventArgs(guild.Id), Logger);
         return Task.CompletedTask;
     }
 
@@ -144,46 +246,65 @@ public sealed class DiscordNetBridge : IDiscordBridge, IDisposable
         if (user.Id != _client.CurrentUser?.Id)
             return Task.CompletedTask;
 
-        var guildId = oldState.VoiceChannel?.Guild?.Id ?? state.VoiceChannel?.Guild?.Id;
+        _removalFence.Sweep();
+
+        var guildId =
+            oldState.VoiceChannel?.Guild?.Id
+            ?? state.VoiceChannel?.Guild?.Id
+            ?? (user as SocketGuildUser)?.Guild?.Id;
         if (guildId is null)
             return Task.CompletedTask;
 
-        VoiceStateUpdated?.Invoke(
+        BridgeEvent.RaiseIsolated(
+            VoiceStateUpdated,
             this,
             new VoiceStateUpdatedEventArgs(
                 guildId.Value,
-                new VoiceState(state.VoiceChannelId, state.VoiceSessionId)
-            )
+                new DiscordVoiceState(
+                    state.VoiceChannelId,
+                    state.VoiceSessionId,
+                    state.IsSelfDeafened,
+                    state.IsSelfMuted
+                )
+            ),
+            Logger
         );
         return Task.CompletedTask;
     }
 
     private Task OnVoiceServerUpdated(SocketVoiceServer voiceServer)
     {
-        // A null endpoint means the update is partial, the bridge's contract is a non-null one.
-        if (voiceServer.Endpoint is null)
+        if (
+            string.IsNullOrWhiteSpace(voiceServer.Endpoint)
+            || string.IsNullOrWhiteSpace(voiceServer.Token)
+        )
             return Task.CompletedTask;
 
-        VoiceServerUpdated?.Invoke(
+        BridgeEvent.RaiseIsolated(
+            VoiceServerUpdated,
             this,
             new VoiceServerUpdatedEventArgs(
                 voiceServer.Guild.Id,
                 new VoiceServer(voiceServer.Token, voiceServer.Endpoint)
-            )
+            ),
+            Logger
         );
         return Task.CompletedTask;
     }
 
     private Task OnClientLog(LogMessage message)
     {
-        // Forward Discord.Net's logging into the logger given to the bridge.
-        Logger?.Log(
-            ToLogLevel(message.Severity),
-            default,
-            message,
-            message.Exception,
-            static (state, _) => $"Discord.Net ({state.Source}): {state.Message}"
-        );
+        try
+        {
+            Logger?.Log(
+                ToLogLevel(message.Severity),
+                default,
+                message,
+                message.Exception,
+                static (state, _) => $"Discord.Net ({state.Source}): {state.Message}"
+            );
+        }
+        catch { }
         return Task.CompletedTask;
     }
 

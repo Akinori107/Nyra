@@ -1,63 +1,60 @@
-using global::NetCord.Gateway;
-using Microsoft.Extensions.Logging;
+using NetCord.Gateway;
 using Nyra.Abstractions;
 
 namespace Nyra.NetCord;
 
-/// <summary>Bridges a single <see cref="GatewayClient"/> for Nyra.</summary>
 internal sealed class GatewayBridge : GatewayBridgeBase
 {
     private readonly GatewayClient _client;
-    private readonly TaskCompletionSource<ClientInformation> _ready;
 
-    public GatewayBridge(GatewayClient client, ILogger? logger)
-        : base(logger)
+    public GatewayBridge(
+        GatewayClient client,
+        Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
+        Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
+        Action<GuildRemovedEventArgs> onGuildRemoved
+    )
+        : base(onVoiceServerUpdated, onVoiceStateUpdated, onGuildRemoved)
     {
-        ArgumentNullException.ThrowIfNull(client);
-
         _client = client;
-        _ready = new TaskCompletionSource<ClientInformation>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
 
         client.VoiceStateUpdate += OnVoiceStateUpdate;
-        client.VoiceServerUpdate += OnVoiceServerUpdate;
+        client.VoiceServerUpdate += HandleVoiceServerUpdateAsync;
         client.Ready += OnClientReady;
+        client.Resume += OnClientResume;
+        client.GuildDelete += HandleGuildDeleteAsync;
+        client.Disconnect += HandleDisconnectAsync;
 
         if (client.Status is WebSocketStatus.Ready)
-            _ready.TrySetResult(new ClientInformation("NetCord", client.Id));
+            MarkReady(client.Id);
     }
 
-    public override Task<ClientInformation> WaitForReadyAsync(
-        CancellationToken cancellationToken = default
-    )
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return _ready.Task.WaitAsync(cancellationToken);
-    }
-
-    public override void Dispose()
+    protected override void Unsubscribe()
     {
         _client.VoiceStateUpdate -= OnVoiceStateUpdate;
-        _client.VoiceServerUpdate -= OnVoiceServerUpdate;
+        _client.VoiceServerUpdate -= HandleVoiceServerUpdateAsync;
         _client.Ready -= OnClientReady;
+        _client.Resume -= OnClientResume;
+        _client.GuildDelete -= HandleGuildDeleteAsync;
+        _client.Disconnect -= HandleDisconnectAsync;
     }
 
-    protected override GatewayClient GetClient(ulong guildId) => _client;
-
-    private ValueTask OnClientReady(ReadyEventArgs eventArgs)
+    protected override GatewayClient GetClient(ulong guildId)
     {
-        _ready.TrySetResult(new ClientInformation("NetCord", _client.Id));
-        return ValueTask.CompletedTask;
+        if (
+            _client.Shard is { Count: > 1 } shard
+            && GuildShard.IdFor(guildId, shard.Count) != shard.Id
+        )
+            throw new InvalidOperationException(
+                $"The guild {guildId} is not served by shard {shard.Id} of this client, use the client of the guild's own shard."
+            );
+
+        return _client;
     }
 
-    private ValueTask OnVoiceStateUpdate(global::NetCord.Gateway.VoiceState eventArgs)
-    {
-        return HandleVoiceStateUpdateAsync(eventArgs, _client.Id);
-    }
+    private ValueTask OnClientReady(ReadyEventArgs eventArgs) => MarkReady(_client.Id);
 
-    private ValueTask OnVoiceServerUpdate(VoiceServerUpdateEventArgs eventArgs)
-    {
-        return HandleVoiceServerUpdateAsync(eventArgs);
-    }
+    private ValueTask OnClientResume() => MarkReady(_client.Id);
+
+    private ValueTask OnVoiceStateUpdate(VoiceState eventArgs) =>
+        HandleVoiceStateUpdateAsync(eventArgs, _client.Id);
 }

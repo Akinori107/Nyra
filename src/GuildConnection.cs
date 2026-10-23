@@ -1,4 +1,5 @@
-using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Nyra.Abstractions;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
 using Nyra.EventArgs;
@@ -8,23 +9,37 @@ using Nyra.Internal;
 namespace Nyra;
 
 /// <summary>
-/// A player bound to a guild on a specific <see cref="Node"/>: playback control, audio filters
-/// and Discord voice connection management.
+/// A player bound to a guild on a <see cref="Node"/>, playback, filters and Discord voice connection.
 /// </summary>
 public sealed class GuildConnection
 {
-    // Normalization goes through the Lavalink (flat) options: serialize fills the neutral
-    // defaults, deserialize reads them back, so the stored chain is always the effective one.
-    private static readonly JsonSerializerOptions NormalizeOptions = NyraJson.OptionsFor(false);
-
     private readonly Node _node;
-    private readonly SemaphoreSlim _filterGate = new(1, 1);
-    private FilterChain _filters = new();
-    private FilterChain? _pendingFilters;
-    private long _positionMilliseconds;
-    private long _positionTick;
-    private bool _positionAdvancing;
-    private bool _hasPosition;
+    private readonly GuildFilters _filters;
+    private readonly GuildLyrics _lyrics;
+    private readonly GuildSponsorBlock _sponsorBlock;
+    private readonly GuildMix _mix;
+    private readonly GuildEffects _effects;
+    private readonly GuildPlayback _playback;
+    private readonly GuildVoiceForwarder _voiceForward;
+    private readonly GuildPatches _patches;
+    private readonly GuildTeardown _teardown;
+    private readonly GuildCommands _commands;
+    private readonly EventPump _pump;
+    private readonly Func<Exception, System.EventArgs?, Task> _handlerError;
+    private volatile bool _tearingDown;
+
+    private static readonly TimeSpan VoiceCloseGracePeriod = TimeSpan.FromSeconds(2);
+
+    private static readonly TimeSpan ForwardActivityWindow = TimeSpan.FromSeconds(5);
+
+    private static readonly TimeSpan VoiceRescueInterval = TimeSpan.FromSeconds(60);
+
+    private long _voiceRescueTick = long.MinValue / 2;
+
+    private int _voiceCloseHandling;
+
+    private bool _observedSelfDeaf;
+    private bool _observedSelfMute;
 
     internal GuildConnection(
         Node node,
@@ -36,6 +51,18 @@ public sealed class GuildConnection
     )
     {
         _node = node;
+        _filters = new GuildFilters(this);
+        _lyrics = new GuildLyrics(this);
+        _sponsorBlock = new GuildSponsorBlock(this);
+        _mix = new GuildMix(this);
+        _effects = new GuildEffects(this);
+        _playback = new GuildPlayback(this);
+        _voiceForward = new GuildVoiceForwarder(this);
+        _patches = new GuildPatches(this);
+        _teardown = new GuildTeardown(this);
+        _commands = new GuildCommands(this);
+        _pump = new EventPump($"guild {guildId}", node.Logger, LogEvents.Playback);
+        _handlerError = OnHandlerErrorAsync;
         GuildId = guildId;
         ChannelId = channelId;
         VoiceSessionId = sessionId;
@@ -43,28 +70,96 @@ public sealed class GuildConnection
         VoiceToken = voiceToken;
     }
 
-    /// <summary>The guild this connection plays in.</summary>
+    /// <summary>The guild the connection plays in.</summary>
     public ulong GuildId { get; }
 
-    /// <summary>The voice channel id the bot is connected to, or null after the connection was disconnected.</summary>
-    public ulong? ChannelId { get; internal set; }
+    /// <summary>
+    /// The voice channel id the bot is connected to, or null after the connection was disconnected.
+    /// </summary>
+    public ulong? ChannelId
+    {
+        get => Volatile.Read(ref _channelId) is not 0 and var id ? id : null;
+        internal set => Volatile.Write(ref _channelId, value ?? 0);
+    }
 
-    /// <summary>Discord voice session id captured at join, updated when Discord rotates it on a channel move.</summary>
+    private ulong _channelId;
+
+    /// <summary>
+    /// Discord voice session id captured at join, updated when Discord rotates it on a channel move.
+    /// </summary>
     public string VoiceSessionId { get; internal set; }
 
-    /// <summary>Discord voice server endpoint captured at join.</summary>
-    public string VoiceEndpoint { get; }
+    /// <summary>
+    /// Discord voice server endpoint captured at join, updated when Discord re-targets the voice server.
+    /// </summary>
+    public string VoiceEndpoint { get; internal set; }
 
-    /// <summary>Discord voice token captured at join (Discord's, not the node password).</summary>
-    public string VoiceToken { get; }
+    /// <summary>Discord voice token captured at join, updated when Discord re-targets the voice server.</summary>
+    public string VoiceToken { get; internal set; }
 
-    /// <summary>Whether the bot is in a Discord voice channel on this connection, not the node websocket (see <see cref="Node.IsConnected"/>).</summary>
+    /// <summary>
+    /// Whether the bot is in a Discord voice channel on this connection, not the node websocket (see <see
+    /// cref="Node.IsConnected"/>).
+    /// </summary>
     public bool IsConnected => ChannelId is not null;
+
+    internal bool IsTearingDown => _tearingDown;
+
+    internal GuildPatches Patches => _patches;
+
+    internal GuildTeardown Teardown => _teardown;
+
+    internal GuildPlayback Playback => _playback;
+
+    internal EventPump Pump => _pump;
+
+    internal Task RaiseInvalidatedAsync(ulong? lastChannelId) =>
+        GuildConnectionInvalidated.RaiseAsync(
+            this,
+            new GuildConnectionInvalidatedEventArgs(GuildId, lastChannelId),
+            _handlerError
+        );
+
+    internal bool IsNodeLinkServer => _node.IsNodeLink;
+
+    internal void MarkTearingDown() => _tearingDown = true;
+
+    private int _voiceLeaveClaimed;
+
+    internal bool TryClaimVoiceLeave() => Interlocked.Exchange(ref _voiceLeaveClaimed, 1) == 0;
+
+    internal void ReleaseVoiceLeave() => Volatile.Write(ref _voiceLeaveClaimed, 0);
+
+    private volatile bool _playerCommitted;
+
+    internal bool IsPlayerCommitted => _playerCommitted;
+
+    internal void CommitPlayerUpdate() => _playerCommitted = true;
 
     /// <summary>The node this connection plays through.</summary>
     public Node Node => _node;
 
+    /// <summary>The audio filters of the connection.</summary>
+    public GuildFilters Filters => _filters;
+
+    /// <summary>The lyrics subscription of the connection.</summary>
+    public GuildLyrics Lyrics => _lyrics;
+
+    /// <summary>The SponsorBlock settings of the connection.</summary>
+    public GuildSponsorBlock SponsorBlock => _sponsorBlock;
+
+    /// <summary>The mix layers of the connection.</summary>
+    public GuildMix Mix => _mix;
+
+    /// <summary>The fading, ducking, loudness and crossfade effects of the connection.</summary>
+    public GuildEffects Effects => _effects;
+
     /// <summary>The track currently loaded, or null when nothing is playing.</summary>
+    /// <remarks>
+    /// A server-side destroy by another actor (a co-client) only raises <see cref="PlayerDestroyed"/>, it does
+    /// not clear this, the stale track lives on until the next play or a teardown resets it, and a later
+    /// PlayAsync re-creates the player.
+    /// </remarks>
     public Track? CurrentTrack { get; internal set; }
 
     /// <summary>The last player state reported by the server, or null when none arrived yet.</summary>
@@ -73,1049 +168,593 @@ public sealed class GuildConnection
     /// <summary>Whether playback is paused, as last confirmed by the server.</summary>
     public bool IsPaused { get; internal set; }
 
-    /// <summary>The player volume (0-1000), as last confirmed by the server, 100 is the default.</summary>
+    /// <summary>
+    /// The player volume (0-1000), as last confirmed by the server, 100 is the default. The server enforces
+    /// the range, the read does not clamp.
+    /// </summary>
     public int Volume { get; internal set; } = 100;
 
     /// <summary>
-    /// Estimated playback position: the last position reported by the server, advanced by the
-    /// elapsed wall time while playing, scaled by the applied <see cref="TimescaleFilter.Speed"/>.
-    /// Server updates arrive every few seconds (about 5 on Lavalink, 2 on NodeLink).
+    /// Estimated position, the last server report advanced by elapsed wall time while playing, scaled by the
+    /// applied timescale until the next report lands.
     /// </summary>
-    public TimeSpan? Position
-    {
-        get
-        {
-            if (!_hasPosition)
-                return null;
-
-            if (!_positionAdvancing)
-                return SafePosition(_positionMilliseconds);
-
-            var speed = _filters.Timescale?.Speed ?? 1.0;
-            var position =
-                _positionMilliseconds + (long)((Environment.TickCount64 - _positionTick) * speed);
-            if (
-                CurrentTrack is { Info.LengthMilliseconds: > 0 } track
-                && position > track.Info.LengthMilliseconds
-            )
-                position = track.Info.LengthMilliseconds;
-
-            return SafePosition(position);
-        }
-    }
-
-    private static TimeSpan SafePosition(long milliseconds) =>
-        milliseconds is >= 0 and <= TrackInfo.MaxTimeSpanMilliseconds
-            ? TimeSpan.FromMilliseconds(milliseconds)
-            : TimeSpan.Zero;
-
-    /// <summary>The filter chain currently applied, as confirmed by the server.</summary>
-    public FilterChain AppliedFilters => _filters;
+    /// <remarks>
+    /// The sustained pace follows the raw reports, which differ per server kind. NodeLink reports already
+    /// carry the timescale, Lavalink reports advance at wall time under one, so a timescale speed other than
+    /// one leaves the Lavalink estimate at wall pace. Reports arrive on the server's player update interval.
+    /// <para>
+    /// Null before the first report and after a disconnect, freezes at the final position after a natural
+    /// end.
+    /// </para>
+    /// </remarks>
+    public TimeSpan? Position => _playback.Position;
 
     /// <summary>Raised when the server started playing the current track.</summary>
-    public event EventHandler<TrackStartedEventArgs>? TrackStarted;
-
-    /// <summary>Raised when the current track ended, <see cref="TrackFinishedEventArgs.EndReason"/> says why.</summary>
-    public event EventHandler<TrackFinishedEventArgs>? TrackFinished;
-
-    /// <summary>Raised when the server failed to load or play the current track.</summary>
-    public event EventHandler<TrackExceptionEventArgs>? TrackException;
-
-    /// <summary>Raised when playback of the current track stalled long enough to exceed the node's threshold.</summary>
-    public event EventHandler<TrackStuckEventArgs>? TrackStuck;
-
-    /// <summary>Raised on every position report of the player (every few seconds while connected).</summary>
-    public event EventHandler<PlayerUpdateEventArgs>? PlayerUpdated;
-
-    /// <summary>Raised when the node's Discord voice websocket for this guild was closed.</summary>
-    public event EventHandler<WebSocketClosedEventArgs>? WebSocketClosed;
-
-    /// <summary>Raised when the node loaded the lyrics of the current track through a lyrics subscription.</summary>
-    public event EventHandler<LyricsFoundEventArgs>? LyricsFound;
-
-    /// <summary>Raised when no lyrics provider had lyrics for the current track.</summary>
-    public event EventHandler<LyricsNotFoundEventArgs>? LyricsNotFound;
-
-    /// <summary>Raised for every lyrics line that becomes current during playback.</summary>
-    public event EventHandler<LyricsLineEventArgs>? LyricsLine;
-
-    /// <summary>Raised when the node loaded the SponsorBlock segments of the current track.</summary>
-    public event EventHandler<SponsorBlockSegmentsLoadedEventArgs>? SponsorBlockSegmentsLoaded;
-
-    /// <summary>Raised when the node skipped a SponsorBlock segment of the current track.</summary>
-    public event EventHandler<SponsorBlockSegmentSkippedEventArgs>? SponsorBlockSegmentSkipped;
-
-    /// <summary>Raised when a mix layer started playing on top of the main track.</summary>
-    public event EventHandler<MixStartedEventArgs>? MixStarted;
-
-    /// <summary>Raised when a mix layer ended.</summary>
-    public event EventHandler<MixEndedEventArgs>? MixEnded;
-
-    /// <summary>Raised when the player's volume changed.</summary>
-    public event EventHandler<VolumeChangedEventArgs>? VolumeChanged;
-
-    /// <summary>Raised when the server's applied filter chain changed.</summary>
-    public event EventHandler<FiltersChangedEventArgs>? FiltersChanged;
-
-    /// <summary>Raised when the playback position of the current track was sought.</summary>
-    public event EventHandler<TrackSoughtEventArgs>? TrackSought;
-
-    /// <summary>Raised on both pausing and resuming, <see cref="PauseChangedEventArgs.IsPaused"/> tells them apart.</summary>
-    public event EventHandler<PauseChangedEventArgs>? PauseChanged;
-
-    /// <summary>Raised when the server created the player for this guild.</summary>
-    public event EventHandler<PlayerCreatedEventArgs>? PlayerCreated;
-
-    /// <summary>Raised when the server destroyed the player for this guild.</summary>
-    public event EventHandler<PlayerDestroyedEventArgs>? PlayerDestroyed;
-
-    /// <summary>Raised when the node's session could not be resumed, this guild's player is gone as a result.</summary>
-    public event EventHandler<GuildConnectionInvalidatedEventArgs>? GuildConnectionInvalidated;
-
-    /// <summary>The voice connection dropped and is being re-established.</summary>
-    public event EventHandler<PlayerReconnectingEventArgs>? PlayerReconnecting;
-
-    /// <summary>The voice connection became established.</summary>
-    public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
-
-    /// <summary>A live stream announced new station metadata while playing.</summary>
-    public event EventHandler<StreamMetadataUpdatedEventArgs>? StreamMetadataUpdated;
-
-    /// <summary>Raised when the node reports EternalBox context for the track that just started playing.</summary>
-    public event EventHandler<EternalBoxInfoUpdatedEventArgs>? EternalBoxInfoUpdated;
-
-    /// <summary>Raised when the EternalBox engine jumps to a different beat of the playing track.</summary>
-    public event EventHandler<EternalBoxJumpedEventArgs>? EternalBoxJumped;
-
-    /// <summary>Raised when a handler of one of the other events of this connection threw.</summary>
-    public event EventHandler<PlaybackErrorEventArgs>? PlaybackError;
+    public event AsyncEventHandler<TrackStartedEventArgs>? TrackStarted;
 
     /// <summary>
-    /// Plays a track, replacing whatever is playing unless <see cref="PlayOptions.NoReplace"/>
-    /// is set. Uses <see cref="Track.StartPosition"/> as the position if set and no explicit
-    /// <see cref="PlayOptions.StartPosition"/> is given, consumed after the first accepted play.
+    /// Raised when the current track ended, <see cref="TrackFinishedEventArgs.EndReason"/> says why, a null
+    /// <see cref="TrackFinishedEventArgs.Track"/> (NodeLink) may report a reset of an earlier playthrough,
+    /// see the remarks of that property.
     /// </summary>
-    /// <exception cref="NotSupportedException"><see cref="PlayOptions.AudioTrackId"/> was given and the node is not NodeLink.</exception>
-    public async Task PlayAsync(
+    public event AsyncEventHandler<TrackFinishedEventArgs>? TrackFinished;
+
+    /// <summary>Raised when the server failed to load or play the current track.</summary>
+    public event AsyncEventHandler<TrackExceptionEventArgs>? TrackException;
+
+    /// <summary>
+    /// Raised when playback of the current track stalled long enough to exceed the node's threshold.
+    /// </summary>
+    public event AsyncEventHandler<TrackStuckEventArgs>? TrackStuck;
+
+    /// <summary>Raised on every position report of the player.</summary>
+    /// <remarks>
+    /// Reports are skipped while the connection's event queue is more than 512 events behind (a stuck or slow
+    /// handler), the latest state is always available through <see cref="State"/> and <see cref="Position"/>.
+    /// </remarks>
+    public event AsyncEventHandler<PlayerUpdateEventArgs>? PlayerUpdated;
+
+    /// <summary>Raised when the node's Discord voice websocket for this guild was closed.</summary>
+    /// <remarks>
+    /// For NodeLink this also reports synthetic voice deaths (worker failure, UDP/IP-discovery loss) that
+    /// never closed a Discord websocket (see <see cref="WebSocketClosedEventArgs.Code"/>). NodeLink also
+    /// emits deaths that never came from Discord wearing Discord codes, for example 4015 when its voice
+    /// library gives up reconnecting and 4014 when the voice server endpoint is null. Do not attribute 4xxx to
+    /// Discord on NodeLink without checking the reason.
+    /// </remarks>
+    public event AsyncEventHandler<WebSocketClosedEventArgs>? WebSocketClosed;
+
+    /// <summary>Raised when the node loaded the lyrics of the current track through a lyrics subscription.</summary>
+    public event AsyncEventHandler<LyricsFoundEventArgs>? LyricsFound;
+
+    /// <summary>
+    /// Raised when no timed lyrics were found for the track, no provider had any, or the provider returned
+    /// text-only lyrics (LavaLyrics).
+    /// </summary>
+    /// <remarks>NodeLink answers it only when nothing was found.</remarks>
+    public event AsyncEventHandler<LyricsNotFoundEventArgs>? LyricsNotFound;
+
+    /// <summary>Raised for every lyrics line that becomes current during playback.</summary>
+    /// <remarks>
+    /// Lines are skipped while the connection's event queue is more than 512 events behind (a stuck or slow
+    /// handler).
+    /// </remarks>
+    public event AsyncEventHandler<LyricsLineEventArgs>? LyricsLine;
+
+    /// <summary>Raised when the node loaded the SponsorBlock segments of the current track.</summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<SponsorBlockSegmentsLoadedEventArgs>? SponsorBlockSegmentsLoaded;
+
+    /// <summary>Raised when the node skipped a SponsorBlock segment of the current track.</summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<SponsorBlockSegmentSkippedEventArgs>? SponsorBlockSegmentSkipped;
+
+    /// <summary>Raised when a mix started playing on top of the main track.</summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<MixStartedEventArgs>? MixStarted;
+
+    /// <summary>Raised when a mix layer ended.</summary>
+    /// <remarks>
+    /// NodeLink only. The FINISHED and MAIN_ENDED reasons only arrive when the server's mix auto-cleanup is
+    /// enabled, a layer that plays through with it off ends through the mixer's teardown instead.
+    /// </remarks>
+    public event AsyncEventHandler<MixEndedEventArgs>? MixEnded;
+
+    /// <summary>Raised when the player's volume changed.</summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<VolumeChangedEventArgs>? VolumeChanged;
+
+    /// <summary>Raised when the server's applied filter chain changed.</summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<FiltersChangedEventArgs>? FiltersChanged;
+
+    /// <summary>Raised when the playback position of the current track was sought.</summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<TrackSoughtEventArgs>? TrackSought;
+
+    /// <summary>
+    /// Raised on both pausing and resuming, <see cref="PauseChangedEventArgs.IsPaused"/> tells them apart.
+    /// </summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<PauseChangedEventArgs>? PauseChanged;
+
+    /// <summary>Raised when the server created the player.</summary>
+    /// <remarks>
+    /// NodeLink only. The creation this connection's own join caused races the return of the connect and
+    /// usually fires before any handler can subscribe, so treat the connect's completion as the creation
+    /// signal. This event only reports creations by other actors (a co-client, a re-creation after a resume).
+    /// </remarks>
+    public event AsyncEventHandler<PlayerCreatedEventArgs>? PlayerCreated;
+
+    /// <summary>
+    /// Raised when the player was destroyed by an actor outside this client on the same session, not by this
+    /// connection's own REST teardown (DisconnectAsync).
+    /// </summary>
+    /// <remarks>
+    /// A destroy frame queued by a kick or pass can still drain through this connection, and a successor
+    /// connection of the same guild can observe a stale frame of a predecessor's teardown. The destroy is a
+    /// notification only, the connection's playback half (track, position estimate, filters) keeps its last
+    /// state until the next play or a teardown resets it. NodeLink only.
+    /// </remarks>
+    public event AsyncEventHandler<PlayerDestroyedEventArgs>? PlayerDestroyed;
+
+    /// <summary>
+    /// Raised when this guild's player is gone for good, the node session could not be resumed, or a NodeLink
+    /// cluster worker crashed and took the player with it.
+    /// </summary>
+    public event AsyncEventHandler<GuildConnectionInvalidatedEventArgs>? GuildConnectionInvalidated;
+
+    /// <summary>The voice connection dropped and is being re-established.</summary>
+    /// <remarks>
+    /// NodeLink only. The server dispatches this per re-establishment attempt, one reconnect with an
+    /// intermediate failure can carry more than one raise.
+    /// </remarks>
+    public event AsyncEventHandler<PlayerReconnectingEventArgs>? PlayerReconnecting;
+
+    /// <summary>The voice connection became established.</summary>
+    /// <remarks>
+    /// NodeLink only. The establishment of the join itself can dispatch before a handler can attach (the
+    /// connect's roundtrip races the voice websocket), the reliable signal for the first join is the connect
+    /// completing, reconnect cycles raise this while subscribed.
+    /// </remarks>
+    public event AsyncEventHandler<PlayerConnectedEventArgs>? PlayerConnected;
+
+    /// <summary>A live stream announced new station metadata while playing.</summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<StreamMetadataUpdatedEventArgs>? StreamMetadataUpdated;
+
+    /// <summary>
+    /// Raised when the node reports EternalBox context for the playing track, whenever the server signals the
+    /// track start.
+    /// </summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<EternalBoxInfoUpdatedEventArgs>? EternalBoxInfoUpdated;
+
+    /// <summary>Raised when the EternalBox engine jumps to a different beat of the playing track.</summary>
+    /// <remarks>NodeLink only.</remarks>
+    public event AsyncEventHandler<EternalBoxJumpedEventArgs>? EternalBoxJumped;
+
+    /// <summary>Raised when a handler of one of the other events of this connection threw.</summary>
+    public event AsyncEventHandler<HandlerErrorEventArgs>? HandlerError;
+
+    /// <summary>
+    /// Plays a track, replacing whatever plays unless <see cref="PlayOptions.NoReplace"/> is set, falls back
+    /// to <see cref="Track.StartPosition"/> without an explicit start, consumed after the first accepted play.
+    /// </summary>
+    /// <remarks>
+    /// The consumption is best-effort on the echo, a play the server ignored (NodeLink drops a re-sent
+    /// identical track) can consume the offset without a restart, the next accepted play then starts from
+    /// zero.
+    /// </remarks>
+    /// <param name="track">The track to play.</param>
+    /// <param name="options">How to start the track, null starts it plain.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the server accepted the play.</returns>
+    /// <exception cref="NotSupportedException">
+    /// <see cref="PlayOptions.AudioTrackId"/> was given and the node is not NodeLink.
+    /// </exception>
+    public Task PlayAsync(
         Track track,
         PlayOptions? options = null,
         CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(track);
-        var startPosition = options?.StartPosition;
-        var endTime = options?.EndTime;
-
-        if (startPosition is { } start && start < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                start,
-                "PlayOptions.StartPosition must not be negative."
-            );
-        if (endTime is { } end && end <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                end,
-                "PlayOptions.EndTime must be greater than zero."
-            );
-        if (startPosition is { } startEnd && endTime is { } endEnd && startEnd >= endEnd)
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                "PlayOptions.StartPosition must be earlier than PlayOptions.EndTime."
-            );
-
-        if (options?.AudioTrackId is not null)
-            NodeGuards.RequireNodeLink(_node, "PlayOptions.AudioTrackId");
-
-        EnsureActive();
-
-        // Falls back to the track's URL-derived offset, consumed only once the play is accepted.
-        var positionMilliseconds = (long?)options?.StartPosition?.TotalMilliseconds;
-        var urlStart = positionMilliseconds is null ? track.StartPosition : null;
-        if (urlStart is not null)
-            positionMilliseconds = (long)urlStart.Value.TotalMilliseconds;
-
-        // NodeLink ignores a re-sent identical track, stop it first to force a restart.
-        if (_node.IsNodeLink && options?.NoReplace != true && IsSameTrack(CurrentTrack, track))
-            await _node
-                .Rest.UpdatePlayerAsync(
-                    GuildId,
-                    new PlayerUpdatePayload { Track = new PlayerUpdateTrack { Encoded = null } },
-                    noReplace: false,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload
-                {
-                    Track = new PlayerUpdateTrack
-                    {
-                        Encoded = track.Encoded,
-                        UserData = options?.UserData,
-                        AudioTrackId = options?.AudioTrackId,
-                    },
-                    Position = positionMilliseconds,
-                    EndTime = (long?)options?.EndTime?.TotalMilliseconds,
-                },
-                options?.NoReplace ?? false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        // A noReplace refusal echoes the track that kept playing, not this one.
-        if (urlStart is not null && IsSameTrack(player.Track, track))
-            track.StartPosition = null;
-
-        CaptureState(player);
-    }
+    ) => _commands.PlayAsync(track, options, cancellationToken);
 
     /// <summary>
-    /// Plays a track by its raw identifier, letting the server resolve and load it, no local
-    /// load needed. The identifier must resolve to a single track: a source URL, a video id.
-    /// Search queries and playlists are rejected by both servers. Identifier loading is Lavalink-only, NodeLink does not implement it and rejects the request.
+    /// Plays a raw identifier and lets the server load it, search queries and playlists are rejected by both
+    /// servers.
     /// </summary>
+    /// <remarks>Lavalink only.</remarks>
+    /// <param name="identifier">What to load, a raw identifier (a source URL or a video id).</param>
+    /// <param name="options">How to start the loaded track, null starts it plain.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The loaded track, as the player reports it.</returns>
     /// <exception cref="NotSupportedException">The node is a NodeLink server.</exception>
-    public async Task<Track> PlayIdentifierAsync(
+    public Task<Track> PlayIdentifierAsync(
         string identifier,
         PlayOptions? options = null,
         CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(identifier);
-        var startPosition = options?.StartPosition;
-        var endTime = options?.EndTime;
-        if (startPosition is { } start && start < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                start,
-                "PlayOptions.StartPosition must not be negative."
-            );
-        if (endTime is { } end && end <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                end,
-                "PlayOptions.EndTime must be greater than zero."
-            );
-        if (startPosition is { } startEnd && endTime is { } endEnd && startEnd >= endEnd)
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                "PlayOptions.StartPosition must be earlier than PlayOptions.EndTime."
-            );
-        // AudioTrackId is NodeLink-only, but identifier loading is Lavalink-only: no node
-        // could ever satisfy both, so this is an argument error rather than a node-kind one.
-        if (options?.AudioTrackId is not null)
-            throw new ArgumentException(
-                "PlayOptions.AudioTrackId is not supported by PlayIdentifierAsync.",
-                nameof(options)
-            );
-
-        NodeGuards.RequireLavalink(_node, "PlayIdentifierAsync");
-        EnsureActive();
-
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload
-                {
-                    Track = new PlayerIdentifierUpdateTrack
-                    {
-                        Identifier = identifier,
-                        UserData = options?.UserData,
-                    },
-                    Position = (long?)startPosition?.TotalMilliseconds,
-                    EndTime = (long?)endTime?.TotalMilliseconds,
-                },
-                options?.NoReplace ?? false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        CaptureState(player);
-        return player.Track
-            ?? throw new InvalidOperationException(
-                "The server did not resolve the identifier into a track."
-            );
-    }
+    ) => _commands.PlayIdentifierAsync(identifier, options, cancellationToken);
 
     /// <summary>
-    /// Moves or clears the end time of the current track after it started playing: playback
-    /// stops when the track reaches the new position. Pass null to play to the end.
+    /// Moves the end time marker mid-track, honored by Lavalink, accepted but not applied by NodeLink, set it
+    /// through <see cref="PlayOptions.EndTime"/> there.
     /// </summary>
-    public async Task SetEndTimeAsync(
-        TimeSpan? endTime,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (endTime is { } end && end <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(
-                nameof(endTime),
-                end,
-                "The end time must be greater than zero."
-            );
-        EnsureActive();
-
-        var payload = new EndTimeUpdate { EndTime = (long?)endTime?.TotalMilliseconds };
-        var player = await _node
-            .Rest.UpdatePlayerEndTimeAsync(GuildId, payload, cancellationToken)
-            .ConfigureAwait(false);
-        CaptureState(player);
-    }
+    /// <remarks>
+    /// On Lavalink the marker fires and the end reports as a natural finish. A null <paramref name="endTime"/>
+    /// does not clear it, the server skips the marker block for a null value, play the track again without an
+    /// end time to clear it.
+    /// <para>
+    /// On NodeLink an end time that travels with a play works on every source, but a marker moved mid-track
+    /// only applies on the native seek paths (SABR sources like YouTube and the legacy path), plain http
+    /// sources drop the value on the re-seek. A replay without an end time clears an applied marker, and the
+    /// update is silently dropped while the position still reads zero (voice startup, the first second or so).
+    /// </para>
+    /// </remarks>
+    /// <param name="endTime">
+    /// The marker to stop the track at. On NodeLink a null value is sent as-is, on Lavalink it is a no-op (the
+    /// marker stays armed, see remarks).
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the end time was updated.</returns>
+    public Task SetEndTimeAsync(TimeSpan? endTime, CancellationToken cancellationToken = default) =>
+        _commands.SetEndTimeAsync(endTime, cancellationToken);
 
     /// <summary>Stops the player, clearing the current track.</summary>
-    public async Task StopAsync(CancellationToken cancellationToken = default)
-    {
-        EnsureActive();
-
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { Track = new PlayerUpdateTrack { Encoded = null } },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        CaptureState(player);
-    }
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the player was stopped.</returns>
+    public Task StopAsync(CancellationToken cancellationToken = default) =>
+        _commands.StopAsync(cancellationToken);
 
     /// <summary>Pauses playback.</summary>
-    public async Task PauseAsync(CancellationToken cancellationToken = default)
-    {
-        EnsureActive();
-
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { Paused = true },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        CaptureState(player);
-    }
+    /// <remarks>
+    /// NodeLink rate-limits requests per guild and answers 429, which surfaces as an <see
+    /// cref="Exceptions.RestException"/> with status 429. The limits are set on the server and cover any
+    /// request for the guild. Lavalink applies no such limit.
+    /// </remarks>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the player was paused.</returns>
+    public Task PauseAsync(CancellationToken cancellationToken = default) =>
+        _commands.SetPausedAsync(true, cancellationToken);
 
     /// <summary>Resumes playback.</summary>
-    public async Task ResumeAsync(CancellationToken cancellationToken = default)
-    {
-        EnsureActive();
+    /// <remarks>
+    /// NodeLink rate-limits requests per guild, see the remarks on <see cref="PauseAsync"/>.
+    /// </remarks>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the player was resumed.</returns>
+    public Task ResumeAsync(CancellationToken cancellationToken = default) =>
+        _commands.SetPausedAsync(false, cancellationToken);
 
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { Paused = false },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        CaptureState(player);
-    }
+    /// <summary>Seeks the current track to a position.</summary>
+    /// <remarks>
+    /// NodeLink rate-limits requests per guild, see the remarks on <see cref="PauseAsync"/>.
+    /// </remarks>
+    /// <param name="position">Where to seek to.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the seek was accepted.</returns>
+    public Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default) =>
+        _commands.SeekAsync(position, cancellationToken);
 
-    /// <summary>Seeks to the specified position of the current track.</summary>
-    public async Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default)
-    {
-        if (position < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(
-                nameof(position),
-                position,
-                "The seek position must not be negative."
-            );
-        EnsureActive();
-
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { Position = (long)position.TotalMilliseconds },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        CaptureState(player);
-    }
-
-    /// <summary>Sets the player volume, 0-1000, where 100 is the default.</summary>
-    public async Task SetVolumeAsync(int volume, CancellationToken cancellationToken = default)
-    {
-        ArgumentOutOfRangeException.ThrowIfLessThan(volume, 0);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(volume, 1000);
-        EnsureActive();
-
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { Volume = volume },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        CaptureState(player);
-    }
+    /// <summary>Sets the volume of the player.</summary>
+    /// <remarks>
+    /// NodeLink rate-limits requests per guild, see the remarks on <see cref="PauseAsync"/>.
+    /// </remarks>
+    /// <param name="volume">The volume to set, 100 is the default.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the volume was set.</returns>
+    public Task SetVolumeAsync(int volume, CancellationToken cancellationToken = default) =>
+        _commands.SetVolumeAsync(volume, cancellationToken);
 
     /// <summary>
-    /// Configures the fades around the player lifecycle (track start/end, stop, seek, pause,
-    /// resume). Pass null to disable every fade.
+    /// Fetches the player as the server sees it, takes its state in and returns it, useful to re-sync after a
+    /// resumed reconnect or an out-of-band change.
     /// </summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink, or <paramref name="options"/> sets ducking and the node runs a version older than 3.9.</exception>
-    public async Task SetFadingAsync(
-        FadingOptions? options = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        // The nested ducking config landed in the same NodeLink release as the standalone
-        // ducking toggle, so it needs the same 3.9 floor.
-        if (options?.Ducking is not null)
-            NodeGuards.RequireNodeLink(_node, "ducking", new NodeVersion(3, 9, 0));
-        else
-            NodeGuards.RequireNodeLink(_node, "fading");
-        EnsureActive();
-
-        // The server rejects a literal null fading value as a malformed request, so disabling
-        // fades means sending an explicit empty configuration instead of null.
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { Fading = options ?? new FadingOptions() },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        CaptureState(player);
-    }
-
-    /// <summary>Turns loudness normalization (EBU R128-ish leveling) on or off.</summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public async Task SetLoudnessNormalizerAsync(
-        bool enabled,
-        CancellationToken cancellationToken = default
-    )
-    {
-        NodeGuards.RequireNodeLink(_node, "loudness normalization");
-        EnsureActive();
-
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { LoudnessNormalizer = enabled },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        CaptureState(player);
-    }
-
-    /// <summary>
-    /// Turns speaking-detection ducking on or off: the music dips while someone talks. The duck
-    /// depth and timing are set through <see cref="FadingOptions.Ducking"/> in
-    /// <see cref="SetFadingAsync"/> instead.
-    /// </summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink, or runs a version older than 3.9.</exception>
-    public async Task SetDuckingAsync(bool enabled, CancellationToken cancellationToken = default)
-    {
-        NodeGuards.RequireNodeLink(_node, "ducking", new NodeVersion(3, 9, 0));
-        EnsureActive();
-
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { Ducking = enabled },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        CaptureState(player);
-    }
-
-    /// <summary>
-    /// Configures the crossfade between consecutive tracks. Pass null to turn it off.
-    /// </summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink, or runs a version older than 3.9.</exception>
-    public async Task SetCrossfadeAsync(
-        CrossfadeOptions? options = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        NodeGuards.RequireNodeLink(_node, "crossfade", new NodeVersion(3, 9, 0));
-        EnsureActive();
-
-        // The server rejects a literal null crossfade value as a malformed request, so turning
-        // the crossfade off means sending an explicit empty configuration instead of null.
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { Crossfade = options ?? new CrossfadeOptions() },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        CaptureState(player);
-    }
-
-    /// <summary>
-    /// Preloads the next track so the server transitions into it when the current one ends,
-    /// gapless or crossfaded. Pass null to clear the preload. The track must have been loaded
-    /// from the same node.
-    /// </summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public async Task SetNextTrackAsync(
-        Track? nextTrack,
-        CancellationToken cancellationToken = default
-    )
-    {
-        NodeGuards.RequireNodeLink(_node, "next track preloading");
-        EnsureActive();
-
-        var payload = nextTrack is null
-            ? new NextTrackUpdate()
-            : new NextTrackUpdate
-            {
-                NextTrack = new PlayerUpdateTrack { Encoded = nextTrack.Encoded },
-            };
-        var player = await _node
-            .Rest.UpdatePlayerNextTrackAsync(GuildId, payload, cancellationToken)
-            .ConfigureAwait(false);
-        CaptureState(player);
-    }
-
-    /// <summary>
-    /// Subscribes to lyrics updates: <see cref="LyricsFound"/> delivers the full lyrics,
-    /// <see cref="LyricsLine"/> the current line as playback advances.
-    /// <paramref name="skipTrackSource"/> skips the track source's own lyrics.
-    /// </summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink and does not have the LavaLyrics plugin.</exception>
-    public Task SubscribeLyricsAsync(
-        bool skipTrackSource = false,
-        CancellationToken cancellationToken = default
-    )
-    {
-        NodeGuards.RequireNodeLinkOrPlugin(
-            _node,
-            NodeGuards.LavaLyricsPlugin,
-            "lyrics subscription"
-        );
-        EnsureActive();
-
-        return _node.Rest.SubscribeLyricsAsync(GuildId, skipTrackSource, cancellationToken);
-    }
-
-    /// <summary>Ends the lyrics subscription, no further lyrics events arrive.</summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink and does not have the LavaLyrics plugin.</exception>
-    public Task UnsubscribeLyricsAsync(CancellationToken cancellationToken = default)
-    {
-        NodeGuards.RequireNodeLinkOrPlugin(
-            _node,
-            NodeGuards.LavaLyricsPlugin,
-            "lyrics subscription"
-        );
-        EnsureActive();
-
-        return _node.Rest.UnsubscribeLyricsAsync(GuildId, cancellationToken);
-    }
-
-    /// <summary>
-    /// Reads the SponsorBlock state of the player: enabled categories, action types, the
-    /// segments of the current track and the skip margin.
-    /// </summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public Task<SponsorBlockState> GetSponsorBlockAsync(
-        CancellationToken cancellationToken = default
-    )
-    {
-        NodeGuards.RequireNodeLink(_node, "SponsorBlock");
-        EnsureActive();
-
-        return _node.Rest.GetSponsorBlockAsync(GuildId, cancellationToken);
-    }
-
-    /// <summary>Changes the SponsorBlock settings, members left null keep their current value.</summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public Task<SponsorBlockState> SetSponsorBlockAsync(
-        SponsorBlockSettings settings,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        NodeGuards.RequireNodeLink(_node, "SponsorBlock");
-        EnsureActive();
-
-        return _node.Rest.SetSponsorBlockAsync(GuildId, settings, cancellationToken);
-    }
-
-    /// <summary>Replaces the SponsorBlock segments of the current track with caller-supplied ones.</summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public Task<SponsorBlockState> SetSponsorBlockSegmentsAsync(
-        IReadOnlyList<SponsorBlockSegment> segments,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(segments);
-        NodeGuards.RequireNodeLink(_node, "SponsorBlock");
-        EnsureActive();
-
-        return _node.Rest.SetSponsorBlockSegmentsAsync(GuildId, segments, cancellationToken);
-    }
-
-    /// <summary>Clears the SponsorBlock state, disabling segment skipping for the player.</summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public Task ClearSponsorBlockAsync(CancellationToken cancellationToken = default)
-    {
-        NodeGuards.RequireNodeLink(_node, "SponsorBlock");
-        EnsureActive();
-
-        return _node.Rest.ClearSponsorBlockAsync(GuildId, cancellationToken);
-    }
-
-    /// <summary>
-    /// Starts a mix layer: the track plays on top of the main one, server-side. Returns the
-    /// created layer, whose <see cref="MixLayer.Id"/> changes or stops it later.
-    /// </summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public Task<MixLayer> StartMixAsync(
-        Track track,
-        float? volume = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(track);
-        ArgumentOutOfRangeException.ThrowIfLessThan(volume ?? 0.0f, 0.0f);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(volume ?? 1.0f, 1.0f);
-        NodeGuards.RequireNodeLink(_node, "mix layers");
-        EnsureActive();
-
-        return _node.Rest.CreateMixLayerAsync(GuildId, track.Encoded, volume, cancellationToken);
-    }
-
-    /// <summary>Lists the mix layers currently playing on top of the main track.</summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public Task<IReadOnlyList<MixLayer>> GetMixLayersAsync(
-        CancellationToken cancellationToken = default
-    )
-    {
-        NodeGuards.RequireNodeLink(_node, "mix layers");
-        EnsureActive();
-
-        return _node.Rest.ListMixLayersAsync(GuildId, cancellationToken);
-    }
-
-    /// <summary>Changes the loudness of one mix layer, 0.0-1.0.</summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public Task SetMixVolumeAsync(
-        string mixLayerId,
-        float volume,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(mixLayerId);
-        ArgumentOutOfRangeException.ThrowIfLessThan(volume, 0.0f);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(volume, 1.0f);
-        NodeGuards.RequireNodeLink(_node, "mix layers");
-        EnsureActive();
-
-        return _node.Rest.SetMixLayerVolumeAsync(GuildId, mixLayerId, volume, cancellationToken);
-    }
-
-    /// <summary>Stops one mix layer, the main track keeps playing.</summary>
-    /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
-    public Task StopMixAsync(string mixLayerId, CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(mixLayerId);
-        NodeGuards.RequireNodeLink(_node, "mix layers");
-        EnsureActive();
-
-        return _node.Rest.RemoveMixLayerAsync(GuildId, mixLayerId, cancellationToken);
-    }
-
-    /// <summary>Applies an audio filter, replacing the previous filter of the same kind. On NodeLink, a filter set while no track is loaded is re-sent when the next track starts.</summary>
-    public async Task AddFilterAsync(IFilter filter, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(filter);
-        RequireNodeLinkFilters(
-            new FilterChain
-            {
-                Echo = filter as EchoFilter,
-                Reverb = filter as ReverbFilter,
-                HighPass = filter as HighPassFilter,
-                Chorus = filter as ChorusFilter,
-                Phaser = filter as PhaserFilter,
-                Flanger = filter as FlangerFilter,
-                Spatial = filter as SpatialFilter,
-                Compressor = filter as CompressorFilter,
-                Phonograph = filter as PhonographFilter,
-                Tesseract = filter as TesseractFilter,
-            }
-        );
-
-        await _filterGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            EnsureActive();
-
-            var chain = filter switch
-            {
-                KaraokeFilter karaoke => DesiredFilters() with { Karaoke = karaoke },
-                TimescaleFilter timescale => DesiredFilters() with { Timescale = timescale },
-                TremoloFilter tremolo => DesiredFilters() with { Tremolo = tremolo },
-                VibratoFilter vibrato => DesiredFilters() with { Vibrato = vibrato },
-                DistortionFilter distortion => DesiredFilters() with { Distortion = distortion },
-                RotationFilter rotation => DesiredFilters() with { Rotation = rotation },
-                ChannelMixFilter channelMix => DesiredFilters() with { ChannelMix = channelMix },
-                LowPassFilter lowPass => DesiredFilters() with { LowPass = lowPass },
-                EchoFilter echo => DesiredFilters() with { Echo = echo },
-                ReverbFilter reverb => DesiredFilters() with { Reverb = reverb },
-                HighPassFilter highPass => DesiredFilters() with { HighPass = highPass },
-                ChorusFilter chorus => DesiredFilters() with { Chorus = chorus },
-                PhaserFilter phaser => DesiredFilters() with { Phaser = phaser },
-                FlangerFilter flanger => DesiredFilters() with { Flanger = flanger },
-                SpatialFilter spatial => DesiredFilters() with { Spatial = spatial },
-                CompressorFilter compressor => DesiredFilters() with { Compressor = compressor },
-                PhonographFilter phonograph => DesiredFilters() with { Phonograph = phonograph },
-                TesseractFilter tesseract => DesiredFilters() with { Tesseract = tesseract },
-                _ => throw new ArgumentException(
-                    $"The filter type '{filter.GetType().Name}' is not supported.",
-                    nameof(filter)
-                ),
-            };
-
-            await SendFiltersAsync(Normalize(chain), cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-    }
-
-    /// <summary>Removes the audio filter of the given type, when applied.</summary>
-    public Task RemoveFilterAsync<TFilter>(CancellationToken cancellationToken = default)
-        where TFilter : IFilter => RemoveFilterAsync(typeof(TFilter), cancellationToken);
-
-    /// <summary>Removes the audio filter of the same kind as the given one, matching is by filter type, not by value.</summary>
-    public Task RemoveFilterAsync(IFilter filter, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(filter);
-        return RemoveFilterAsync(filter.GetType(), cancellationToken);
-    }
-
-    /// <summary>Removes all audio filters, including the volume filter, the equalizer and plugin filters.</summary>
-    public async Task ClearFiltersAsync(CancellationToken cancellationToken = default)
-    {
-        await _filterGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            EnsureActive();
-
-            await SendFiltersAsync(Normalize(new FilterChain()), cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-    }
-
-    /// <summary>Sets the equalizer bands, replacing the previous ones, an empty list clears the equalizer.</summary>
-    public async Task SetEqualizerAsync(
-        IReadOnlyList<EqualizerBand>? bands = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        await _filterGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            EnsureActive();
-
-            var chain = DesiredFilters() with
-            {
-                Equalizer = bands is { Count: > 0 } ? bands : null,
-            };
-            await SendFiltersAsync(Normalize(chain), cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-    }
-
-    /// <summary>
-    /// Sets the volume filter, 0.0-5.0 (1.0 disables it). Independent of the player volume,
-    /// values above 1.0 may clip. Lavalink only, NodeLink does not implement it.
-    /// </summary>
-    /// <exception cref="NotSupportedException">The node is a NodeLink server.</exception>
-    public async Task SetVolumeFilterAsync(
-        float volume,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentOutOfRangeException.ThrowIfLessThan(volume, 0.0f);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(volume, 5.0f);
-        NodeGuards.RequireLavalink(_node, "volume filter");
-
-        await _filterGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            EnsureActive();
-
-            var chain = DesiredFilters() with { Volume = volume };
-            await SendFiltersAsync(Normalize(chain), cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-    }
-
-    /// <summary>Applies a complete filter chain, replacing everything applied so far, filters left null are cleared.</summary>
-    public async Task ApplyFiltersAsync(
-        FilterChain filters,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(filters);
-        if (filters.Volume is not null)
-            NodeGuards.RequireLavalink(_node, "volume filter");
-        RequireNodeLinkFilters(filters);
-
-        await _filterGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            EnsureActive();
-
-            await SendFiltersAsync(Normalize(filters), cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-    }
-
-    /// <summary>
-    /// Fetches the authoritative player from the server, adopts its state and returns it,
-    /// useful to re-synchronize a live connection after a resumed reconnect or when the player
-    /// was changed out-of-band. After a session loss there is nothing left to read, the
-    /// server destroyed the player, so reconnect the bot instead.
-    /// </summary>
-    public async Task<Player> RefreshAsync(CancellationToken cancellationToken = default)
-    {
-        EnsureActive();
-
-        var player =
-            await _node.Rest.GetPlayerAsync(GuildId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"The node has no player for guild {GuildId}.");
-
-        await _filterGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            CaptureState(player);
-            if (player.Filters is { } serverFilters)
-                _filters = serverFilters;
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-
-        return player;
-    }
+    /// <remarks>After a session loss the player is gone, reconnect.</remarks>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The fetched player, now the connection's state.</returns>
+    public Task<Player> RefreshAsync(CancellationToken cancellationToken = default) =>
+        _commands.RefreshAsync(cancellationToken);
 
     /// <summary>Disconnects the bot from the voice channel and destroys the player on the server.</summary>
-    public async Task DisconnectAsync(CancellationToken cancellationToken = default)
-    {
-        await _node.SendVoiceLeaveAsync(GuildId).ConfigureAwait(false);
-        await _node.DestroyPlayerExclusivelyAsync(this, cancellationToken).ConfigureAwait(false);
-        ClearState();
-    }
+    /// <remarks>
+    /// A cancellation during the teardown leaves the connection marked as tearing down. The registry removal
+    /// runs inside the destroy, so a cancellation before it leaves the connection registered, one after it
+    /// leaves it removed but unwiped. Either way it accepts no operations until another disconnect completes
+    /// the cleanup or a new connect takes the guild over.
+    /// <para>
+    /// The state wipe only runs when the destroy settled. The event pump retires with the teardown attempt
+    /// either way, since a dying connection has no reader left for events.
+    /// </para>
+    /// <para>
+    /// A destroy the server failed is not swallowed and throws to the caller. The connection stays unwiped and
+    /// accepts no operations until a retry or a takeover cleans it up.
+    /// </para>
+    /// <para>
+    /// A connect right after disconnecting a bot that was already out of voice can fail with a <see
+    /// cref="Exceptions.VoiceHandshakeException"/> until <see cref="NodeOptions.VoiceHandshakeTimeout"/>
+    /// passes. The library ignores the guild's voice state updates while it waits for the leave echo, and none
+    /// comes if the bot was not in voice.
+    /// </para>
+    /// </remarks>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the player was destroyed.</returns>
+    /// <exception cref="RestException">The server refused the player destroy.</exception>
+    public Task DisconnectAsync(CancellationToken cancellationToken = default) =>
+        _teardown.DisconnectAsync(cancellationToken);
 
-    /// <inheritdoc />
+    internal Task DrainVoiceForwardAsync(CancellationToken cancellationToken = default) =>
+        _voiceForward.DrainAsync(cancellationToken);
+
+    internal Task DrainFiltersAsync(CancellationToken cancellationToken = default) =>
+        _filters.DrainAsync(cancellationToken);
+
+    internal Task CompleteEventPumpAsync() => _pump.CompleteAsync(TimeSpan.FromSeconds(5));
+
+    /// <summary>Returns the connection as its guild and node.</summary>
+    /// <returns>The guild and node of the connection.</returns>
     public override string ToString() => $"{GuildId} ({_node})";
 
     internal void HandleTrackStart(TrackStartedEventArgs eventArgs)
     {
-        CurrentTrack = eventArgs.Track;
+        if (_tearingDown)
+            return;
 
-        // A filter update NodeLink dropped while no track was loaded is re-sent now that one
-        // is playing.
-        if (_pendingFilters is not null)
-            _ = ResendPendingFiltersAsync();
+        if (_filters.HasPendingFilters)
+            _ = _filters.ResendPendingFiltersAsync();
 
-        TrackStarted.Raise(this, eventArgs, OnHandlerError);
+        _playback.OnTrackStart(eventArgs);
+
+        Dispatch(TrackStarted, eventArgs);
     }
 
     internal void HandleTrackEnd(TrackFinishedEventArgs eventArgs)
     {
-        // Replaced tracks are followed immediately by their successor, so CurrentTrack never
-        // flickers to null. Also ignore an end event for a track that isn't current (covers
-        // NodeLink's stop-then-play restart, whose TrackEnd can race the play response).
-        if (
-            eventArgs.EndReason != TrackEndReason.Replaced
-            && (eventArgs.Track is null || IsSameTrack(CurrentTrack, eventArgs.Track))
-        )
-            CurrentTrack = null;
+        if (_tearingDown)
+            return;
 
-        _positionAdvancing = false;
-        TrackFinished.Raise(this, eventArgs, OnHandlerError);
+        _playback.OnTrackEnd(eventArgs);
+
+        Dispatch(TrackFinished, eventArgs);
     }
 
     internal void HandleTrackException(TrackExceptionEventArgs eventArgs) =>
-        TrackException.Raise(this, eventArgs, OnHandlerError);
+        Dispatch(TrackException, eventArgs);
 
     internal void HandleTrackStuck(TrackStuckEventArgs eventArgs) =>
-        TrackStuck.Raise(this, eventArgs, OnHandlerError);
+        Dispatch(TrackStuck, eventArgs);
 
     internal void HandlePlayerUpdate(PlayerUpdateEventArgs eventArgs)
     {
-        State = eventArgs.State;
-        _positionMilliseconds = eventArgs.State.PositionMilliseconds;
-        _positionTick = Environment.TickCount64;
-        _hasPosition = true;
-        _positionAdvancing =
-            eventArgs.State.Connected && !IsPaused && CurrentTrack is { Info.IsStream: false };
-        PlayerUpdated.Raise(this, eventArgs, OnHandlerError);
+        if (_tearingDown)
+            return;
+
+        _playback.OnPlayerUpdate(eventArgs);
+
+        Dispatch(PlayerUpdated, eventArgs, droppable: true);
     }
 
     internal void HandleWebSocketClosed(WebSocketClosedEventArgs eventArgs)
     {
-        WebSocketClosed.Raise(this, eventArgs, OnHandlerError);
+        Dispatch(WebSocketClosed, eventArgs);
 
-        // Without the voice websocket there is no audio either, tear the connection down.
-        _ = DisconnectAfterVoiceClosedAsync();
+        if (!_node.IsNodeLink)
+            _ = DisconnectAfterVoiceClosedWithGraceAsync(eventArgs.Code, Environment.TickCount64);
     }
 
-    internal void HandleLyricsFound(LyricsFoundEventArgs eventArgs) =>
-        LyricsFound.Raise(this, eventArgs, OnHandlerError);
+    internal Lock PlaybackPositionLock => _playback.PositionLock;
 
-    internal void HandleLyricsNotFound(LyricsNotFoundEventArgs eventArgs) =>
-        LyricsNotFound.Raise(this, eventArgs, OnHandlerError);
+    internal void ReanchorTimescaleUnderLock(TimescaleFilter? oldTimescale) =>
+        _playback.OnTimescaleChangedUnderLock(oldTimescale);
 
-    internal void HandleLyricsLine(LyricsLineEventArgs eventArgs) =>
-        LyricsLine.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleSponsorBlockSegmentsLoaded(SponsorBlockSegmentsLoadedEventArgs eventArgs) =>
-        SponsorBlockSegmentsLoaded.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleSponsorBlockSegmentSkipped(SponsorBlockSegmentSkippedEventArgs eventArgs) =>
-        SponsorBlockSegmentSkipped.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleMixStarted(MixStartedEventArgs eventArgs) =>
-        MixStarted.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleMixEnded(MixEndedEventArgs eventArgs) =>
-        MixEnded.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleVolumeChanged(VolumeChangedEventArgs eventArgs) =>
-        VolumeChanged.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleFiltersChanged(FiltersChangedEventArgs eventArgs) =>
-        FiltersChanged.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleTrackSought(TrackSoughtEventArgs eventArgs) =>
-        TrackSought.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandlePauseChanged(PauseChangedEventArgs eventArgs) =>
-        PauseChanged.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandlePlayerCreated(PlayerCreatedEventArgs eventArgs) =>
-        PlayerCreated.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandlePlayerDestroyed(PlayerDestroyedEventArgs eventArgs) =>
-        PlayerDestroyed.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandlePlayerReconnecting(PlayerReconnectingEventArgs eventArgs) =>
-        PlayerReconnecting.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandlePlayerConnected(PlayerConnectedEventArgs eventArgs) =>
-        PlayerConnected.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleStreamMetadataUpdated(StreamMetadataUpdatedEventArgs eventArgs) =>
-        StreamMetadataUpdated.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleEternalBoxInfoUpdated(EternalBoxInfoUpdatedEventArgs eventArgs) =>
-        EternalBoxInfoUpdated.Raise(this, eventArgs, OnHandlerError);
-
-    internal void HandleEternalBoxJumped(EternalBoxJumpedEventArgs eventArgs) =>
-        EternalBoxJumped.Raise(this, eventArgs, OnHandlerError);
-
-    private async Task DisconnectAfterVoiceClosedAsync()
+    private async Task DisconnectAfterVoiceClosedWithGraceAsync(int? closeCode, long closeTick)
     {
-        try
-        {
-            await DisconnectAsync().ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            _node.HandleError(exception);
-        }
-    }
+        var transientClose = closeCode is 4009 or 4015 or 4022;
 
-    /// <summary>The node session was lost, the server destroyed every player bound to it.</summary>
-    internal void HandleSessionInvalidated()
-    {
-        ClearState();
-        _node.Connections.TryRemove(GuildId, out _);
-        GuildConnectionInvalidated.Raise(
-            this,
-            new GuildConnectionInvalidatedEventArgs(),
-            OnHandlerError
-        );
-    }
+        await Task.Delay(VoiceCloseGracePeriod, CancellationToken.None).ConfigureAwait(false);
 
-    /// <summary>Discord removed the bot from the voice channel, the player is destroyed best-effort.</summary>
-    internal async Task HandleVoiceDisconnectedAsync()
-    {
-        ClearState();
-        await _node
-            .DestroyPlayerExclusivelyAsync(this, CancellationToken.None)
-            .ConfigureAwait(false);
-    }
+        if (_tearingDown)
+            return;
 
-    /// <summary>Discord moved the bot to another voice channel of the guild.</summary>
-    internal void HandleVoiceMoved(ulong channelId, string? sessionId)
-    {
-        ChannelId = channelId;
-        if (!string.IsNullOrEmpty(sessionId))
-            VoiceSessionId = sessionId;
-    }
+        var lastForwardTick = _voiceForward.LastForwardTick;
+        var suppress =
+            !_voiceForward.HasPending
+            && (
+                transientClose
+                    ? Environment.TickCount64 - lastForwardTick
+                        < VoiceCloseGracePeriod.TotalMilliseconds
+                            + ForwardActivityWindow.TotalMilliseconds
+                    : lastForwardTick >= closeTick
+            );
+        if (suppress)
+            return;
 
-    /// <summary>Discord re-targeted the voice server, forwards the fresh credentials to the node.</summary>
-    internal async Task HandleVoiceServerUpdatedAsync(string token, string endpoint)
-    {
-        // No channel means no complete voice state to forward, the connection is dying anyway.
-        if (ChannelId is not { } channelId)
+        if (Interlocked.Exchange(ref _voiceCloseHandling, 1) != 0)
             return;
 
         try
         {
-            await _node
-                .Rest.UpdatePlayerAsync(
-                    GuildId,
-                    new PlayerUpdatePayload
-                    {
-                        Voice = new VoiceState
-                        {
-                            Token = token,
-                            Endpoint = endpoint,
-                            SessionId = VoiceSessionId,
-                            ChannelId = channelId,
-                        },
-                    },
-                    noReplace: false,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
+            if (
+                closeCode is not 4014
+                && _node.Client is { } bridge
+                && Environment.TickCount64 - Volatile.Read(ref _voiceRescueTick)
+                    > VoiceRescueInterval.TotalMilliseconds
+            )
+            {
+                Volatile.Write(ref _voiceRescueTick, Environment.TickCount64);
+                var baseline = _voiceForward.LastForwardTick;
+
+                await SendRescueJoinAsync(bridge, leaveFirst: false).ConfigureAwait(false);
+                if (await RescueSettledAsync(VoiceCloseGracePeriod, baseline).ConfigureAwait(false))
+                    return;
+
+                await SendRescueJoinAsync(bridge, leaveFirst: true).ConfigureAwait(false);
+                if (await RescueSettledAsync(ForwardActivityWindow, baseline).ConfigureAwait(false))
+                    return;
+            }
+
+            await _teardown.AfterVoiceClosedAsync().ConfigureAwait(false);
         }
-        catch (Exception exception)
+        finally
         {
-            _node.HandleError(
-                new InvalidOperationException(
-                    $"Failed to update the voice connection of guild {GuildId}: {exception.Message}",
-                    exception
-                )
-            );
+            Volatile.Write(ref _voiceCloseHandling, 0);
         }
     }
 
-    /// <summary>Whether the two are the same track, by identifier or encoded match.</summary>
-    private static bool IsSameTrack(Track? current, Track candidate) =>
+    private async Task<bool> RescueSettledAsync(TimeSpan window, long baseline)
+    {
+        await Task.Delay(window, CancellationToken.None).ConfigureAwait(false);
+        return _tearingDown || _voiceForward.LastForwardTick > baseline;
+    }
+
+    private async Task SendRescueJoinAsync(IDiscordBridge bridge, bool leaveFirst)
+    {
+        try
+        {
+            if (leaveFirst)
+                await _node.VoiceHandshake.LeaveChannelAsync(bridge, GuildId).ConfigureAwait(false);
+
+            using var rescueCts = new CancellationTokenSource(
+                GuildVoiceForwarder.VoiceSendDeadline
+            );
+            await bridge
+                .SendVoiceUpdateAsync(
+                    GuildId,
+                    ChannelId,
+                    Volatile.Read(ref _observedSelfDeaf),
+                    Volatile.Read(ref _observedSelfMute),
+                    cancellationToken: rescueCts.Token
+                )
+                .ConfigureAwait(false);
+        }
+        catch { }
+    }
+
+    internal void HandleLyricsFound(LyricsFoundEventArgs eventArgs) =>
+        Dispatch(LyricsFound, eventArgs);
+
+    internal void HandleLyricsNotFound(LyricsNotFoundEventArgs eventArgs) =>
+        Dispatch(LyricsNotFound, eventArgs);
+
+    internal void HandleLyricsLine(LyricsLineEventArgs eventArgs) =>
+        Dispatch(LyricsLine, eventArgs, droppable: true);
+
+    internal void HandleSponsorBlockSegmentsLoaded(SponsorBlockSegmentsLoadedEventArgs eventArgs) =>
+        Dispatch(SponsorBlockSegmentsLoaded, eventArgs);
+
+    internal void HandleSponsorBlockSegmentSkipped(SponsorBlockSegmentSkippedEventArgs eventArgs) =>
+        Dispatch(SponsorBlockSegmentSkipped, eventArgs);
+
+    internal void HandleMixStarted(MixStartedEventArgs eventArgs) =>
+        Dispatch(MixStarted, eventArgs);
+
+    internal void HandleMixEnded(MixEndedEventArgs eventArgs) => Dispatch(MixEnded, eventArgs);
+
+    internal void HandleVolumeChanged(VolumeChangedEventArgs eventArgs)
+    {
+        if (_tearingDown)
+            return;
+
+        _playback.OnVolumeChanged(eventArgs);
+
+        Dispatch(VolumeChanged, eventArgs);
+    }
+
+    internal void HandleFiltersChanged(FiltersChangedEventArgs eventArgs) =>
+        Dispatch(FiltersChanged, eventArgs);
+
+    internal void HandleTrackSought(TrackSoughtEventArgs eventArgs)
+    {
+        if (_tearingDown)
+            return;
+
+        _playback.OnTrackSought(eventArgs);
+
+        Dispatch(TrackSought, eventArgs);
+    }
+
+    internal void HandlePauseChanged(PauseChangedEventArgs eventArgs)
+    {
+        if (_tearingDown)
+            return;
+
+        _playback.OnPauseChanged(eventArgs);
+
+        Dispatch(PauseChanged, eventArgs);
+    }
+
+    internal void HandlePlayerCreated(PlayerCreatedEventArgs eventArgs) =>
+        Dispatch(PlayerCreated, eventArgs);
+
+    internal void HandlePlayerDestroyed(PlayerDestroyedEventArgs eventArgs) =>
+        Dispatch(PlayerDestroyed, eventArgs);
+
+    internal void HandlePlayerReconnecting(PlayerReconnectingEventArgs eventArgs)
+    {
+        _ = _voiceForward.ResendPendingAsync();
+
+        Dispatch(PlayerReconnecting, eventArgs);
+    }
+
+    internal void HandlePlayerConnected(PlayerConnectedEventArgs eventArgs) =>
+        Dispatch(PlayerConnected, eventArgs);
+
+    internal void HandleStreamMetadataUpdated(StreamMetadataUpdatedEventArgs eventArgs) =>
+        Dispatch(StreamMetadataUpdated, eventArgs);
+
+    internal void HandleEternalBoxInfoUpdated(EternalBoxInfoUpdatedEventArgs eventArgs) =>
+        Dispatch(EternalBoxInfoUpdated, eventArgs);
+
+    internal void HandleEternalBoxJumped(EternalBoxJumpedEventArgs eventArgs) =>
+        Dispatch(EternalBoxJumped, eventArgs);
+
+    internal void HandleVoiceMoved(ulong channelId, string? sessionId)
+    {
+        if (_tearingDown)
+            return;
+
+        ChannelId = channelId;
+        HandleVoiceSessionUpdated(sessionId);
+    }
+
+    internal void HandleVoiceSessionUpdated(string? sessionId)
+    {
+        if (_tearingDown)
+            return;
+
+        if (!string.IsNullOrEmpty(sessionId))
+            VoiceSessionId = sessionId;
+    }
+
+    internal void ObserveSelfFlags(bool? selfDeaf, bool? selfMute)
+    {
+        if (selfDeaf is { } deaf)
+            Volatile.Write(ref _observedSelfDeaf, deaf);
+        if (selfMute is { } mute)
+            Volatile.Write(ref _observedSelfMute, mute);
+    }
+
+    internal async Task HandleVoiceServerUpdatedAsync(string token, string endpoint)
+    {
+        if (_tearingDown || ChannelId is not { } channelId)
+            return;
+
+        VoiceToken = token;
+        VoiceEndpoint = endpoint;
+
+        var voice = new PlayerVoiceState
+        {
+            Token = token,
+            Endpoint = endpoint,
+            SessionId = VoiceSessionId,
+            ChannelId = channelId,
+        };
+
+        await _voiceForward.ForwardAsync(voice).ConfigureAwait(false);
+    }
+
+    internal Task ResendPendingVoiceAsync() => _voiceForward.ResendPendingAsync();
+
+    internal static bool IsSameTrack(Track? current, Track candidate) =>
         current is not null
         && (
             (
@@ -1124,253 +763,70 @@ public sealed class GuildConnection
             ) || (!string.IsNullOrEmpty(current.Encoded) && current.Encoded == candidate.Encoded)
         );
 
-    private void CaptureState(Player player)
+    internal void CaptureState(Player player, long requestTick)
     {
-        CurrentTrack = player.Track;
-        IsPaused = player.IsPaused;
-        Volume = player.Volume;
+        if (_tearingDown)
+            _node
+                .Registry.DestroyPlayerExclusivelyAsync(this, CancellationToken.None)
+                .ObserveFaults(_node.HandleError);
 
-        if (player.State is { } state)
-        {
-            State = state;
-            _positionMilliseconds = state.PositionMilliseconds;
-            _positionTick = Environment.TickCount64;
-            _hasPosition = true;
-        }
-
-        _positionAdvancing =
-            (player.State?.Connected ?? true)
-            && !player.IsPaused
-            && player.Track is { Info.IsStream: false };
+        _playback.Capture(player, requestTick);
     }
 
-    /// <summary>The chain a new filter update builds on: the desired one when a previous update was dropped, else the applied one.</summary>
-    private FilterChain DesiredFilters() => _pendingFilters ?? _filters;
-
-    private void RequireNodeLinkFilters(FilterChain filters)
+    internal void ClearState()
     {
-        if (filters.Tesseract is not null)
-            NodeGuards.RequireNodeLink(_node, "tesseract filter", new NodeVersion(3, 9, 0));
-        else if (
-            filters.Echo is not null
-            || filters.Reverb is not null
-            || filters.HighPass is not null
-            || filters.Chorus is not null
-            || filters.Phaser is not null
-            || filters.Flanger is not null
-            || filters.Spatial is not null
-            || filters.Compressor is not null
-            || filters.Phonograph is not null
-        )
-            NodeGuards.RequireNodeLink(_node, "this audio filter");
-    }
-
-    private async Task RemoveFilterAsync(Type filterType, CancellationToken cancellationToken)
-    {
-        await _filterGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            EnsureActive();
-
-            var chain = filterType switch
-            {
-                _ when filterType == typeof(KaraokeFilter) => DesiredFilters() with
-                {
-                    Karaoke = null,
-                },
-                _ when filterType == typeof(TimescaleFilter) => DesiredFilters() with
-                {
-                    Timescale = null,
-                },
-                _ when filterType == typeof(TremoloFilter) => DesiredFilters() with
-                {
-                    Tremolo = null,
-                },
-                _ when filterType == typeof(VibratoFilter) => DesiredFilters() with
-                {
-                    Vibrato = null,
-                },
-                _ when filterType == typeof(DistortionFilter) => DesiredFilters() with
-                {
-                    Distortion = null,
-                },
-                _ when filterType == typeof(RotationFilter) => DesiredFilters() with
-                {
-                    Rotation = null,
-                },
-                _ when filterType == typeof(ChannelMixFilter) => DesiredFilters() with
-                {
-                    ChannelMix = null,
-                },
-                _ when filterType == typeof(LowPassFilter) => DesiredFilters() with
-                {
-                    LowPass = null,
-                },
-                _ when filterType == typeof(EchoFilter) => DesiredFilters() with { Echo = null },
-                _ when filterType == typeof(ReverbFilter) => DesiredFilters() with
-                {
-                    Reverb = null,
-                },
-                _ when filterType == typeof(HighPassFilter) => DesiredFilters() with
-                {
-                    HighPass = null,
-                },
-                _ when filterType == typeof(ChorusFilter) => DesiredFilters() with
-                {
-                    Chorus = null,
-                },
-                _ when filterType == typeof(PhaserFilter) => DesiredFilters() with
-                {
-                    Phaser = null,
-                },
-                _ when filterType == typeof(FlangerFilter) => DesiredFilters() with
-                {
-                    Flanger = null,
-                },
-                _ when filterType == typeof(SpatialFilter) => DesiredFilters() with
-                {
-                    Spatial = null,
-                },
-                _ when filterType == typeof(CompressorFilter) => DesiredFilters() with
-                {
-                    Compressor = null,
-                },
-                _ when filterType == typeof(PhonographFilter) => DesiredFilters() with
-                {
-                    Phonograph = null,
-                },
-                _ when filterType == typeof(TesseractFilter) => DesiredFilters() with
-                {
-                    Tesseract = null,
-                },
-                _ => throw new ArgumentException(
-                    $"The filter type '{filterType.Name}' is not supported.",
-                    nameof(filterType)
-                ),
-            };
-
-            await SendFiltersAsync(Normalize(chain), cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-    }
-
-    private async Task SendFiltersAsync(FilterChain desired, CancellationToken cancellationToken)
-    {
-        var player = await _node
-            .Rest.UpdatePlayerAsync(
-                GuildId,
-                new PlayerUpdatePayload { Filters = desired },
-                noReplace: false,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (_node.IsNodeLink && player.Filters is { } effective)
-        {
-            // NodeLink drops filter changes while no track is loaded, so the response is the
-            // only source of truth there, a dropped chain is remembered and re-sent when the
-            // next track starts. Lavalink applies exactly what was sent.
-            _filters = effective;
-            _pendingFilters = FiltersEqual(effective, desired) ? null : desired;
-        }
-        else
-        {
-            _filters = desired;
-            _pendingFilters = null;
-        }
-    }
-
-    private async Task ResendPendingFiltersAsync()
-    {
-        await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-        try
-        {
-            if (_pendingFilters is not { } desired || !_node.IsReady || !IsConnected)
-                return;
-
-            var player = await _node
-                .Rest.UpdatePlayerAsync(
-                    GuildId,
-                    new PlayerUpdatePayload { Filters = desired },
-                    noReplace: false,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            if (player.Filters is { } effective)
-            {
-                _filters = effective;
-                if (FiltersEqual(effective, desired))
-                    _pendingFilters = null;
-            }
-        }
-        catch (Exception exception)
-        {
-            // Best-effort on an event path, the next track start retries.
-            _node.HandleError(
-                new InvalidOperationException(
-                    $"Failed to re-apply the filters of guild {GuildId}: {exception.Message}",
-                    exception
-                )
-            );
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-    }
-
-    /// <summary>Value comparison of two chains, unset members count as their neutral defaults, and plugin filters are not tracked (NodeLink does not echo them).</summary>
-    private static bool FiltersEqual(FilterChain left, FilterChain right) =>
-        left.Volume == right.Volume
-        && left.Karaoke == right.Karaoke
-        && left.Timescale == right.Timescale
-        && left.Tremolo == right.Tremolo
-        && left.Vibrato == right.Vibrato
-        && left.Distortion == right.Distortion
-        && left.Rotation == right.Rotation
-        && left.ChannelMix == right.ChannelMix
-        && left.LowPass == right.LowPass
-        && BandsEqual(left.Equalizer, right.Equalizer);
-
-    private static bool BandsEqual(
-        IReadOnlyList<EqualizerBand>? left,
-        IReadOnlyList<EqualizerBand>? right
-    )
-    {
-        if (left is not { Count: > 0 })
-            return right is not { Count: > 0 };
-
-        return right is { Count: > 0 } && left.SequenceEqual(right);
-    }
-
-    /// <summary>Fills unset members with their neutral defaults, so a chain compares equal to the server echo of the same chain.</summary>
-    private static FilterChain Normalize(FilterChain chain) =>
-        JsonSerializer.Deserialize<FilterChain>(
-            JsonSerializer.SerializeToUtf8Bytes(chain, NormalizeOptions),
-            NormalizeOptions
-        ) ?? new FilterChain();
-
-    private void ClearState()
-    {
+        _tearingDown = true;
         ChannelId = null;
-        CurrentTrack = null;
         IsPaused = false;
-        _positionAdvancing = false;
-        _hasPosition = false;
-        _pendingFilters = null;
+        State = null;
+        Volume = 100;
+        _playback.Clear();
     }
 
-    private void EnsureActive()
+    internal async Task ClearStateAsync()
     {
+        ClearState();
+        await _filters.ResetAsync().ConfigureAwait(false);
+        _voiceForward.ClearPending();
+    }
+
+    internal void EnsureActive()
+    {
+        if (_tearingDown)
+            throw new InvalidOperationException(
+                "The connection is being torn down, it no longer accepts operations."
+            );
         if (!_node.IsReady)
             throw new InvalidOperationException($"The node '{_node.Name}' is not ready.");
         if (!IsConnected)
             throw new InvalidOperationException("The bot is not connected to a voice channel.");
     }
 
-    private void OnHandlerError(Exception exception) =>
-        PlaybackError.Raise(this, new PlaybackErrorEventArgs(exception), null);
+    private void Dispatch<TArgs>(
+        AsyncEventHandler<TArgs>? handler,
+        TArgs eventArgs,
+        bool droppable = false
+    )
+        where TArgs : System.EventArgs =>
+        _pump.TryDispatch(handler, this, eventArgs, _handlerError, droppable);
+
+    private Task OnHandlerErrorAsync(Exception exception, System.EventArgs? origin) =>
+        HandlerError.RaiseAsync(
+            this,
+            new HandlerErrorEventArgs(exception, origin),
+            (handlerFailure, _) =>
+            {
+                try
+                {
+                    _node.Logger?.LogError(
+                        LogEvents.Playback,
+                        handlerFailure,
+                        "A HandlerError handler of guild {GuildId} threw.",
+                        GuildId
+                    );
+                }
+                catch { }
+                return Task.CompletedTask;
+            }
+        );
 }

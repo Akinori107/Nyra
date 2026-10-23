@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>Nyra.DSharpPlus</PackageId>
+    <Description>DSharpPlus adapter for Nyra, a Lavalink v4.2+ and NodeLink v3.9+ client.</Description>
+    <PackageTags>discord;lavalink;nodelink;audio;music;dsharpplus</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Nyra.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="DSharpPlus" Version="4.5.3" />
+  </ItemGroup>
+</Project>

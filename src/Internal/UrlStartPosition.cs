@@ -2,17 +2,10 @@ using System.Globalization;
 
 namespace Nyra.Internal;
 
-/// <summary>
-/// Parses a media link's <c>t</c>/<c>start</c> offset, since both servers discard it.
-/// Handles plain seconds (<c>?t=90</c>), timecodes (<c>?t=1m30s</c>), <c>#</c>-prefixed
-/// params (SoundCloud), and the legacy <c>start=</c> param.
-/// </summary>
 internal static class UrlStartPosition
 {
-    /// <summary>Milliseconds from the URL's own <c>t</c>/<c>start</c> parameter, or null.</summary>
     public static long? ParseMilliseconds(string url)
     {
-        // Only the URL's own parameters count, not a t= inside another parameter's value.
         var query = url.AsSpan();
         var cut = query.IndexOfAny('?', '#');
         if (cut < 0)
@@ -23,10 +16,16 @@ internal static class UrlStartPosition
         {
             var end = query.IndexOfAny('&', '#');
             var parameter = end >= 0 ? query[..end] : query;
-            if (parameter.StartsWith("t="))
-                return ParseValue(parameter[2..]);
-            if (parameter.StartsWith("start="))
-                return ParseValue(parameter[6..]);
+            if (
+                parameter.StartsWith("t=", StringComparison.Ordinal)
+                && ParseValue(parameter[2..]) is { } tMilliseconds
+            )
+                return tMilliseconds;
+            if (
+                parameter.StartsWith("start=", StringComparison.Ordinal)
+                && ParseValue(parameter[6..]) is { } startMilliseconds
+            )
+                return startMilliseconds;
 
             if (end < 0)
                 break;
@@ -36,14 +35,14 @@ internal static class UrlStartPosition
         return null;
     }
 
-    /// <summary>Parses <c>90</c>, <c>45s</c>, <c>1m30s</c>, <c>1h2m3s</c> into milliseconds, zero or invalid → null.</summary>
     private static long? ParseValue(ReadOnlySpan<char> value)
     {
-        var end = value.IndexOfAny('&', '#');
-        if (end >= 0)
-            value = value[..end];
         if (value.IsEmpty || value.Length > 11)
             return null;
+
+        var colonCount = value.Count(':');
+        if (colonCount > 0)
+            return ParseColonTimecode(value, colonCount);
 
         long seconds = 0;
         var hasUnit = false;
@@ -60,7 +59,6 @@ internal static class UrlStartPosition
                 'h' => 3600,
                 'm' => 60,
                 's' => 1,
-                // A bare number after a unit (1m30) isn't a real form, only allow it as the whole value.
                 '\0' when !hasUnit => 1,
                 _ => -1,
             };
@@ -78,6 +76,38 @@ internal static class UrlStartPosition
             seconds += amount * factor;
             hasUnit = unit != '\0';
             value = unit == '\0' ? rest : rest[1..];
+        }
+
+        return seconds > 0 && seconds <= TimeSpan.MaxValue.TotalSeconds ? seconds * 1000 : null;
+    }
+
+    private static long? ParseColonTimecode(ReadOnlySpan<char> value, int colonCount)
+    {
+        if (colonCount > 2)
+            return null;
+
+        long seconds = 0;
+        var remaining = colonCount + 1;
+        while (remaining > 0)
+        {
+            var cut = value.IndexOf(':');
+            var segment = cut >= 0 ? value[..cut] : value;
+            if (
+                segment.IsEmpty
+                || segment.Length > (remaining == 3 ? 3 : 2)
+                || !long.TryParse(
+                    segment,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var part
+                )
+            )
+                return null;
+            seconds = (seconds * 60) + part;
+            remaining--;
+            if (cut < 0)
+                break;
+            value = value[(cut + 1)..];
         }
 
         return seconds > 0 && seconds <= TimeSpan.MaxValue.TotalSeconds ? seconds * 1000 : null;

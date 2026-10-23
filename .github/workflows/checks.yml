@@ -1,10 +1,12 @@
 name: Checks
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main, dev]
   workflow_dispatch:
+permissions:
+  contents: read
 concurrency:
   group: checks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
