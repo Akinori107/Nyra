@@ -3,6 +3,9 @@ using System.Globalization;
 namespace Nyra;
 
 /// <summary>A node server version (major.minor.patch), parsed from the string reported by the server.</summary>
+/// <param name="major">The major version number.</param>
+/// <param name="minor">The minor version number.</param>
+/// <param name="patch">The patch version number.</param>
 public readonly struct NodeVersion(int major, int minor, int patch)
     : IEquatable<NodeVersion>,
         IComparable<NodeVersion>
