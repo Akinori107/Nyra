@@ -1,5 +1,9 @@
 name: CodeQL
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, dev]
   workflow_dispatch:
 jobs:
   analyze:
