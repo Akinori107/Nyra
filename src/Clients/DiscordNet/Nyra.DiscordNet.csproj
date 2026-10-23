@@ -13,6 +13,6 @@
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Discord.Net.WebSocket" Version="3.20.1" />
+    <PackageReference Include="Discord.Net.WebSocket" Version="3.20.2" />
   </ItemGroup>
 </Project>
