@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <PackageId>Nyra</PackageId>
-    <Description>A Lavalink v4.2+ and NodeLink v3.9+ client, bring the adapter for your Discord library.</Description>
+    <Description>A Lavalink v4.2+ and NodeLink v3.9+ client. Use it with an adapter for your Discord library.</Description>
     <PackageTags>discord;lavalink;nodelink;audio;music</PackageTags>
     <DefaultItemExcludes>$(DefaultItemExcludes);Clients\**</DefaultItemExcludes>
   </PropertyGroup>
