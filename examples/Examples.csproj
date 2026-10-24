@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <RootNamespace>Nyra.Examples</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DSharpPlus" Version="4.5.3" />
+    <PackageReference Include="DSharpPlus.SlashCommands" Version="4.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\Clients\DSharpPlus\Stable\Nyra.DSharpPlus.csproj" />
+    <ProjectReference Include="..\src\Nyra.csproj" />
+  </ItemGroup>
+</Project>

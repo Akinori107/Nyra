@@ -1,111 +1,88 @@
 # Nyra
 
-![NuGet](https://img.shields.io/nuget/vpre/Nyra)
+[![NuGet](https://img.shields.io/nuget/vpre/Nyra?color=4f46e5&labelColor=364048)](https://www.nuget.org/packages/Nyra) [![Downloads](https://img.shields.io/nuget/dt/Nyra?color=14b8a6&labelColor=364048)](https://www.nuget.org/packages/Nyra) [![Build](https://github.com/Akinori107/Nyra/actions/workflows/checks.yml/badge.svg?branch=dev)](https://github.com/Akinori107/Nyra/actions/workflows/checks.yml) [![License](https://img.shields.io/badge/license-BlueOak--1.0.0-blue?labelColor=364048)](LICENSE.md)
 
-Nyra is a .NET 10 client for [Lavalink v4+](https://github.com/lavalink-devs/Lavalink) and [NodeLink v3+](https://github.com/PerformanC/NodeLink), built on [DSharpPlus 4.5.x](https://github.com/DSharpPlus/DSharpPlus) (maybe [Discord.Net](https://github.com/discord-net/Discord.Net) in the future). Load tracks, control playback, apply filters, manage voice connections, one API for both servers. Where they genuinely behave differently, some of the differences are listed in [NodeLink compatibility notes](#nodelink-compatibility-notes).
+Nyra is a .NET 10 client for [Lavalink v4.2+](https://github.com/lavalink-devs/Lavalink) and [NodeLink v3.9+](https://github.com/PerformanC/NodeLink), with adapters for [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus), [Discord.Net](https://github.com/discord-net/Discord.Net) and [NetCord](https://github.com/NetCordDev/NetCord). One API works with both servers, finds out which one you're using, and gives you what only NodeLink has, like crossfade, ducking and exclusive filters such as reverb, chorus and phonograph. The two servers don't always behave the same, and the [NodeLink compatibility notes](#nodelink-compatibility-notes) cover some of the differences.
 
 ## Supported servers
 
-|  Server  | Minimum | Recommended |
-|:--------:|:-------:|:-----------:|
-| Lavalink |  4.2.0  |    4.2.2    |
-| NodeLink |  3.8.0  | 3.9.0 (dev) |
+|  Server  | Minimum | Recommended  |
+|:--------:|:-------:|:------------:|
+| Lavalink |  4.2.0  |    4.2.2     |
+| NodeLink |  3.9.0  | 3.10.0 (dev) |
 
-There's no config needed, Nyra probes `GET /v4/info` on connect and figures out which server you're talking to. See more on [Runtime Detection](#runtime-detection).
+You don't need any config, Nyra figures out which server it's talking to. More on [Runtime detection](#runtime-detection).
 
 ## Requirements
 
 - .NET 10 or newer
-- DSharpPlus 4.5.x
+- One of the supported Discord libraries, see [Adapters](#adapters)
 
 ## Installation
 
-```
-dotnet add package Nyra
+Install the adapter for your Discord library, it brings the core `Nyra` package along:
+
+```sh
+dotnet add package Nyra.DSharpPlus
 ```
 
-## Minimal Example
+## Adapters
+
+| Library | Package | Entry point |
+|:--|:--|:--|
+| DSharpPlus | `Nyra.DSharpPlus` | `DiscordClient.UseNyra()` |
+| DSharpPlus (nightly) | `Nyra.DSharpPlus.Nightly` | `DiscordClientBuilder.UseNyra()`, then `client.GetNyra()` |
+| Discord.Net | `Nyra.DiscordNet` | `DiscordSocketClient.UseNyra()` |
+| NetCord | `Nyra.NetCord` | `GatewayClient.UseNyra()` |
+
+Each adapter lives in its own namespace (`Nyra.DSharpPlus`, `Nyra.DSharpPlus.Nightly`, `Nyra.DiscordNet`, `Nyra.NetCord`), and the sharded clients have their own overloads.
+
+## Minimal example
 
 ```csharp
-using DSharpPlus;
-using DSharpPlus.Entities;
-using DSharpPlus.SlashCommands;
 using Nyra;
 using Nyra.Entities;
 
-var discord = new DiscordClient(new DiscordConfiguration
-{
-    Token = Environment.GetEnvironmentVariable("DISCORD_TOKEN"),
-    TokenType = TokenType.Bot,
-    // AllUnprivileged is all a music bot needs (at least for a slash-command bot).
-    Intents = DiscordIntents.AllUnprivileged
-});
-
-var nyra = discord.UseNyra();
+var nyra = client.UseNyra();
 nyra.AddNode(new Node(
     new Endpoint("localhost", 2333, "youshallnotpass"),
     new NodeOptions { Name = "main", Resuming = true }));
 
-// A node that fails to connect logs a warning and keeps retrying in the background.
-discord.Ready += async (_, _) => await nyra.ConnectAllNodesAsync();
+await nyra.ConnectAllNodesAsync();
 
-var slash = discord.UseSlashCommands();
-slash.RegisterCommands<MusicCommands>();
+var node = nyra.GetNode()!;
+var connection = await node.ConnectAsync(guildId, voiceChannelId);
 
-await discord.ConnectAsync();
-await Task.Delay(-1);
+if (await node.LoadTracksAsync("never gonna give you up") is LoadResult.SearchLoaded { Tracks: [var track, ..] })
+    await connection.PlayAsync(track);
 ```
 
-`MusicCommands` is your own slash-command module.
+`client` is the client from your Discord library. `UseNyra()` comes from the [adapter](#adapters) you installed, so add its `using` too.
 
 ## Runtime detection
 
-On the first contact with a node, or an early `LoadTracksAsync`, Nyra probes `GET /v4/info` once:
+The server type is read from `GET /v4/info` each time a node connects:
 
 ```csharp
 var node = nyra.GetNode()!;
 Console.WriteLine($"{node.Name}: {(node.IsNodeLink ? "NodeLink" : "Lavalink")} {node.Version}");
 ```
 
-The detected kind picks the right response converters and gates the handful of operations that only make sense on one server. `SetVolumeFilterAsync`, for instance, throws `NotSupportedException` on NodeLink, since it accepts the field but never implements it, so failing loudly beats failing silently.
+A few methods only work on one server and throw `NotSupportedException` on the other. `SetVolumeFilterAsync`, for example, throws on NodeLink, because NodeLink accepts the field but never applies it. An error is better than silently doing nothing.
 
 ## NodeLink compatibility notes
 
-The two servers agree on most of the protocol and disagree on the rest in ways that aren't always documented. Here's what Nyra handles for you:
+**Re-sent tracks:** Playing the track that is already playing restarts it on Lavalink, but NodeLink keeps it going. Nyra stops it first on NodeLink, so it restarts on both.
 
-**Load results:** NodeLink's extra types (`episode`, `album`, `artist`, `station`, `podcast`, `show`) map onto track/playlist results; its `exception` shape maps onto `LoadFailed`. A load type Nyra doesn't recognize degrades to `LoadFailed` instead of throwing.
-
-**Updating the player:** Nyra always sends `track: { encoded }` since it's the only form both servers accept, and NodeLink rejects the older top-level `encodedTrack`. Stopping sends `track: { encoded: null }`.
-
-**Timestamped links:** Both servers ignore the `t`/`start` parameter of a link (e.g. `...&t=90`). Nyra parses it, carries it on `Track.StartPosition`, and applies it as the position of the track's first `PlayAsync`, though an explicit `PlayOptions.StartPosition` wins instead. Only the selected entry of a playlist gets it. NodeLink doesn't restart a re-sent identical track, so Nyra stops it first there to force a restart.
-
-**Filters:** Every filter goes out fully specified, unset members included as their neutral defaults. This matters because Lavalink resets what you don't send while NodeLink merges a partial object into whatever was there before, so the full form is the only one that behaves the same on both. Filters cleared with an explicit `null` (or the neutral value where the servers reject an actual null, like `volume`/`equalizer`) get the same treatment. On the read side, NodeLink nests filter state under an extra `filters` key, wraps the equalizer in `bands`, and marks disabled filters with `_disabled`, all of which Nyra normalizes. The volume *filter* specifically only exists on Lavalink; asking for it on NodeLink throws rather than doing nothing.
-
-**Filter timing:** NodeLink drops a filter change if no track is loaded; Lavalink queues it for the next one. Nyra remembers what NodeLink couldn't take and resends it when the next track starts, so a filter set between tracks behaves consistently either way. `AppliedFilters` reflects what the server actually confirmed, not what you last sent.
-
-**Stats:** Load is reported under `nodelinkLoad` on NodeLink and `lavalinkLoad` on Lavalink; both are exposed, plus a normalized `NodeLoad` that doesn't care which one you're on.
-
-**Events:** NodeLink sends event types Lavalink doesn't, including player lifecycle, seek, volume, and more. Unknown ones are ignored rather than faulting the connection; unknown enum values inside known events fall back to an `Unknown` member instead of dropping the whole event.
-
-**Handshake:** NodeLink requires `Client-Name` on the websocket upgrade (Lavalink just warns if it's missing), so Nyra always sends it (`Nyra/<version>`). Partial Discord voice server updates (empty endpoint) are held back until the complete one arrives, since both servers 400 on an incomplete triple anyway.
-
-**Track decoding:** Handles Lavalink v1–v3 encodings plus NodeLink's `details` extension. NodeLink's legacy `NLK:seekable` trailer gets detected structurally and trimmed so position decodes correctly instead of coming out wrong by 16 bytes.
-
-**Pausing mid-play:** Playing a track while paused force-unpauses on Lavalink but leaves NodeLink paused. `IsPaused` always reflects what the server confirmed, so check it after `PlayAsync` if you called it on a paused connection.
-
-**Losing a session:** A reconnect that didn't resume means the old session and every player on it is gone. Nyra invalidates the affected guild connections (they stop claiming to be connected) and logs a warning instead of leaving zombies around. Call `RefreshAsync` to re-read the authoritative player state at any point, resumed or not.
+**Filter timing:** NodeLink drops a filter change when no track is loaded, while Lavalink keeps it for the next track. Nyra remembers what NodeLink dropped and sends it again when the next track starts, so a filter set between tracks works the same on both. `connection.Filters.Applied` shows what the server confirmed, not what you sent last.
 
 ## Example bot
 
-A minimal slash-command bot lives in [`examples`](examples), with two files so you can try it out. More commands may be added eventually (no promises, lol).
+A minimal slash-command bot lives in [`examples`](examples), with two files so you can try it out. It uses the DSharpPlus adapter. More commands may be added eventually.
 
-```
+Create a `.env` file inside `examples` with `DISCORD_TOKEN`, `NODE_HOST`, `NODE_PORT`, `NODE_PASSWORD` and optionally `NODE_SECURE`, then run it:
+
+```sh
 cd examples
 dotnet run
 ```
-
-Please don't forget to replace `"your token here"` with your bot token
-
-## License
-
-MIT. See [LICENSE](LICENSE).

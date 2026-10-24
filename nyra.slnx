@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="examples/examples.csproj" />
-  <Project Path="nyra/nyra.csproj" />
-</Solution>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>Nyra</PackageId>
+    <Description>A Lavalink v4.2+ and NodeLink v3.9+ client. Use it with an adapter for your Discord library.</Description>
+    <PackageTags>discord;lavalink;nodelink;audio;music</PackageTags>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Clients\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="StyleCop.Analyzers" Version="1.3.151-beta" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
+  </ItemGroup>
+</Project>

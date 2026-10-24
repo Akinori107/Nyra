@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="examples/Examples.csproj" />
+  <Project Path="src/Clients/DiscordNet/Nyra.DiscordNet.csproj" />
+  <Project Path="src/Clients/DSharpPlus/Stable/Nyra.DSharpPlus.csproj" />
+  <Project Path="src/Clients/DSharpPlus/Nightly/Nyra.DSharpPlus.Nightly.csproj" />
+  <Project Path="src/Clients/NetCord/Nyra.NetCord.csproj" />
+  <Project Path="src/Nyra.csproj" />
+</Solution>
