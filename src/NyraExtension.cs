@@ -271,19 +271,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         {
             throw;
         }
-        catch (Exception exception)
-        {
-            try
-            {
-                Client.Logger?.LogError(
-                    LogEvents.Extension,
-                    exception,
-                    "The node {NodeName} failed to connect and was skipped.",
-                    node.Name
-                );
-            }
-            catch { }
-        }
+        catch (Exception) { }
     }
 
     /// <summary>The ready node with the fewest playing players, nodes without stats yet rank last.</summary>

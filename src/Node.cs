@@ -738,14 +738,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     internal void ThrowIfDisposed()
     {
         if (_disposed)
-        {
-            Logger?.LogError(
-                LogEvents.Node,
-                "Node {NodeName} was disposed, it cannot be used anymore.",
-                Name
-            );
             throw new ObjectDisposedException(nameof(Node));
-        }
     }
 
     internal static string LogSafe(string? text) =>
