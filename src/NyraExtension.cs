@@ -200,49 +200,14 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         }
         catch (TimeoutException exception)
         {
-            try
-            {
-                Client.Logger?.LogError(
-                    LogEvents.Extension,
-                    exception,
-                    "The Discord gateway of the client did not become ready within {Timeout}, ConnectAllNodesAsync gave up waiting.",
-                    GatewayReadyTimeout
-                );
-            }
-            catch { }
-
             throw new TimeoutException(
                 $"The Discord gateway did not become ready within {GatewayReadyTimeout}, ConnectAllNodesAsync gave up waiting.",
                 exception
             );
         }
-        catch (InvalidOperationException exception)
-        {
-            try
-            {
-                Client.Logger?.LogError(
-                    LogEvents.Extension,
-                    exception,
-                    "The Discord gateway of the client closed fatally before becoming ready."
-                );
-            }
-            catch { }
-
-            throw;
-        }
-        catch (OperationCanceledException exception)
+        catch (OperationCanceledException)
             when (_disposed && !cancellationToken.IsCancellationRequested)
         {
-            try
-            {
-                Client.Logger?.LogError(
-                    LogEvents.Extension,
-                    exception,
-                    "The extension was disposed while connecting, the bridge's dispose failed the pending ready wait."
-                );
-            }
-            catch { }
-
             throw new ObjectDisposedException(
                 nameof(NyraExtension),
                 "The extension was disposed while connecting, the bridge's dispose failed the pending ready wait."
@@ -351,7 +316,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         await _events.CompleteAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
         if (firstDisposeFailure is not null)
-            LogAndThrowDisposeFailure(firstDisposeFailure);
+            ExceptionDispatchInfo.Throw(firstDisposeFailure);
     }
 
     /// <summary>Disconnects and disposes every node of the extension and the bridge it routes through.</summary>
@@ -409,7 +374,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         catch { }
 
         if (firstDisposeFailure is not null)
-            LogAndThrowDisposeFailure(firstDisposeFailure);
+            ExceptionDispatchInfo.Throw(firstDisposeFailure);
     }
 
     private Node[]? DetachNodes()
@@ -431,21 +396,6 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
             return nodes;
         }
-    }
-
-    private void LogAndThrowDisposeFailure(Exception failure)
-    {
-        try
-        {
-            Client.Logger?.LogError(
-                LogEvents.Extension,
-                failure,
-                "A node or the bridge of the extension failed to dispose."
-            );
-        }
-        catch { }
-
-        ExceptionDispatchInfo.Throw(failure);
     }
 
     private async ValueTask DisposeBridgeAsync()

@@ -375,7 +375,7 @@ internal sealed class GuildRegistry
         if (destroyed > 0)
             try
             {
-                _node.Logger?.LogInformation(
+                _node.Logger?.LogDebug(
                     LogEvents.Node,
                     "Node {NodeName} resumed its session with {Count} player(s) no guild connection owns, they were destroyed.",
                     _node.Name,

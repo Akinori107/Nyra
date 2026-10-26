@@ -104,26 +104,9 @@ internal sealed class NodeServerInfo
             }
             catch { }
 
-        var published = false;
         lock (_node.EventsLock)
             if (Volatile.Read(ref _epoch) == epoch)
-            {
                 _info = info;
-                published = true;
-            }
-
-        if (published)
-            try
-            {
-                _node.Logger?.LogInformation(
-                    LogEvents.Node,
-                    "Node {NodeName} runs {Software} {Version}.",
-                    _node.Name,
-                    info.IsNodeLink ? "NodeLink" : "Lavalink",
-                    Node.LogSafe(info.RawVersion)
-                );
-            }
-            catch { }
     }
 
     internal void Invalidate()

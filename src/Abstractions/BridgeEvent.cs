@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Nyra.Internal;
 
 namespace Nyra.Abstractions;
 
@@ -8,10 +9,14 @@ namespace Nyra.Abstractions;
 /// </summary>
 /// <remarks>
 /// Each subscriber runs in its own try, a crash is reported to the logger when one is provided and the rest
-/// still run. Bridge implementations raise their events through this helper instead of a plain invoke.
+/// still run. Crashes of the same kind are reported five times per thirty seconds, so a subscriber that fails on
+/// every event cannot flood the log. Bridge implementations raise their events through this helper instead of a
+/// plain invoke.
 /// </remarks>
 public static class BridgeEvent
 {
+    private static readonly ErrorThrottle Errors = new();
+
     /// <summary>
     /// Raises <paramref name="handler"/> one subscriber at a time, a throwing subscriber is reported to the
     /// logger when one is provided and the remaining subscribers still run.
@@ -39,16 +44,17 @@ public static class BridgeEvent
             }
             catch (Exception exception)
             {
-                try
-                {
-                    logger?.LogError(
-                        LogEvents.Bridge,
-                        exception,
-                        "An event handler of the Discord bridge threw handling {Event}, the remaining handlers still ran.",
-                        typeof(TArgs).Name
-                    );
-                }
-                catch { }
+                if (Errors.TryAdmit(exception, out _))
+                    try
+                    {
+                        logger?.LogError(
+                            LogEvents.Bridge,
+                            exception,
+                            "An event handler of the Discord bridge threw handling {Event}, the remaining handlers still ran.",
+                            typeof(TArgs).Name
+                        );
+                    }
+                    catch { }
             }
     }
 }

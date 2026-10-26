@@ -7,10 +7,6 @@ namespace Nyra.Internal;
 
 internal sealed class NodeConnection : IDisposable
 {
-    private const int LoggedAttemptsBurst = 10;
-
-    private const int LoggedAttemptsInterval = 30;
-
     private readonly Node _node;
     private readonly NodeEventDispatcher _dispatcher;
     private readonly Func<CancellationToken, Task> _preConnect;
@@ -452,16 +448,6 @@ internal sealed class NodeConnection : IDisposable
                         && attempt > _node.Options.MaxReconnectAttempts
                     )
                     {
-                        try
-                        {
-                            _node.Logger?.LogError(
-                                LogEvents.Node,
-                                "Node {NodeName} exceeded the maximum of {MaxAttempts} reconnect attempts, giving up.",
-                                _node.Name,
-                                _node.Options.MaxReconnectAttempts
-                            );
-                        }
-                        catch { }
                         EndSupervision(generation);
                         if (_generation != generation)
                             return;
@@ -476,23 +462,21 @@ internal sealed class NodeConnection : IDisposable
                     }
 
                     var delay = ComputeReconnectDelay(attempt);
-                    var logAttempt = ShouldLogAttempt(attempt);
-                    if (logAttempt)
-                        try
-                        {
-                            _node.Logger?.LogInformation(
-                                LogEvents.Node,
-                                wasEverConnected
-                                    ? "Node {NodeName} reconnecting in {Delay} (attempt {Attempt})."
-                                    : "Node {NodeName} connecting in {Delay} (attempt {Attempt}).",
-                                _node.Name,
-                                TimeSpan.FromSeconds(Math.Round(delay.TotalSeconds)),
-                                _node.Options.MaxReconnectAttempts < 0
-                                    ? attempt.ToString()
-                                    : $"{attempt}/{_node.Options.MaxReconnectAttempts}"
-                            );
-                        }
-                        catch { }
+                    try
+                    {
+                        _node.Logger?.LogInformation(
+                            LogEvents.Node,
+                            wasEverConnected
+                                ? "Node {NodeName} reconnecting in {Delay} (attempt {Attempt})."
+                                : "Node {NodeName} connecting in {Delay} (attempt {Attempt}).",
+                            _node.Name,
+                            TimeSpan.FromSeconds(Math.Round(delay.TotalSeconds)),
+                            _node.Options.MaxReconnectAttempts < 0
+                                ? attempt.ToString()
+                                : $"{attempt}/{_node.Options.MaxReconnectAttempts}"
+                        );
+                    }
+                    catch { }
 
                     try
                     {
@@ -531,14 +515,13 @@ internal sealed class NodeConnection : IDisposable
                     catch (Exception exception)
                     {
                         lastConnectFailure = exception;
-                        if (logAttempt)
-                            ConnectionFailure.Log(
-                                _node.Logger,
-                                _node.Name,
-                                _node.Endpoint,
-                                initial: !wasEverConnected,
-                                exception
-                            );
+                        ConnectionFailure.Log(
+                            _node.Logger,
+                            _node.Name,
+                            _node.Endpoint,
+                            initial: !wasEverConnected,
+                            exception
+                        );
                     }
                 }
             }
@@ -604,9 +587,6 @@ internal sealed class NodeConnection : IDisposable
 
         cts?.Dispose();
     }
-
-    private static bool ShouldLogAttempt(int attempt) =>
-        attempt <= LoggedAttemptsBurst || attempt % LoggedAttemptsInterval == 0;
 
     private TimeSpan ComputeReconnectDelay(int attempt)
     {

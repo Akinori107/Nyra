@@ -174,17 +174,6 @@ internal sealed class NodeEventHandlers
                 connection.MarkTearingDown();
 
             await InvalidateAsync(invalidated).ConfigureAwait(false);
-
-            try
-            {
-                _node.Logger?.LogWarning(
-                    LogEvents.Node,
-                    "The session of node {NodeName} was not resumed, {Count} guild connection(s) were invalidated. Reconnect the bot to the voice channels to resume playback.",
-                    _node.Name,
-                    invalidated.Length
-                );
-            }
-            catch { }
         }
 
         if (effectiveResumed)
@@ -236,18 +225,6 @@ internal sealed class NodeEventHandlers
             }
         }
 
-        try
-        {
-            _node.Logger?.LogInformation(
-                LogEvents.Node,
-                "Node {NodeName} is ready (session {SessionId}, resumed: {Resumed}).",
-                _node.Name,
-                _node.SessionId ?? string.Empty,
-                effectiveResumed
-            );
-        }
-        catch { }
-
         lock (_node.EventsLock)
         {
             if (_node.Stopped || connectionEpoch != _connectionEpoch)
@@ -288,16 +265,6 @@ internal sealed class NodeEventHandlers
             await _node
                 .Rest.Session.UpdateAsync(true, _node.ResumeTimeoutSeconds, CancellationToken.None)
                 .ConfigureAwait(false);
-            try
-            {
-                _node.Logger?.LogInformation(
-                    LogEvents.Node,
-                    "Session resuming enabled for node {NodeName} (timeout {Timeout}s).",
-                    _node.Name,
-                    _node.ResumeTimeoutSeconds
-                );
-            }
-            catch { }
         }
         catch (Exception exception)
         {
@@ -367,35 +334,10 @@ internal sealed class NodeEventHandlers
         if (_node.Stopped || _node.Disposed)
             return;
 
-        if (eventArgs.AffectedGuilds is not { Count: > 0 })
-        {
-            _node.RaiseWorkerFailed(eventArgs);
-            try
-            {
-                _node.Logger?.LogWarning(
-                    LogEvents.Node,
-                    "A worker of node {NodeName} failed, no guild connection was affected.",
-                    _node.Name
-                );
-            }
-            catch { }
-            return;
-        }
-
-        await InvalidateAsync(invalidated).ConfigureAwait(false);
+        if (eventArgs.AffectedGuilds is { Count: > 0 })
+            await InvalidateAsync(invalidated).ConfigureAwait(false);
 
         _node.RaiseWorkerFailed(eventArgs);
-
-        try
-        {
-            _node.Logger?.LogWarning(
-                LogEvents.Node,
-                "A worker of node {NodeName} failed, {Count} guild connection(s) were invalidated. Reconnect the bot to the voice channels to resume playback.",
-                _node.Name,
-                invalidated.Length
-            );
-        }
-        catch { }
     }
 
     internal void HandleConnectionStatus(ConnectionStatus status)
