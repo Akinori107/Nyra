@@ -8,6 +8,8 @@ namespace Nyra.Internal;
 
 internal sealed class RestClient
 {
+    private const int MaxBodyBytes = 64 * 1024 * 1024;
+
     private static readonly SocketsHttpHandler SharedHandler = new()
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
@@ -16,7 +18,6 @@ internal sealed class RestClient
 
     private static readonly HttpClient Http = new(SharedHandler, disposeHandler: false)
     {
-        MaxResponseContentBufferSize = 64 * 1024 * 1024,
         Timeout = TimeSpan.FromSeconds(60),
     };
 
@@ -239,6 +240,9 @@ internal sealed class RestClient
                 string body;
                 try
                 {
+                    await response
+                        .Content.LoadIntoBufferAsync(MaxBodyBytes, bodyCts.Token)
+                        .ConfigureAwait(false);
                     body = await response
                         .Content.ReadAsStringAsync(bodyCts.Token)
                         .ConfigureAwait(false);
@@ -251,6 +255,9 @@ internal sealed class RestClient
             }
 
             var statusCode = (int)response.StatusCode;
+            await response
+                .Content.LoadIntoBufferAsync(MaxBodyBytes, bodyCts.Token)
+                .ConfigureAwait(false);
             return (
                 statusCode,
                 await response.Content.ReadAsByteArrayAsync(bodyCts.Token).ConfigureAwait(false)
