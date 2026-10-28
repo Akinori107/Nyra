@@ -28,11 +28,9 @@ internal sealed class NodeConnection : IDisposable
     private bool _everConnected;
     private int _reconnectAttempts;
 
-    private int _generation;
+    private volatile int _generation;
 
-    private volatile int _latestGeneration;
-
-    internal int LatestGeneration => _latestGeneration;
+    internal int LatestGeneration => _generation;
 
     private volatile int _publishedConnectionEpoch = -1;
 
@@ -570,7 +568,7 @@ internal sealed class NodeConnection : IDisposable
         }
     }
 
-    private int NextGeneration() => _latestGeneration = ++_generation;
+    private int NextGeneration() => ++_generation;
 
     private void EndSupervision(int generation)
     {
@@ -616,7 +614,7 @@ internal sealed class NodeConnection : IDisposable
 
     private void HandleTextMessage(int generation, int connectionEpoch, ReadOnlyMemory<byte> data)
     {
-        if (_stopped || _latestGeneration != generation)
+        if (_stopped || _generation != generation)
             return;
 
         try
