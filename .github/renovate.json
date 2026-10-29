@@ -10,6 +10,8 @@
     ":semanticCommitTypeAll(chore)",
     ":semanticCommitScopeDisabled"
   ],
+  "prConcurrentLimit": 0,
+  "prHourlyLimit": 0,
   "ignorePresets": [":ignoreModulesAndTests"],
   "baseBranchPatterns": ["dev"],
   "automergeStrategy": "squash",
