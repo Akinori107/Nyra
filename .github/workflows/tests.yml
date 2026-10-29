@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: '10.0.x'
       - run: dotnet build --configuration Release
@@ -27,7 +27,7 @@ jobs:
           --fail-fast --timeout 25m --minimum-expected-tests 488
           --results-directory results --coverage --coverage-output-format cobertura
           --coverage-output results.xml
-      - uses: codecov/codecov-action@v7
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
         with:
           files: results/results.xml
           disable_search: true
