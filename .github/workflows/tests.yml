@@ -4,7 +4,6 @@ on:
     types: [opened, synchronize, reopened]
   push:
     branches: [main, dev]
-  workflow_dispatch:
 concurrency:
   group: tests-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
