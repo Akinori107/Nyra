@@ -5,5 +5,7 @@ coverage:
         informational: true
     patch:
       default: false
+comment:
+  hide_project_coverage: false
 ignore:
   - "**/obj/**"
