@@ -16,4 +16,7 @@
   <ItemGroup>
     <PackageReference Include="NetCord" Version="1.0.0-beta.28" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nyra.Tests" />
+  </ItemGroup>
 </Project>

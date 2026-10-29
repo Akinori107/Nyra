@@ -1,0 +1,38 @@
+name: Tests
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  tests:
+    name: Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build --configuration Release
+      - run: >-
+          dotnet run --project tests/Nyra.Tests --configuration Release --no-build --
+          --fail-fast --timeout 25m --minimum-expected-tests 488
+          --results-directory results --coverage --coverage-output-format cobertura
+          --coverage-output results.xml
+      - uses: codecov/codecov-action@v7
+        with:
+          files: results/results.xml
+          disable_search: true
+          use_oidc: true
+      - run: >-
+          dotnet run --project tests/Nyra.Tests.Nightly --configuration Release --no-build --
+          --fail-fast --timeout 10m --minimum-expected-tests 8
+        if: always()

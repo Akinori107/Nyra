@@ -12,4 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nyra.Tests" />
+  </ItemGroup>
 </Project>

@@ -16,4 +16,7 @@
   <ItemGroup>
     <PackageReference Include="DSharpPlus" Version="5.0.0-nightly-02613" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nyra.Tests.Nightly" />
+  </ItemGroup>
 </Project>
