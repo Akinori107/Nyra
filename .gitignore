@@ -2,9 +2,13 @@
 [Bb]in/
 [Oo]bj/
 
-# VScode / Rider
+# VSCode / Rider
 .vscode/
 .idea/
 
 # Credentials
 .env
+
+# DocFX
+docs/_site/
+docs/api/
