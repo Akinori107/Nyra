@@ -6,7 +6,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="TUnit" Version="1.76.45" />
+    <PackageReference Include="TUnit" Version="1.77.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nyra.csproj" />
