@@ -46,7 +46,7 @@ using Nyra.Entities;
 var nyra = client.UseNyra();
 nyra.AddNode(new Node(
     new Endpoint("localhost", 2333, "youshallnotpass"),
-    new NodeOptions { Name = "main", Resuming = true }));
+    new NodeOptions { Name = "main" }));
 
 await nyra.ConnectAllNodesAsync();
 

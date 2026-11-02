@@ -26,7 +26,7 @@ using var client = new DiscordClient(new DiscordConfiguration
 var nyra = client.UseNyra();
 nyra.AddNode(new Node(
     new Endpoint("localhost", 2333, "youshallnotpass"),
-    new NodeOptions { Name = "main", Resuming = true }));
+    new NodeOptions { Name = "main" }));
 
 await client.ConnectAsync();
 await nyra.ConnectAllNodesAsync();
