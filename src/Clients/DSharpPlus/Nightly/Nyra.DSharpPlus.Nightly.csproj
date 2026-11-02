@@ -14,7 +14,7 @@
     <PackageReference Include="StyleCop.Analyzers" Version="1.3.151-beta" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="DSharpPlus" Version="5.0.0-nightly-02613" />
+    <PackageReference Include="DSharpPlus" Version="5.0.0-nightly-02614" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Nyra.Tests.Nightly" />
