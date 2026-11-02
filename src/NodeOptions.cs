@@ -6,8 +6,10 @@ public sealed record NodeOptions
     /// <summary>The node's display name, used in logs and error messages, must not be blank.</summary>
     public string Name { get; init; } = "Nyra node";
 
-    /// <summary>When enabled, the session is marked resumable and the session id is replayed on reconnect.</summary>
-    public bool Resuming { get; init; }
+    /// <summary>
+    /// When enabled, the session is marked resumable and the session id is replayed on reconnect, on by default.
+    /// </summary>
+    public bool Resuming { get; init; } = true;
 
     /// <summary>How long the server keeps a disconnected resumable session alive.</summary>
     /// <remarks>

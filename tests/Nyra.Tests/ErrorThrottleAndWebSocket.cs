@@ -49,6 +49,7 @@ public sealed class ErrorThrottleAndWebSocket
             new Nyra.NodeOptions
             {
                 Name = "throttle-throttle",
+                Resuming = false,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
                 ReadyTimeout = TimeSpan.FromSeconds(5),

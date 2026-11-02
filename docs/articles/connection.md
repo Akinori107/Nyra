@@ -14,7 +14,7 @@ Nothing breaks. The connection stays, and `connection.ChannelId` changes to the 
 
 Nyra reconnects by itself, waiting longer after each failure. It never stops unless you set `MaxReconnectAttempts` in [NodeOptions](../api/Nyra.NodeOptions.yml).
 
-With `Resuming = true`, the server keeps the players for `ResumeTimeout`, and audio continues when the node is back. `NodeReady` tells you what happened:
+`Resuming` is on by default, so the server keeps the players for `ResumeTimeout`, and audio continues when the node is back. `NodeReady` tells you what happened:
 
 ```csharp
 nyra.NodeReady += (sender, args) =>

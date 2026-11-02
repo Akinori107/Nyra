@@ -86,6 +86,7 @@ public sealed class SyncDisposeAndConnectorGate
             new NodeOptions
             {
                 Name = "sync-dispose-logs",
+                Resuming = false,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
                 ReadyTimeout = TimeSpan.FromSeconds(5),
@@ -115,6 +116,7 @@ public sealed class SyncDisposeAndConnectorGate
             new NodeOptions
             {
                 Name = "sync-dispose-logs",
+                Resuming = false,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
                 ReadyTimeout = TimeSpan.FromSeconds(5),
