@@ -590,19 +590,38 @@ public sealed class GuildFilters
         }
     }
 
-    internal async Task ResetAsync()
+    internal async Task LandRescuedAsync(Player player, FilterChain desired)
     {
-        _filterSendCts.Cancel();
+        await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            Land(player, desired, oldTimescale: null, countDivergence: false);
+        }
+        finally
+        {
+            _filterGate.Release();
+        }
+    }
+
+    internal async Task ResetForNewSessionAsync()
+    {
         await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
             _pendingFilters = null;
+            _pendingFilterDivergences = 0;
             _filters = new();
         }
         finally
         {
             _filterGate.Release();
         }
+    }
+
+    internal async Task ResetAsync()
+    {
+        _filterSendCts.Cancel();
+        await ResetForNewSessionAsync().ConfigureAwait(false);
     }
 
     private bool CommitPendingUnderLock(
@@ -682,7 +701,7 @@ public sealed class GuildFilters
         };
     }
 
-    private static FilterChain Normalize(FilterChain chain) =>
+    internal static FilterChain Normalize(FilterChain chain) =>
         NyraJson.Deserialize<FilterChain>(
             NyraJson.SerializeToUtf8Bytes(chain, NormalizeOptions),
             NormalizeOptions

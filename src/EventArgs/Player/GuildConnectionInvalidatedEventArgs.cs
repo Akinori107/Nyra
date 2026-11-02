@@ -1,8 +1,9 @@
 namespace Nyra.EventArgs;
 
 /// <summary>
-/// Raised when this guild's player is gone for good, the node's session could not be resumed, or a NodeLink
-/// cluster worker crashed and took the player with it.
+/// Raised when this guild's player is gone for good, the node's session could not be resumed and restoring the
+/// connection on the new session failed (see <see cref="GuildConnection.GuildConnectionRestored"/>), or a
+/// NodeLink cluster worker crashed and took the player with it.
 /// </summary>
 /// <remarks>
 /// A node that gave up reconnecting raises no per-guild event, its guild connections stay registered until

@@ -16,6 +16,8 @@ internal sealed class NodeEventHandlers
 
     private bool _readyEpilogueRunning;
 
+    private bool _stoppedSinceReady;
+
     private bool _resumingDisabledLogged;
 
     private (int Epoch, Stats Stats)? _statsBufferedDuringReady;
@@ -142,6 +144,7 @@ internal sealed class NodeEventHandlers
                 : null;
 
         string? usableSessionId;
+        bool discordTracked;
 
         lock (_node.EventsLock)
         {
@@ -159,6 +162,8 @@ internal sealed class NodeEventHandlers
             _node.IsReady = true;
             _node.Connection.NoteReady();
             _readyEpilogueRunning = true;
+            discordTracked = !_stoppedSinceReady;
+            _stoppedSinceReady = false;
         }
 
         var effectiveResumed =
@@ -167,19 +172,20 @@ internal sealed class NodeEventHandlers
             && eventArgs.SessionId == presentedSessionId;
 
         if (!effectiveResumed && !_node.Connections.IsEmpty)
-        {
-            var invalidated = _node.Connections.Values.ToArray();
-
-            foreach (var connection in invalidated)
-                connection.MarkTearingDown();
-
-            await InvalidateAsync(invalidated).ConfigureAwait(false);
-        }
+            await GuardAllAsync(
+                    _node.Connections.Values.ToArray(),
+                    connection =>
+                        discordTracked
+                            ? connection.Teardown.HandleSessionLostAsync()
+                            : connection.Teardown.HandleSessionInvalidatedAsync()
+                )
+                .ConfigureAwait(false);
 
         if (effectiveResumed)
             foreach (var connection in _node.Connections.Values.ToArray())
                 try
                 {
+                    connection.DiscardRestoreSnapshot();
                     await connection.ResendPendingVoiceAsync().ConfigureAwait(false);
                 }
                 catch (Exception exception)
@@ -278,11 +284,14 @@ internal sealed class NodeEventHandlers
     }
 
     private Task InvalidateAsync(GuildConnection[] invalidated) =>
+        GuardAllAsync(
+            invalidated,
+            connection => connection.Teardown.HandleSessionInvalidatedAsync()
+        );
+
+    private Task GuardAllAsync(GuildConnection[] connections, Func<GuildConnection, Task> handle) =>
         Task.WhenAll(
-            Array.ConvertAll(
-                invalidated,
-                connection => _node.GuardAsync(connection.Teardown.HandleSessionInvalidatedAsync())
-            )
+            Array.ConvertAll(connections, connection => _node.GuardAsync(handle(connection)))
         );
 
     internal void HandleStats(Stats stats)
@@ -388,6 +397,10 @@ internal sealed class NodeEventHandlers
                 new NodeDisconnectedEventArgs(closeStatus, closeDescription, final, exception)
             );
         }
+
+        if (_node.Options.RescuePlayback)
+            foreach (var connection in _node.Connections.Values)
+                connection.CaptureForRestore();
     }
 
     internal void HandleError(Exception exception)
@@ -427,6 +440,7 @@ internal sealed class NodeEventHandlers
         lock (_node.EventsLock)
         {
             _connectionEpoch++;
+            _stoppedSinceReady = true;
             DisarmReadyWatchdog();
         }
     }

@@ -28,7 +28,19 @@ After a resume, `await connection.RefreshAsync()` updates a connection with what
 
 ## The players are gone
 
-If the session can't be resumed, or a NodeLink worker crashes, the players are lost. Each affected connection raises `GuildConnectionInvalidated`. `args.LastChannelId` is the channel it was in, so you can rejoin:
+If the session can't be resumed, the new session has no players. Nyra sends it the voice details it kept, so the bot stays in the voice channel, and each connection raises `GuildConnectionRestored`. The player is empty, the track, the volume and the filters are gone, so tell your users to play again, or start playing yourself:
+
+```csharp
+connection.GuildConnectionRestored += (sender, args) =>
+{
+    // for example, send "The music server restarted, play again" to the guild
+    return Task.CompletedTask;
+};
+```
+
+If you can't lose what was playing, set `RescuePlayback = true` in [NodeOptions](../api/Nyra.NodeOptions.yml). Nyra then sends the track from where it was when the node dropped, the volume, the filters and the pause back to the node, and `args.PlaybackResent` says if the track was sent again. It is a last resort. If the node stays down for longer than `RescueTimeout` (3 minutes by default), Nyra only restores the voice and `PlaybackResent` is false. The position is an estimate, and what Nyra doesn't keep, like the end time, the audio track, the crossfade, the ducking and the mix, is not restored. Your queue lives in your app, so it keeps working.
+
+If the restore fails, or a NodeLink worker crashes, the connection is lost instead. It raises `GuildConnectionInvalidated`. `args.LastChannelId` is the channel it was in, so you can rejoin:
 
 ```csharp
 connection.GuildConnectionInvalidated += async (sender, args) =>

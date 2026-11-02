@@ -71,12 +71,12 @@ public sealed class ReadyAndRegistryRace
             server.ResumeOnReconnect = false;
             bridge.Logger = new HostileLogger();
 
-            var invalidated = new TaskCompletionSource(
+            var restored = new TaskCompletionSource(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
-            conn.GuildConnectionInvalidated += (_, _) =>
+            conn.GuildConnectionRestored += (_, _) =>
             {
-                invalidated.TrySetResult();
+                restored.TrySetResult();
                 return Task.CompletedTask;
             };
             var readyAgain = new TaskCompletionSource<NodeReadyEventArgs>(
@@ -95,7 +95,7 @@ public sealed class ReadyAndRegistryRace
 
             await Assert.That(ready.Resumed).IsFalse();
             await Assert
-                .That(() => invalidated.Task.IsCompletedSuccessfully)
+                .That(() => restored.Task.IsCompletedSuccessfully)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await Assert.That(node.IsReady).IsTrue();
             bridge.Logger = null;

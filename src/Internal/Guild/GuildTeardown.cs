@@ -47,6 +47,24 @@ internal sealed class GuildTeardown
         }
     }
 
+    internal async Task HandleSessionLostAsync()
+    {
+        try
+        {
+            if (await _connection.TryRestoreAsync().ConfigureAwait(false))
+                return;
+        }
+        catch (Exception exception)
+        {
+            _node.HandleError(exception);
+        }
+
+        if (_connection.IsTearingDown)
+            return;
+
+        await HandleSessionInvalidatedAsync().ConfigureAwait(false);
+    }
+
     internal async Task HandleSessionInvalidatedAsync()
     {
         _connection.MarkTearingDown();

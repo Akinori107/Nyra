@@ -73,6 +73,14 @@ public sealed class Node : IAsyncDisposable, IDisposable
                 nameof(options),
                 "NodeOptions.ResumeTimeout must be zero or a positive number of seconds."
             );
+        if (
+            _options.RescueTimeout != Timeout.InfiniteTimeSpan
+            && _options.RescueTimeout <= TimeSpan.Zero
+        )
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "NodeOptions.RescueTimeout must be positive, or Timeout.InfiniteTimeSpan for no limit."
+            );
         ThrowIfNotPositive(
             _options.VoiceHandshakeTimeout,
             nameof(NodeOptions.VoiceHandshakeTimeout)

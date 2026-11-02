@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nyra.Abstractions;
 using Nyra.Entities;
@@ -27,6 +28,22 @@ public sealed class GuildConnection
     private readonly EventPump _pump;
     private readonly Func<Exception, System.EventArgs?, Task> _handlerError;
     private volatile bool _tearingDown;
+    private volatile bool _restoring;
+    private RestoreSnapshot? _restoreSnapshot;
+
+    private sealed record RestoreSnapshot(
+        Track? Track,
+        TimeSpan? Position,
+        int Volume,
+        FilterChain Filters,
+        bool Paused,
+        long CapturedTick
+    )
+    {
+        internal bool HasFilters =>
+            !FilterComparer.FiltersEqual(new FilterChain(), Filters)
+            || (Filters.Volume is { } volume && volume != 1f);
+    }
 
     private static readonly TimeSpan VoiceCloseGracePeriod = TimeSpan.FromSeconds(2);
 
@@ -299,10 +316,21 @@ public sealed class GuildConnection
     public event AsyncEventHandler<PlayerDestroyedEventArgs>? PlayerDestroyed;
 
     /// <summary>
-    /// Raised when this guild's player is gone for good, the node session could not be resumed, or a NodeLink
-    /// cluster worker crashed and took the player with it.
+    /// Raised when this guild's player is gone for good, the node session could not be resumed and restoring the
+    /// connection on the new one failed (see <see cref="GuildConnectionRestored"/>), or a NodeLink cluster worker
+    /// crashed and took the player with it.
     /// </summary>
     public event AsyncEventHandler<GuildConnectionInvalidatedEventArgs>? GuildConnectionInvalidated;
+
+    /// <summary>
+    /// Raised when the node's session could not be resumed and this connection was restored on the new one,
+    /// the bot stays in its voice channel.
+    /// </summary>
+    /// <remarks>
+    /// The new player is empty, the track, the volume and the filters are gone, start playing again. Calls made
+    /// while the restore runs throw <see cref="InvalidOperationException"/>.
+    /// </remarks>
+    public event AsyncEventHandler<GuildConnectionRestoredEventArgs>? GuildConnectionRestored;
 
     /// <summary>The voice connection dropped and is being re-established.</summary>
     /// <remarks>
@@ -449,7 +477,10 @@ public sealed class GuildConnection
     /// Fetches the player as the server sees it, takes its state in and returns it, useful to re-sync after a
     /// resumed reconnect or an out-of-band change.
     /// </summary>
-    /// <remarks>After a session loss the player is gone, reconnect.</remarks>
+    /// <remarks>
+    /// After a session loss the new player is empty, see <see cref="GuildConnectionRestored"/>, a refresh only
+    /// returns what the server holds now.
+    /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The fetched player, now the connection's state.</returns>
     public Task<Player> RefreshAsync(CancellationToken cancellationToken = default) =>
@@ -481,6 +512,168 @@ public sealed class GuildConnection
     /// <exception cref="RestException">The server refused the player destroy.</exception>
     public Task DisconnectAsync(CancellationToken cancellationToken = default) =>
         _teardown.DisconnectAsync(cancellationToken);
+
+    internal void CaptureForRestore()
+    {
+        if (_restoreSnapshot is not null || _tearingDown || ChannelId is null)
+            return;
+
+        Interlocked.CompareExchange(
+            ref _restoreSnapshot,
+            new RestoreSnapshot(
+                CurrentTrack,
+                Position,
+                Volume,
+                _filters.Applied,
+                IsPaused,
+                Environment.TickCount64
+            ),
+            null
+        );
+    }
+
+    internal void DiscardRestoreSnapshot() => Interlocked.Exchange(ref _restoreSnapshot, null);
+
+    internal async Task<bool> TryRestoreAsync()
+    {
+        var snapshot = Interlocked.Exchange(ref _restoreSnapshot, null);
+        if (_tearingDown || _restoring || ChannelId is not { } channelId)
+            return false;
+
+        bool resent;
+        _restoring = true;
+        try
+        {
+            await _voiceForward.DrainAsync().ConfigureAwait(false);
+            await _patches.DrainAsync().ConfigureAwait(false);
+
+            ResetPlayerState();
+            await _filters.ResetForNewSessionAsync().ConfigureAwait(false);
+            _voiceForward.ClearPending();
+
+            await _voiceForward
+                .ForwardAsync(
+                    new PlayerVoiceState
+                    {
+                        Token = VoiceToken,
+                        Endpoint = VoiceEndpoint,
+                        SessionId = VoiceSessionId,
+                        ChannelId = channelId,
+                    }
+                )
+                .ConfigureAwait(false);
+
+            if (_voiceForward.HasPending || _tearingDown)
+                return false;
+
+            resent =
+                _node.Options.RescuePlayback
+                && snapshot is not null
+                && !IsRescueExpired(snapshot)
+                && await ResendPlaybackAsync(snapshot).ConfigureAwait(false);
+        }
+        finally
+        {
+            _restoring = false;
+        }
+
+        Dispatch(
+            GuildConnectionRestored,
+            new GuildConnectionRestoredEventArgs(GuildId, channelId, resent)
+        );
+        return true;
+    }
+
+    private bool IsRescueExpired(RestoreSnapshot snapshot) =>
+        _node.Options.RescueTimeout != Timeout.InfiniteTimeSpan
+        && Environment.TickCount64 - snapshot.CapturedTick
+            > _node.Options.RescueTimeout.TotalMilliseconds;
+
+    private async Task<bool> ResendPlaybackAsync(RestoreSnapshot snapshot)
+    {
+        try
+        {
+            await ResendInOneUpdateAsync(snapshot).ConfigureAwait(false);
+            return snapshot.Track is not null;
+        }
+        catch (Exception exception)
+        {
+            if (_tearingDown)
+                return false;
+
+            _node.HandleError(
+                new InvalidOperationException(
+                    $"Failed to restore the playback of guild {GuildId}: {exception.Message}",
+                    exception
+                )
+            );
+            return false;
+        }
+    }
+
+    private static long ResendStartMilliseconds(RestoreSnapshot snapshot, Track track)
+    {
+        if (snapshot.Position is not { } position || track.Info.IsStream)
+            return 0;
+
+        var last = track.Info.Length - TimeSpan.FromMilliseconds(1);
+        var start = track.Info.Length > TimeSpan.Zero && position >= last ? last : position;
+        return (long)start.TotalMilliseconds;
+    }
+
+    private async Task ResendInOneUpdateAsync(RestoreSnapshot snapshot)
+    {
+        var filters = snapshot.HasFilters ? GuildFilters.Normalize(snapshot.Filters) : null;
+        int? volume = snapshot.Volume != 100 ? snapshot.Volume : null;
+        PlayerUpdateTrack? trackUpdate = null;
+        long? startMilliseconds = null;
+
+        if (snapshot.Track is { } track)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(track.Encoded);
+
+            startMilliseconds = ResendStartMilliseconds(snapshot, track);
+            trackUpdate = new PlayerUpdateTrack
+            {
+                Encoded = track.Encoded,
+                UserData = track.UserData is { ValueKind: JsonValueKind.Object }
+                    ? track.UserData
+                    : null,
+            };
+
+            _playback.StampPlayRequested();
+            if (snapshot.Paused)
+                _playback.StampPauseRequested();
+        }
+        else if (volume is null && filters is null)
+            return;
+
+        var requestTick = Environment.TickCount64;
+
+        using var timeout = new CancellationTokenSource(GuildVoiceForwarder.VoiceSendDeadline);
+        var player = await _patches
+            .SendAsync(
+                ct =>
+                    _node.Rest.Players.UpdateAsync(
+                        GuildId,
+                        new PlayerUpdatePayload
+                        {
+                            Track = trackUpdate,
+                            Position = startMilliseconds,
+                            Volume = volume,
+                            Paused = trackUpdate is not null && snapshot.Paused ? true : null,
+                            Filters = filters,
+                        },
+                        ct
+                    ),
+                timeout.Token
+            )
+            .ConfigureAwait(false);
+
+        if (filters is not null)
+            await _filters.LandRescuedAsync(player, filters).ConfigureAwait(false);
+        CaptureState(player, requestTick, startMilliseconds);
+    }
 
     internal Task DrainVoiceForwardAsync(CancellationToken cancellationToken = default) =>
         _voiceForward.DrainAsync(cancellationToken);
@@ -777,6 +970,11 @@ public sealed class GuildConnection
     {
         _tearingDown = true;
         ChannelId = null;
+        ResetPlayerState();
+    }
+
+    private void ResetPlayerState()
+    {
         IsPaused = false;
         State = null;
         Volume = 100;
@@ -795,6 +993,10 @@ public sealed class GuildConnection
         if (_tearingDown)
             throw new InvalidOperationException(
                 "The connection is being torn down, it no longer accepts operations."
+            );
+        if (_restoring)
+            throw new InvalidOperationException(
+                "The connection is being restored after the node lost its session, try again in a moment."
             );
         if (!_node.IsReady)
             throw new InvalidOperationException($"The node '{_node.Name}' is not ready.");

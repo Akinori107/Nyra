@@ -108,6 +108,7 @@ public sealed class ReadyWatchdog
                 return Task.CompletedTask;
             };
 
+            sv.On("PATCH", "/v4/sessions/fake-session/players/777", 500, "{}");
             await sv.DropConnectionAsync(1000, "fresh session test").ConfigureAwait(false);
             await Assert
                 .That(
