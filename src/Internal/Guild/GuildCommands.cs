@@ -80,10 +80,15 @@ internal sealed class GuildCommands
             )
             .ConfigureAwait(false);
 
-        if (urlStart is not null && !refusable && GuildConnection.IsSameTrack(player.Track, track))
+        var landed = !refusable && GuildConnection.IsSameTrack(player.Track, track);
+        if (urlStart is not null && landed)
             track.StartPosition = null;
 
-        _connection.CaptureState(player, requestTick);
+        _connection.CaptureState(
+            player,
+            requestTick,
+            landed && options?.NoReplace != true ? positionMilliseconds ?? 0 : null
+        );
     }
 
     internal async Task<Track> PlayIdentifierAsync(
@@ -138,7 +143,8 @@ internal sealed class GuildCommands
             )
             .ConfigureAwait(false);
 
-        _connection.CaptureState(player, requestTick);
+        var landed = options?.NoReplace != true && player.Track is not null;
+        _connection.CaptureState(player, requestTick, landed ? positionMilliseconds ?? 0 : null);
         return player.Track
             ?? throw new InvalidOperationException(
                 "The server did not resolve the identifier into a track."

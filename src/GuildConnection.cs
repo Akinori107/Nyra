@@ -763,14 +763,14 @@ public sealed class GuildConnection
             ) || (!string.IsNullOrEmpty(current.Encoded) && current.Encoded == candidate.Encoded)
         );
 
-    internal void CaptureState(Player player, long requestTick)
+    internal void CaptureState(Player player, long requestTick, long? startMilliseconds = null)
     {
         if (_tearingDown)
             _node
                 .Registry.DestroyPlayerExclusivelyAsync(this, CancellationToken.None)
                 .ObserveFaults(_node.HandleError);
 
-        _playback.Capture(player, requestTick);
+        _playback.Capture(player, requestTick, startMilliseconds);
     }
 
     internal void ClearState()

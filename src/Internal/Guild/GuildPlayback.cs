@@ -132,10 +132,10 @@ internal sealed class GuildPlayback
         return length > 0 && position > length ? length : position;
     }
 
-    private void Anchor(long positionMilliseconds, Track? track)
+    private void Anchor(long positionMilliseconds, Track? track, long? tick = null)
     {
         _positionMilliseconds = positionMilliseconds;
-        _positionTick = Environment.TickCount64;
+        _positionTick = tick ?? Environment.TickCount64;
         _hasPosition = true;
         _anchorTrack = track;
         _endedSinceAnchor = false;
@@ -320,7 +320,7 @@ internal sealed class GuildPlayback
         _connection.Volume = eventArgs.Volume;
     }
 
-    internal void Capture(Player player, long requestTick)
+    internal void Capture(Player player, long requestTick, long? startMilliseconds = null)
     {
         lock (_positionLock)
         {
@@ -353,7 +353,10 @@ internal sealed class GuildPlayback
                 {
                     _connection.State = state;
                     _lastCaptureTime = state.TimeMilliseconds;
-                    Anchor(state.PositionMilliseconds, player.Track);
+                    if (startMilliseconds is { } start)
+                        Anchor(start, player.Track, requestTick);
+                    else
+                        Anchor(state.PositionMilliseconds, player.Track);
                 }
                 else
                     _connection.State = state;

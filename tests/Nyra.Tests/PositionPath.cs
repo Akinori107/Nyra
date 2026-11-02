@@ -10,11 +10,15 @@ public sealed class PositionPath
     private const string TrackJson =
         """{"encoded":"QXRsZWFzdA==","info":{"identifier":"ph8qt3dhvwo","author":"SoAD - Topic","title":"ATWA","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
 
-    private static string PlayerBody(bool paused, string? filters = null) =>
+    private static string PlayerBody(
+        bool paused,
+        string? filters = null,
+        long positionMilliseconds = 0
+    ) =>
         $$$"""
             {"guildId":"777","track":{{{TrackJson}}},"volume":100,"paused":{{{(
                 paused ? "true" : "false"
-            )}}}{{{(filters is null ? string.Empty : ",\"filters\":" + filters)}}},"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}
+            )}}}{{{(filters is null ? string.Empty : ",\"filters\":" + filters)}}},"state":{"time":0,"position":{{{positionMilliseconds}}},"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}
             """;
 
     private static async Task<(
@@ -23,9 +27,9 @@ public sealed class PositionPath
         FakeNodeServer Server,
         GuildConnection Conn,
         NyraExtension Extension
-    )> ConnectAsync(bool pausedEcho, string? filtersEcho = null)
+    )> ConnectAsync(bool pausedEcho, string? filtersEcho = null, FakeNodeServer? lavalink = null)
     {
-        var server = new FakeNodeServer();
+        var server = lavalink ?? new FakeNodeServer();
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
@@ -216,6 +220,82 @@ public sealed class PositionPath
             .ConfigureAwait(false);
         await updated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         await Assert.That(conn.Position <= TimeSpan.FromMilliseconds(176_000)).IsTrue();
+
+        await conn.DisconnectAsync().ConfigureAwait(false);
+        await extension.DisposeAsync().ConfigureAwait(false);
+        server.Dispose();
+    }
+
+    [Test]
+    [Arguments(170_000L, null, false, 0, 5)]
+    [Arguments(170_000L, 30, false, 30, 35)]
+    [Arguments(90_000L, null, true, 90, 95)]
+    public async Task PlayAnchorsTheStartInsteadOfTheResponse(
+        long serverPosition,
+        int? startSeconds,
+        bool noReplace,
+        int fromSeconds,
+        int toSeconds
+    )
+    {
+        var (bridge, node, server, conn, extension) = await ConnectAsync(pausedEcho: false)
+            .ConfigureAwait(false);
+        server.On(
+            "PATCH",
+            PlayerPath,
+            _ => new FakeRestResponse(
+                200,
+                PlayerBody(paused: false, positionMilliseconds: serverPosition)
+            )
+        );
+
+        await conn.PlayAsync(
+                Track(),
+                new PlayOptions(
+                    StartPosition: startSeconds is { } start ? TimeSpan.FromSeconds(start) : null,
+                    NoReplace: noReplace
+                )
+            )
+            .ConfigureAwait(false);
+
+        await Assert
+            .That(
+                conn.Position >= TimeSpan.FromSeconds(fromSeconds)
+                    && conn.Position < TimeSpan.FromSeconds(toSeconds)
+            )
+            .IsTrue();
+
+        await conn.DisconnectAsync().ConfigureAwait(false);
+        await extension.DisposeAsync().ConfigureAwait(false);
+        server.Dispose();
+    }
+
+    [Test]
+    public async Task PlayIdentifierAnchorsAtTheStartPosition()
+    {
+        var (bridge, node, server, conn, extension) = await ConnectAsync(
+                pausedEcho: false,
+                lavalink: new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" }
+            )
+            .ConfigureAwait(false);
+        server.On(
+            "PATCH",
+            PlayerPath,
+            _ => new FakeRestResponse(200, PlayerBody(paused: false, positionMilliseconds: 170_000))
+        );
+
+        await conn.PlayIdentifierAsync(
+                "https://example.test/a.mp3",
+                new PlayOptions(StartPosition: TimeSpan.FromSeconds(20))
+            )
+            .ConfigureAwait(false);
+
+        await Assert
+            .That(
+                conn.Position >= TimeSpan.FromSeconds(20)
+                    && conn.Position < TimeSpan.FromSeconds(25)
+            )
+            .IsTrue();
 
         await conn.DisconnectAsync().ConfigureAwait(false);
         await extension.DisposeAsync().ConfigureAwait(false);
