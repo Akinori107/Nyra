@@ -18,8 +18,8 @@ public sealed class RestException : NyraException
     /// <summary>The body the server replied with, null when it sent none.</summary>
     /// <remarks>
     /// A client-side parse failure carries the client's diagnostic instead of the body, a reply the server
-    /// null-ed reads as null, the diagnostic is what the client kept. A body at or beyond the read bound is
-    /// carried truncated with a marker.
+    /// null-ed reads as null, the diagnostic is what the client kept. A body beyond the read bound is dropped,
+    /// it reads as an empty string.
     /// </remarks>
     public string? ResponseBody { get; }
 
