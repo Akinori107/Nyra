@@ -206,6 +206,64 @@ public sealed class GuildFilters
             .ConfigureAwait(false);
     }
 
+    /// <summary>Whether the chain holds this filter, the same kind with the values the filter sets.</summary>
+    /// <remarks>
+    /// A member the filter leaves null is not compared, the server fills in its default for it. A transition
+    /// is not compared either. The equalizer is not an <see cref="IFilter"/>.
+    /// </remarks>
+    /// <param name="filter">The filter to look for.</param>
+    /// <returns>Whether the chain holds the filter, false when it holds another value of the same kind.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="filter"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="filter"/> is a user-defined implementation of <see cref="IFilter"/>.
+    /// </exception>
+    public bool IsApplied(IFilter filter)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (!FilterSlots.TryGetValue(filter.GetType(), out var place))
+            throw new ArgumentException(
+                $"The filter type '{filter.GetType().Name}' is not supported.",
+                nameof(filter)
+            );
+
+        using var blank = Wire(place(new FilterChain(), null));
+        using var wanted = Wire(place(new FilterChain(), filter));
+        using var held = Wire(_filters);
+
+        foreach (var member in wanted.RootElement.EnumerateObject())
+        {
+            if (
+                blank.RootElement.TryGetProperty(member.Name, out var empty)
+                && empty.GetRawText() == member.Value.GetRawText()
+            )
+                continue;
+
+            return held.RootElement.TryGetProperty(member.Name, out var current)
+                && Holds(current, member.Value);
+        }
+
+        return false;
+    }
+
+    private static JsonDocument Wire(FilterChain chain) =>
+        JsonDocument.Parse(NyraJson.SerializeToUtf8Bytes(chain, NormalizeOptions));
+
+    private static bool Holds(JsonElement held, JsonElement wanted) =>
+        wanted.ValueKind switch
+        {
+            JsonValueKind.Null => true,
+            JsonValueKind.Object => held.ValueKind == JsonValueKind.Object
+                && wanted
+                    .EnumerateObject()
+                    .All(member =>
+                        held.TryGetProperty(member.Name, out var value)
+                        && Holds(value, member.Value)
+                    ),
+            JsonValueKind.Number => held.ValueKind == JsonValueKind.Number
+                && held.GetDouble() == wanted.GetDouble(),
+            _ => JsonElement.DeepEquals(held, wanted),
+        };
+
     /// <summary>Removes all audio filters, including the volume filter, the equalizer and plugin filters.</summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the chain was cleared.</returns>
