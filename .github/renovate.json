@@ -23,7 +23,7 @@
     },
     {
       "description": "Self explanatory",
-      "matchFileNames": ["src/Clients/DSharpPlus/Nightly/**"],
+      "matchFileNames": ["src/Adapters/DSharpPlus/Nightly/**"],
       "matchPackageNames": ["DSharpPlus*"],
       "groupName": "DSharpPlus Nightly",
       "ignoreUnstable": false

@@ -6,9 +6,9 @@
           "src": "..",
           "files": [
             "src/Nyra.csproj",
-            "src/Clients/DSharpPlus/Stable/Nyra.DSharpPlus.csproj",
-            "src/Clients/DiscordNet/Nyra.DiscordNet.csproj",
-            "src/Clients/NetCord/Nyra.NetCord.csproj"
+            "src/Adapters/DSharpPlus/Stable/Nyra.DSharpPlus.csproj",
+            "src/Adapters/DiscordNet/Nyra.DiscordNet.csproj",
+            "src/Adapters/NetCord/Nyra.NetCord.csproj"
           ]
         }
       ],

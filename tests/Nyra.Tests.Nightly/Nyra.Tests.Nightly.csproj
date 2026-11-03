@@ -9,7 +9,7 @@
     <PackageReference Include="TUnit" Version="1.79.0" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Clients\DSharpPlus\Nightly\Nyra.DSharpPlus.Nightly.csproj" />
+    <ProjectReference Include="..\..\src\Adapters\DSharpPlus\Nightly\Nyra.DSharpPlus.Nightly.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Nyra.Tests\Reflect.cs" Link="Reflect.cs" />

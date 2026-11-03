@@ -10,8 +10,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nyra.csproj" />
-    <ProjectReference Include="..\..\src\Clients\DSharpPlus\Stable\Nyra.DSharpPlus.csproj" />
-    <ProjectReference Include="..\..\src\Clients\DiscordNet\Nyra.DiscordNet.csproj" />
-    <ProjectReference Include="..\..\src\Clients\NetCord\Nyra.NetCord.csproj" />
+    <ProjectReference Include="..\..\src\Adapters\DSharpPlus\Stable\Nyra.DSharpPlus.csproj" />
+    <ProjectReference Include="..\..\src\Adapters\DiscordNet\Nyra.DiscordNet.csproj" />
+    <ProjectReference Include="..\..\src\Adapters\NetCord\Nyra.NetCord.csproj" />
   </ItemGroup>
 </Project>

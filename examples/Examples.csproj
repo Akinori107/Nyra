@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\Clients\DSharpPlus\Stable\Nyra.DSharpPlus.csproj" />
+    <ProjectReference Include="..\src\Adapters\DSharpPlus\Stable\Nyra.DSharpPlus.csproj" />
     <ProjectReference Include="..\src\Nyra.csproj" />
   </ItemGroup>
 </Project>
