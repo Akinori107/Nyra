@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.WebSockets;
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using Nyra.WebSocket;
 
@@ -23,7 +24,7 @@ internal sealed class NodeConnection : IDisposable
         string? Description,
         Exception? Exception
     ) _lastCloseInfo;
-    private Exception? _initialConnectException;
+    private ExceptionDispatchInfo? _initialConnectFailure;
     private volatile bool _stopped;
     private bool _everConnected;
     private int _reconnectAttempts;
@@ -31,6 +32,19 @@ internal sealed class NodeConnection : IDisposable
     private volatile int _generation;
 
     internal int LatestGeneration => _generation;
+
+    internal ExceptionDispatchInfo? InitialConnectFailure
+    {
+        get
+        {
+            lock (_lock)
+                return
+                    _everConnected
+                    || _initialConnectFailure?.SourceException is OperationCanceledException
+                    ? null
+                    : _initialConnectFailure;
+        }
+    }
 
     private volatile int _publishedConnectionEpoch = -1;
 
@@ -81,7 +95,7 @@ internal sealed class NodeConnection : IDisposable
             _stopped = false;
             _reconnectAttempts = 0;
             _everConnected = false;
-            _initialConnectException = null;
+            _initialConnectFailure = null;
             _lastCloseInfo = default;
             generation = NextGeneration();
             _disconnectSignal = new TaskCompletionSource(
@@ -106,7 +120,7 @@ internal sealed class NodeConnection : IDisposable
         {
             lock (_lock)
                 if (_generation == generation)
-                    _initialConnectException = exception;
+                    _initialConnectFailure = ExceptionDispatchInfo.Capture(exception);
             disconnectSignal.TrySetResult();
             throw;
         }
@@ -394,7 +408,7 @@ internal sealed class NodeConnection : IDisposable
                     );
 
                     (closeStatus, closeDescription, closeException) = _lastCloseInfo;
-                    initialConnectException = _initialConnectException;
+                    initialConnectException = _initialConnectFailure?.SourceException;
                     wasEverConnected = _everConnected;
                 }
 

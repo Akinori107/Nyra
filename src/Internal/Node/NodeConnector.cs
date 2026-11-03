@@ -74,6 +74,8 @@ internal sealed class NodeConnector
                 if (started)
                     lock (_node.EventsLock)
                         _node.ThrowIfInterruptedWhileConnecting(expectedExtension, stopEpoch);
+                else if (_node.Connection.InitialConnectFailure is { } initialFailure)
+                    initialFailure.Throw();
             }
             catch
             {

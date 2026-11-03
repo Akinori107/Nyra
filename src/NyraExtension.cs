@@ -179,7 +179,8 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
     /// <remarks>
     /// Skipped is not stopped, a node whose initial connect failed keeps retrying in the background and
     /// connects by itself once its server is reachable again, only <see cref="Node.DisconnectAsync"/> (or
-    /// removing and disposing the node) stops it.
+    /// removing and disposing the node) stops it. Calling this again while that node is still unreachable
+    /// skips it again right away, it does not wait for the node.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when every node settled.</returns>
