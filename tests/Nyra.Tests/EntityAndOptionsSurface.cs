@@ -286,7 +286,18 @@ public sealed class EntityAndOptionsSurface
         var numeric = Parse<FadeSection>("""{"duration":2500}""");
         await Assert.That(numeric?.DurationMilliseconds).IsEqualTo(2500);
 
+        var duckingHuge = Parse<DuckingOptions>("""{"duration":1e40}""");
+        await Assert.That(duckingHuge?.DurationMilliseconds).IsEqualTo(int.MaxValue);
+
         var garbageFade = Throws<JsonException>(() => Parse<FadeSection>("""{"duration":"abc"}"""));
+    }
+
+    [Test]
+    public async Task DuckingWithoutADurationOmitsItUnderPlainOptions()
+    {
+        var written = JsonSerializer.Serialize(new DuckingOptions { Enabled = true });
+
+        await Assert.That(written).DoesNotContain("duration");
     }
 
     [Test]

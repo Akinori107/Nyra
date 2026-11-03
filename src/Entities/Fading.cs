@@ -91,8 +91,13 @@ public sealed record DuckingOptions
     public bool? Enabled { get; init; }
 
     /// <summary>How long the ducking takes, in milliseconds, the server default is 500.</summary>
+    /// <remarks>
+    /// A duration a co-client stored outside the int32 range clamps to the nearest bound on read, a
+    /// non-finite one reads as null, the echo of another client's write must not kill the player read.
+    /// </remarks>
     [JsonPropertyName("duration")]
-    [JsonConverter(typeof(RoundedInt32Converter))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonConverter(typeof(FadeDurationConverter))]
     public int? DurationMilliseconds { get; init; }
 
     /// <summary>Volume to duck to, 0-1, the server default is 0.3.</summary>
