@@ -181,6 +181,7 @@ internal sealed class TracksRest
         if (!response.IsSuccessStatusCode)
         {
             string body;
+            bool bodyUnreadable;
             TimeSpan? retryAfter;
             try
             {
@@ -188,10 +189,9 @@ internal sealed class TracksRest
                     cancellationToken,
                     headerCts.Token
                 );
-                var tail = await RestClient
-                    .ReadBoundedAsync(response.Content, RestClient.MaxBodyBytes, tailCts.Token)
+                (body, bodyUnreadable) = await RestClient
+                    .ReadErrorBodyAsync(response.Content, tailCts.Token)
                     .ConfigureAwait(false);
-                body = tail is null ? string.Empty : System.Text.Encoding.UTF8.GetString(tail);
                 retryAfter = RestClient.ReadRetryAfter(response);
             }
             catch (OperationCanceledException)
@@ -208,7 +208,10 @@ internal sealed class TracksRest
                 response.Dispose();
             }
 
-            throw new RestException((int)response.StatusCode, path, body, retryAfter);
+            throw new RestException((int)response.StatusCode, path, body, retryAfter)
+            {
+                BodyUnreadable = bodyUnreadable,
+            };
         }
 
         try

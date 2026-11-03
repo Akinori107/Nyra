@@ -491,6 +491,40 @@ public sealed class LifecycleEdge
     }
 
     [Test]
+    public async Task ATruncatedLoadStreamErrorStillCarriesItsStatus()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        try
+        {
+            stack.Server.OnRaw(
+                "GET",
+                "/v4/loadstream",
+                (_, stream) => WriteTruncatedReplyAsync(stream, "500 Internal Server Error")
+            );
+
+            var truncated = await Assert
+                .That(async () =>
+                    await stack
+                        .Node.Rest.Tracks.OpenLoadStreamAsync(
+                            "track",
+                            100,
+                            0,
+                            null,
+                            LoadStreamFormat.Raw,
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false)
+                )
+                .Throws<RestException>();
+            await Assert.That(truncated!.StatusCode).IsEqualTo(500);
+        }
+        finally
+        {
+            await stack.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [Test]
     public async Task FilterResendEcho()
     {
         const string divergentEcho =

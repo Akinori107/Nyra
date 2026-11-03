@@ -271,22 +271,11 @@ internal sealed class RestClient
             if (!response.IsSuccessStatusCode)
             {
                 var retryAfter = ReadRetryAfter(response);
-                string body;
-                var bodyUnreadable = false;
-                try
-                {
-                    await response
-                        .Content.LoadIntoBufferAsync(MaxBodyBytes, bodyCts.Token)
-                        .ConfigureAwait(false);
-                    body = await response
-                        .Content.ReadAsStringAsync(bodyCts.Token)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception readFailure) when (readFailure is not OperationCanceledException)
-                {
-                    body = string.Empty;
-                    bodyUnreadable = true;
-                }
+                var (body, bodyUnreadable) = await ReadErrorBodyAsync(
+                        response.Content,
+                        bodyCts.Token
+                    )
+                    .ConfigureAwait(false);
                 throw new RestException((int)response.StatusCode, path, body, retryAfter)
                 {
                     BodyUnreadable = bodyUnreadable,
@@ -328,6 +317,27 @@ internal sealed class RestClient
                 $"The node '{_node.Name}' at {_node.Endpoint} is not reachable: {exception.Message}",
                 exception
             );
+        }
+    }
+
+    internal static async Task<(string Body, bool Unreadable)> ReadErrorBodyAsync(
+        HttpContent content,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await content
+                .LoadIntoBufferAsync(MaxBodyBytes, cancellationToken)
+                .ConfigureAwait(false);
+            return (
+                await content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false),
+                false
+            );
+        }
+        catch (Exception readFailure) when (readFailure is not OperationCanceledException)
+        {
+            return (string.Empty, true);
         }
     }
 
