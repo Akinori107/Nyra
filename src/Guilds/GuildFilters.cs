@@ -512,7 +512,7 @@ public sealed class GuildFilters
             );
             _node.HandleError(
                 new InvalidOperationException(
-                    $"The server of guild {GuildId} answered the filter re-send with 429, waiting the retry-after before the next attempt.",
+                    $"The server of guild {GuildId} answered the filter re-send with {restFailure.StatusCode}, waiting the retry-after before the next attempt.",
                     restFailure
                 )
             );

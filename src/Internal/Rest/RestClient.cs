@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -8,7 +9,9 @@ namespace Nyra.Internal;
 
 internal sealed class RestClient
 {
-    private const int MaxBodyBytes = 64 * 1024 * 1024;
+    internal const int MaxBodyBytes = 64 * 1024 * 1024;
+
+    private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromHours(1);
 
     private static readonly SocketsHttpHandler SharedHandler = new()
     {
@@ -255,19 +258,26 @@ internal sealed class RestClient
             }
 
             var statusCode = (int)response.StatusCode;
-            await response
-                .Content.LoadIntoBufferAsync(MaxBodyBytes, bodyCts.Token)
+            var bytes = await ReadBoundedAsync(response.Content, MaxBodyBytes, bodyCts.Token)
                 .ConfigureAwait(false);
-            return (
-                statusCode,
-                await response.Content.ReadAsByteArrayAsync(bodyCts.Token).ConfigureAwait(false)
-            );
+            return bytes is null
+                ? throw new RestException(
+                    statusCode,
+                    path,
+                    $"The response body is larger than the {MaxBodyBytes} byte read bound."
+                )
+                : (statusCode, bytes);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new TimeoutException(
                 $"The node '{_node.Name}' at {_node.Endpoint} did not answer the request in time, the client's own bound fired and the caller's token is intact."
             );
+        }
+        catch (OperationCanceledException exception)
+            when (exception.CancellationToken != cancellationToken)
+        {
+            throw new OperationCanceledException(exception.Message, exception, cancellationToken);
         }
         catch (HttpRequestException exception)
         {
@@ -282,6 +292,43 @@ internal sealed class RestClient
                 $"The node '{_node.Name}' at {_node.Endpoint} is not reachable: {exception.Message}",
                 exception
             );
+        }
+    }
+
+    internal static async Task<byte[]?> ReadBoundedAsync(
+        HttpContent content,
+        int maxBytes,
+        CancellationToken cancellationToken
+    )
+    {
+        var declared = content.Headers.ContentLength;
+        if (declared > maxBytes)
+            return null;
+
+        var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using (stream.ConfigureAwait(false))
+        {
+            using var buffer = new MemoryStream((int)(declared ?? 0));
+            var chunk = ArrayPool<byte>.Shared.Rent(16 * 1024);
+            try
+            {
+                int read;
+                while (
+                    (read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false))
+                    > 0
+                )
+                {
+                    if (buffer.Length + read > maxBytes)
+                        return null;
+                    buffer.Write(chunk, 0, read);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(chunk);
+            }
+
+            return buffer.ToArray();
         }
     }
 
@@ -300,11 +347,11 @@ internal sealed class RestClient
         if (value is null)
             return null;
         if (value.Delta is { } delta)
-            return delta;
+            return delta < MaxRetryAfter ? delta : MaxRetryAfter;
         if (value.Date is { } date)
         {
             var span = date - DateTimeOffset.UtcNow;
-            return span > TimeSpan.Zero ? span : null;
+            return span > TimeSpan.Zero ? (span < MaxRetryAfter ? span : MaxRetryAfter) : null;
         }
         return null;
     }

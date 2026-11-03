@@ -188,9 +188,10 @@ internal sealed class TracksRest
                     cancellationToken,
                     headerCts.Token
                 );
-                body = await response
-                    .Content.ReadAsStringAsync(tailCts.Token)
+                var tail = await RestClient
+                    .ReadBoundedAsync(response.Content, RestClient.MaxBodyBytes, tailCts.Token)
                     .ConfigureAwait(false);
+                body = tail is null ? string.Empty : System.Text.Encoding.UTF8.GetString(tail);
                 retryAfter = RestClient.ReadRetryAfter(response);
             }
             catch (OperationCanceledException)

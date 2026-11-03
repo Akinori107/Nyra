@@ -29,7 +29,7 @@ public sealed class RestException : NyraException
     /// <summary>The retry delay the server asked for, null when it sent none.</summary>
     /// <remarks>
     /// NodeLink's admission control answers 429 with this header, so the caller knows how long to wait before
-    /// retrying.
+    /// retrying. A delay beyond one hour reads as one hour.
     /// </remarks>
     public TimeSpan? RetryAfter { get; }
 
