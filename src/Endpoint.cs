@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Net;
 using Nyra.Internal;
 
 namespace Nyra;
@@ -9,6 +11,8 @@ public sealed class Endpoint
 {
     /// <summary>The host of the node, a bare hostname or IP address, IPv6 literals wrapped in brackets.</summary>
     public string Host { get; }
+
+    internal string NormalizedHost { get; }
 
     /// <summary>The port of the node.</summary>
     public int Port { get; }
@@ -27,13 +31,19 @@ public sealed class Endpoint
     /// <param name="password">The password used to authenticate with the node.</param>
     /// <param name="isSecure">Whether the endpoint is served over TLS.</param>
     /// <exception cref="ArgumentException">
-    /// The host or the password is null or blank, or the host is not a bare hostname or IP address.
+    /// The host or the password is null or blank, the password has a line break, or the host is not a bare
+    /// hostname or IP address.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">The port is outside the valid range.</exception>
     public Endpoint(string host, int port, string password, bool isSecure = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(password);
+        if (password.AsSpan().IndexOfAny('\r', '\n') >= 0)
+            throw new ArgumentException(
+                "The password must not contain a line break, it travels in a request header.",
+                nameof(password)
+            );
 
         var isIpv6Literal = host.StartsWith('[') && host.EndsWith(']');
         foreach (var character in host)
@@ -50,9 +60,27 @@ public sealed class Endpoint
         ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
 
         Host = host;
+        NormalizedHost = NormalizeHost(host);
         Port = port;
         Password = password;
         IsSecure = isSecure;
+    }
+
+    private static string NormalizeHost(string host)
+    {
+        var bare = host.TrimEnd('.');
+        var literal = bare.StartsWith('[') && bare.EndsWith(']') ? bare[1..^1] : bare;
+        if (IPAddress.TryParse(literal, out var address))
+            return (address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address).ToString();
+
+        try
+        {
+            return new IdnMapping().GetAscii(bare).ToLowerInvariant();
+        }
+        catch (ArgumentException)
+        {
+            return bare.ToLowerInvariant();
+        }
     }
 
     /// <summary>The base URI of the node's REST API.</summary>

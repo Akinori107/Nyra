@@ -22,6 +22,13 @@ public sealed class EndpointGuard
     }
 
     [Test]
+    public async Task PasswordLineBreakGuards()
+    {
+        await Rejects("127.0.0.1", 1, "pass\r\n\r\nGET /smuggled HTTP/1.1").ConfigureAwait(false);
+        await Rejects("127.0.0.1", 1, "pass\nword").ConfigureAwait(false);
+    }
+
+    [Test]
     public async Task BracketedGuards()
     {
         using (Assert.Multiple())

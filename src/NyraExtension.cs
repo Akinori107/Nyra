@@ -95,11 +95,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
             if (
                 _nodes.Any(existing =>
-                    string.Equals(
-                        existing.Endpoint.Host,
-                        node.Endpoint.Host,
-                        StringComparison.OrdinalIgnoreCase
-                    )
+                    existing.Endpoint.NormalizedHost == node.Endpoint.NormalizedHost
                     && existing.Endpoint.Port == node.Endpoint.Port
                     && existing.Endpoint.IsSecure == node.Endpoint.IsSecure
                 )

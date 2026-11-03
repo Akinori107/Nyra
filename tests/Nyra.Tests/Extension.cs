@@ -181,6 +181,55 @@ public sealed class Extension
         );
 
     [Test]
+    public async Task AddNodeComparesTheNormalizedHost()
+    {
+        var bridge = new FakeBridge();
+        bridge.GoReady();
+        var extension = new NyraExtension(bridge);
+        var named = new FakeNodeServer();
+        var numeric = new FakeNodeServer();
+        extension.AddNode(
+            new Node(
+                new Endpoint("localhost", named.Port, "pass"),
+                new NodeOptions { Name = "named" }
+            )
+        );
+        extension.AddNode(
+            new Node(
+                new Endpoint("127.0.0.1", numeric.Port, "pass"),
+                new NodeOptions { Name = "numeric" }
+            )
+        );
+
+        await Assert
+            .That(() =>
+            {
+                extension.AddNode(
+                    new Node(
+                        new Endpoint("localhost.", named.Port, "pass"),
+                        new NodeOptions { Name = "trailing-dot" }
+                    )
+                );
+            })
+            .Throws<InvalidOperationException>();
+        await Assert
+            .That(() =>
+            {
+                extension.AddNode(
+                    new Node(
+                        new Endpoint("[::ffff:127.0.0.1]", numeric.Port, "pass"),
+                        new NodeOptions { Name = "mapped" }
+                    )
+                );
+            })
+            .Throws<InvalidOperationException>();
+
+        extension.Dispose();
+        named.Dispose();
+        numeric.Dispose();
+    }
+
+    [Test]
     public async Task AddNodeGuards()
     {
         var bridge = new FakeBridge();
