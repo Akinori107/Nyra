@@ -171,6 +171,9 @@ internal sealed class NodeEventHandlers
             && presentedSessionId is not null
             && eventArgs.SessionId == presentedSessionId;
 
+        if (!effectiveResumed)
+            _node.ResetSessionSettings();
+
         if (!effectiveResumed && !_node.Connections.IsEmpty)
             await GuardAllAsync(
                     _node.Connections.Values.ToArray(),

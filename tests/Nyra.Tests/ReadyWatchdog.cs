@@ -126,6 +126,42 @@ public sealed class ReadyWatchdog
     }
 
     [Test]
+    public async Task ANewSessionStartsFromTheOptionsAgain()
+    {
+        var server = new FakeNodeServer { ResumeOnReconnect = false };
+        var stack = await StartAsync(server).ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var (node, sv) = (stack.Node, stack.Server);
+            var sessionBodies = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            sv.On(
+                "PATCH",
+                "/v4/sessions/fake-session",
+                call =>
+                {
+                    sessionBodies.Enqueue(call.Body ?? string.Empty);
+                    return new FakeRestResponse(200, """{"resuming":true,"timeout":60}""");
+                }
+            );
+            await node.UpdateSessionAsync(false, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            sessionBodies.Clear();
+
+            var ready = new TaskCompletionSource();
+            node.Ready += (_, _) =>
+            {
+                ready.TrySetResult();
+                return Task.CompletedTask;
+            };
+            await sv.DropConnectionAsync(1000, "new session").ConfigureAwait(false);
+            await ready.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+            await Assert
+                .That(() => sessionBodies.Any(body => body.Contains("\"resuming\":true")))
+                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Test]
     public async Task WorkerFailureNoGuilds()
     {
         var stack = await StartAsync().ConfigureAwait(false);

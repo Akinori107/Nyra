@@ -50,8 +50,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     {
         Endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
         _options = options ?? new NodeOptions();
-        _resumingEnabled = _options.Resuming;
-        _resumeTimeoutSeconds = (int)_options.ResumeTimeout.TotalSeconds;
+        ResetSessionSettings();
         ArgumentException.ThrowIfNullOrWhiteSpace(_options.Name);
 
         if (_options.ReconnectDelay <= TimeSpan.Zero)
@@ -198,6 +197,12 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     private int _resumeTimeoutSeconds;
+
+    internal void ResetSessionSettings()
+    {
+        ResumingEnabled = _options.Resuming;
+        ResumeTimeoutSeconds = (int)_options.ResumeTimeout.TotalSeconds;
+    }
 
     /// <summary>
     /// Whether the websocket to the server is open, wait for <see cref="IsReady"/> before issuing requests.
