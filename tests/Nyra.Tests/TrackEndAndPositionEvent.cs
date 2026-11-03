@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nyra.Entities;
+using Nyra.EventArgs;
 
 namespace Nyra.Tests;
 
@@ -110,6 +111,64 @@ public sealed class TrackEndAndPositionEvent
         rig.Server.PushAsync(
             """{"op":"event","guildId":"777","type":"SeekEvent","position":""" + position + "}"
         );
+
+    [Test]
+    public async Task AnEndWithoutATrackKeepsTheLastEndedOne()
+    {
+        var rig = await RigAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var track = ParseTrack();
+            await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
+
+            var requestTick = Environment.TickCount64;
+            await Reflect.NextTickAsync().ConfigureAwait(false);
+            rig.Connection.Playback.OnTrackEnd(
+                new TrackFinishedEventArgs { Track = track, EndReason = TrackEndReason.Finished }
+            );
+            rig.Connection.Playback.OnTrackEnd(
+                new TrackFinishedEventArgs { Track = null, EndReason = TrackEndReason.Cleanup }
+            );
+
+            var stale = JsonSerializer.Deserialize<Player>(PlayerReply(TrackJson), Options)!;
+            rig.Connection.CaptureState(stale, requestTick);
+
+            await Assert.That(rig.Connection.CurrentTrack).IsNull();
+        }
+    }
+
+    [Test]
+    public async Task AnEndThatEndsNothingDoesNotDropALaterCapture()
+    {
+        var rig = await RigAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var track = ParseTrack();
+            await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
+            rig.Connection.Playback.OnTrackEnd(
+                new TrackFinishedEventArgs { Track = track, EndReason = TrackEndReason.Finished }
+            );
+            await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
+
+            var requestTick = Environment.TickCount64;
+            await Reflect.NextTickAsync().ConfigureAwait(false);
+            rig.Connection.Playback.OnTrackEnd(
+                new TrackFinishedEventArgs { Track = null, EndReason = TrackEndReason.Cleanup }
+            );
+
+            var reply = JsonSerializer.Deserialize<Player>(
+                PlayerReply(TrackJson)
+                    .Replace("\"time\":0", "\"time\":1000", StringComparison.Ordinal)
+                    .Replace("\"position\":0", "\"position\":5000", StringComparison.Ordinal),
+                Options
+            )!;
+            rig.Connection.CaptureState(reply, requestTick);
+
+            await Assert
+                .That(rig.Connection.Position ?? TimeSpan.Zero)
+                .IsGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(5000));
+        }
+    }
 
     [Test]
     public async Task TrackEnd()

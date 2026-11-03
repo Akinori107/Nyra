@@ -218,8 +218,9 @@ internal sealed class GuildPlayback
             if (eventArgs.Track is { } emptyTrack && string.IsNullOrEmpty(emptyTrack.Encoded))
                 eventArgs.Track = null;
 
+            var previous = _connection.CurrentTrack;
             var matchesCurrent = eventArgs.Track is not null
-                ? GuildConnection.IsSameTrack(_connection.CurrentTrack, eventArgs.Track)
+                ? GuildConnection.IsSameTrack(previous, eventArgs.Track)
                 : _successorPending || _endedSinceAnchor;
 
             var admitted = false;
@@ -244,8 +245,13 @@ internal sealed class GuildPlayback
                 _successorPending = false;
             }
 
-            _lastTrackEndTick = Environment.TickCount64;
-            _lastEndedTrack = eventArgs.Track;
+            var ended = eventArgs.Track ?? (admitted ? previous : null);
+            if (ended is not null)
+            {
+                _lastTrackEndTick = Environment.TickCount64;
+                _lastEndedTrack = ended;
+            }
+
             if (admitted)
                 _endedSinceAnchor = true;
         }
