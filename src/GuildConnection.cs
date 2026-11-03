@@ -803,8 +803,14 @@ public sealed class GuildConnection
     {
         try
         {
+            if (_tearingDown)
+                return;
+
             if (leaveFirst)
                 await _node.VoiceHandshake.LeaveChannelAsync(bridge, GuildId).ConfigureAwait(false);
+
+            if (_tearingDown)
+                return;
 
             using var rescueCts = new CancellationTokenSource(
                 GuildVoiceForwarder.VoiceSendDeadline
