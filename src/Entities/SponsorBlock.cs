@@ -18,15 +18,19 @@ public sealed record SponsorBlockSegment
     } = string.Empty;
 
     /// <summary>Segment start, in milliseconds.</summary>
-    /// <remarks>Null when the server did not map one.</remarks>
+    /// <remarks>
+    /// Null when the server did not map one or sent a value that is not a number or beyond the int64 range.
+    /// </remarks>
     [JsonPropertyName("start"), JsonInclude]
-    [JsonConverter(typeof(RoundedInt64Converter))]
+    [JsonConverter(typeof(TolerantNullableRoundedInt64Converter))]
     public long? Start { get; init; }
 
     /// <summary>Segment end, in milliseconds.</summary>
-    /// <remarks>Null when the server did not map one.</remarks>
+    /// <remarks>
+    /// Null when the server did not map one or sent a value that is not a number or beyond the int64 range.
+    /// </remarks>
     [JsonPropertyName("end"), JsonInclude]
-    [JsonConverter(typeof(RoundedInt64Converter))]
+    [JsonConverter(typeof(TolerantNullableRoundedInt64Converter))]
     public long? End { get; init; }
 
     /// <summary>SponsorBlock category, e.g. <c>sponsor</c> or <c>selfpromo</c>.</summary>
@@ -51,8 +55,8 @@ public sealed record SponsorBlockSegment
 
     /// <summary>The votes the segment has in the SponsorBlock database.</summary>
     /// <remarks>
-    /// A null vote count (a co-client that writes one) reads as zero, it is an informative counter, a failed
-    /// read would cost the whole state or event.
+    /// A null vote count (a co-client that writes one), a value that is not a number or one beyond the int32
+    /// range reads as zero, it is an informative counter, a failed read would cost the whole state or event.
     /// </remarks>
     [JsonPropertyName("votes"), JsonInclude]
     [JsonConverter(typeof(TolerantRoundedInt32Converter))]
@@ -65,8 +69,8 @@ public sealed record SponsorBlockSegment
 
     /// <summary>Length of the video the segment was submitted for, in milliseconds.</summary>
     /// <remarks>
-    /// A null duration (a co-client that writes one) reads as zero, it is an informative counter, a failed read
-    /// would cost the whole state or event.
+    /// A null duration (a co-client that writes one), a value that is not a number or one beyond the int64
+    /// range reads as zero, it is an informative counter, a failed read would cost the whole state or event.
     /// </remarks>
     [JsonPropertyName("videoDuration"), JsonInclude]
     [JsonConverter(typeof(TolerantRoundedInt64Converter))]
@@ -121,6 +125,7 @@ public sealed record SponsorBlockState
     public string? LastSkippedUuid { get; internal set; }
 
     /// <summary>How long before a segment boundary the server skips, in milliseconds.</summary>
+    /// <remarks>A null, a value that is not a number or one beyond the int32 range reads as zero.</remarks>
     [JsonPropertyName("skipMarginMs"), JsonInclude]
     [JsonConverter(typeof(TolerantRoundedInt32Converter))]
     public int SkipMarginMilliseconds { get; internal set; }

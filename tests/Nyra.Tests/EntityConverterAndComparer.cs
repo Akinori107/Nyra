@@ -238,6 +238,17 @@ public sealed class EntityConverterAndComparer
         var lines = Parse<SubscribedLyrics>("""{"lines":null}""");
         await Assert.That(lines?.Lines is { Count: 0 }).IsTrue();
 
+        var poisoned = Parse<SponsorBlockSegment>(
+            """{"start":"abc","end":1e40,"votes":1e40,"videoDuration":"soon"}"""
+        );
+        using (Assert.Multiple())
+        {
+            await Assert.That(poisoned?.Start).IsNull();
+            await Assert.That(poisoned?.End).IsNull();
+            await Assert.That(poisoned?.Votes).IsEqualTo(0);
+            await Assert.That(poisoned?.VideoDuration).IsEqualTo(0L);
+        }
+
         var segments = Parse<SponsorBlockSegmentsLoadedEventArgs>("""{"segments":null}""");
         await Assert.That(segments?.Segments.Count).IsEqualTo(0);
 
