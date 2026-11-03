@@ -26,6 +26,8 @@ public sealed class RestException : NyraException
     /// <summary>The path the failed request went to.</summary>
     public string Path { get; }
 
+    internal bool BodyUnreadable { get; init; }
+
     /// <summary>The retry delay the server asked for, null when it sent none.</summary>
     /// <remarks>
     /// NodeLink's admission control answers 429 with this header, so the caller knows how long to wait before

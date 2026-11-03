@@ -860,6 +860,17 @@ internal static class NodeHarness
         return await connect.ConfigureAwait(false);
     }
 
+    public static async Task WriteTruncatedReplyAsync(Stream stream, string status)
+    {
+        var head =
+            $"HTTP/1.1 {status}\r\nContent-Type: application/json\r\n"
+            + "Content-Length: 100\r\nConnection: close\r\n\r\n";
+        await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+        await stream.WriteAsync(Encoding.UTF8.GetBytes("short")).ConfigureAwait(false);
+        await stream.FlushAsync().ConfigureAwait(false);
+        stream.Close();
+    }
+
     public static int DeadPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);

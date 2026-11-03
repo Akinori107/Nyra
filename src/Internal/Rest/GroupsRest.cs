@@ -53,8 +53,7 @@ internal sealed class GroupsRest
                 .ConfigureAwait(false);
             return _rest.Deserialize<Group>(json, path, options);
         }
-        catch (RestException exception)
-            when (exception.StatusCode == 404 && !RestClient.IndicatesMissingSession(exception))
+        catch (RestException exception) when (RestClient.IndicatesMissingResource(exception))
         {
             return null;
         }

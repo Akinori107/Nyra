@@ -103,6 +103,11 @@ internal sealed class RestClient
         ReferenceEquals(cached, current)
         || (cached.Count == current.Count && cached.SetEquals(current));
 
+    internal static bool IndicatesMissingResource(RestException exception) =>
+        exception.StatusCode == 404
+        && !exception.BodyUnreadable
+        && !IndicatesMissingSession(exception);
+
     internal static bool IndicatesMissingSession(RestException exception)
     {
         var body = exception.ResponseBody;
@@ -241,6 +246,7 @@ internal sealed class RestClient
             {
                 var retryAfter = ReadRetryAfter(response);
                 string body;
+                var bodyUnreadable = false;
                 try
                 {
                     await response
@@ -253,8 +259,12 @@ internal sealed class RestClient
                 catch (Exception readFailure) when (readFailure is not OperationCanceledException)
                 {
                     body = string.Empty;
+                    bodyUnreadable = true;
                 }
-                throw new RestException((int)response.StatusCode, path, body, retryAfter);
+                throw new RestException((int)response.StatusCode, path, body, retryAfter)
+                {
+                    BodyUnreadable = bodyUnreadable,
+                };
             }
 
             var statusCode = (int)response.StatusCode;

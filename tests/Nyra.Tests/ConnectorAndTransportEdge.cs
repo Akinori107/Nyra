@@ -178,6 +178,29 @@ public sealed class ConnectorAndTransportEdge
     }
 
     [Test]
+    public async Task AnUnreadableNotFoundIsNotAMissingPlayer()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            stack.Server.OnRaw(
+                "GET",
+                PlayerPath,
+                (_, stream) => WriteTruncatedReplyAsync(stream, "404 Not Found")
+            );
+
+            var unreadable = await Assert
+                .That(async () =>
+                    await stack
+                        .Node.Rest.Players.GetAsync(777, CancellationToken.None)
+                        .ConfigureAwait(false)
+                )
+                .Throws<RestException>();
+            await Assert.That(unreadable!.StatusCode).IsEqualTo(404);
+        }
+    }
+
+    [Test]
     public async Task RestTruncatedSuccessBody()
     {
         var stack = await StartAsync().ConfigureAwait(false);
