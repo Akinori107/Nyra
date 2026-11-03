@@ -204,6 +204,24 @@ public sealed class Node : IAsyncDisposable, IDisposable
         ResumeTimeoutSeconds = (int)_options.ResumeTimeout.TotalSeconds;
     }
 
+    private const long RestFailureMemoryMilliseconds = 30_000;
+
+    private long _restFailedAt = -1;
+
+    internal bool RestDegraded
+    {
+        get
+        {
+            var failedAt = Volatile.Read(ref _restFailedAt);
+            return failedAt >= 0
+                && Environment.TickCount64 - failedAt < RestFailureMemoryMilliseconds;
+        }
+    }
+
+    internal void NoteRestFailure() => Volatile.Write(ref _restFailedAt, Environment.TickCount64);
+
+    internal void NoteRestSuccess() => Volatile.Write(ref _restFailedAt, -1);
+
     /// <summary>
     /// Whether the websocket to the server is open, wait for <see cref="IsReady"/> before issuing requests.
     /// </summary>

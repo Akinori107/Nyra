@@ -67,7 +67,7 @@ if (track is not null)
 
 `LoadResult.LoadFailed` means the server failed, and `Error.Message` says why.
 
-Later, in another command, `nyra.GetConnection(guildId)` gives the connection back. With several servers, `GetNode()` gives the one with the fewest playing players.
+Later, in another command, `nyra.GetConnection(guildId)` gives the connection back. With several servers, `GetNode()` gives the one with the fewest playing players, a node whose recent REST requests failed ranks after the others.
 
 ## Play the next track
 

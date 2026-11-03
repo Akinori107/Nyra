@@ -222,6 +222,32 @@ internal sealed class RestClient
         CancellationToken cancellationToken = default
     )
     {
+        try
+        {
+            var reply = await SendCoreAsync(method, path, jsonBody, cancellationToken)
+                .ConfigureAwait(false);
+            _node.NoteRestSuccess();
+            return reply;
+        }
+        catch (Exception exception)
+            when (exception
+                    is TimeoutException
+                        or NodeUnreachableException
+                        or RestException { StatusCode: 429 or >= 500 }
+            )
+        {
+            _node.NoteRestFailure();
+            throw;
+        }
+    }
+
+    private async Task<(int Status, byte[] Body)> SendCoreAsync(
+        HttpMethod method,
+        string path,
+        byte[]? jsonBody,
+        CancellationToken cancellationToken
+    )
+    {
         using var request = CreateRequest(method, path, "application/json");
 
         if (jsonBody is not null)

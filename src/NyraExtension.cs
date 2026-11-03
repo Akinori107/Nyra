@@ -237,19 +237,25 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
     }
 
     /// <summary>The ready node with the fewest playing players, nodes without stats yet rank last.</summary>
-    /// <remarks>Null while no node is ready.</remarks>
+    /// <remarks>
+    /// A node whose last REST request failed (unreachable, timed out, 429 or a 5xx) in the past 30 seconds
+    /// ranks after the others, it is still returned when it is the only ready node. Null while no node is
+    /// ready.
+    /// </remarks>
     /// <returns>The best node, null while none is ready.</returns>
     public Node? GetNode()
     {
         Node? best = null;
-        var bestScore = int.MaxValue;
+        var bestScore = long.MaxValue;
         lock (_lock)
             foreach (var node in _nodes)
             {
                 if (!node.IsReady)
                     continue;
 
-                var score = node.Stats?.PlayingPlayers ?? int.MaxValue;
+                var score =
+                    (node.RestDegraded ? 1L << 32 : 0L)
+                    + (node.Stats?.PlayingPlayers ?? int.MaxValue);
                 if (best is null || score < bestScore)
                 {
                     bestScore = score;

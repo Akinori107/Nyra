@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 using Nyra.Abstractions;
+using Nyra.Exceptions;
 
 namespace Nyra.Tests;
 
@@ -167,12 +168,13 @@ public sealed class Extension
         public void Dispose() => _listener.Dispose();
     }
 
-    private static Node MakeNode(FakeNodeServer server, string name) =>
+    private static Node MakeNode(FakeNodeServer server, string name, bool resuming = true) =>
         new(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions
             {
                 Name = name,
+                Resuming = resuming,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
                 VoiceHandshakeTimeout = TimeSpan.FromSeconds(5),
@@ -282,6 +284,50 @@ public sealed class Extension
         bracketExtension.Dispose();
         server.Dispose();
         bracketed.Dispose();
+    }
+
+    [Test]
+    public async Task ANodeWhoseRestFailedRanksLast()
+    {
+        const string playerPath = "/v4/sessions/fake-session/players/777";
+        const string stats =
+            """{"op":"stats","players":1,"playingPlayers":PLAYING,"uptime":500,"memory":{"free":1,"used":2,"allocated":3,"reservable":4},"cpu":{"cores":2,"systemLoad":0.1,"lavalinkLoad":0.2}}""";
+        var bridge = new FakeBridge();
+        bridge.GoReady();
+        var extension = new NyraExtension(bridge);
+        var heavyServer = new FakeNodeServer();
+        var lightServer = new FakeNodeServer();
+        var heavy = MakeNode(heavyServer, "rest-heavy", resuming: false);
+        var light = MakeNode(lightServer, "rest-light", resuming: false);
+        extension.AddNode(heavy);
+        extension.AddNode(light);
+        await extension.ConnectAllNodesAsync().ConfigureAwait(false);
+        await heavyServer.PushAsync(stats.Replace("PLAYING", "3")).ConfigureAwait(false);
+        await lightServer.PushAsync(stats.Replace("PLAYING", "0")).ConfigureAwait(false);
+        await Assert
+            .That(() => ReferenceEquals(extension.GetNode(), light))
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
+
+        lightServer.On("GET", playerPath, 500, "boom");
+        await Assert
+            .That(async () =>
+                await light.Rest.Players.GetAsync(777, CancellationToken.None).ConfigureAwait(false)
+            )
+            .Throws<RestException>();
+        await Assert.That(ReferenceEquals(extension.GetNode(), heavy)).IsTrue();
+
+        lightServer.On(
+            "GET",
+            playerPath,
+            200,
+            """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+        );
+        await light.Rest.Players.GetAsync(777, CancellationToken.None).ConfigureAwait(false);
+        await Assert.That(ReferenceEquals(extension.GetNode(), light)).IsTrue();
+
+        await extension.DisposeAsync().ConfigureAwait(false);
+        heavyServer.Dispose();
+        lightServer.Dispose();
     }
 
     [Test]
