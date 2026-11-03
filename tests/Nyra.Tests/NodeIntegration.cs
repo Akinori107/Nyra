@@ -1922,6 +1922,81 @@ public sealed class NodeIntegration
         return [.. trailer];
     }
 
+    private static string EncodedTrackWithAPlus() =>
+        EncodeTrackMessage(
+            BuildMessage(
+                version: null,
+                title: "ATWA",
+                author: "SoAD",
+                length: 176000,
+                identifier: "ph8qt3dhvwo",
+                isStream: false,
+                uri: null,
+                artwork: null,
+                isrc: null,
+                source: "youtube",
+                position: 0
+            ),
+            versioned: false
+        );
+
+    [Test]
+    public async Task ADecodedQueryStringStillDecodes()
+    {
+        var encoded = EncodedTrackWithAPlus();
+        await Assert.That(encoded).Contains("+");
+
+        var track = Track.Decode(encoded.Replace('+', ' '));
+
+        await Assert.That(track.Encoded).IsEqualTo(encoded);
+        await Assert.That(track.Info.LengthMilliseconds).IsEqualTo(176000);
+    }
+
+    [Test]
+    public async Task SpacesThatOnlyGroupTheBase64AreStillIgnored()
+    {
+        var encoded = EncodedTrackWithAPlus();
+        await Assert.That(encoded).Contains("+");
+
+        var track = Track.Decode(encoded.Insert(8, " ").Insert(22, " "));
+
+        await Assert.That(track.Encoded).IsEqualTo(encoded);
+        await Assert.That(track.Info.LengthMilliseconds).IsEqualTo(176000);
+    }
+
+    [Test]
+    public async Task ADecodedQueryStringKeepsATrailingPlus()
+    {
+        string? encoded = null;
+        for (var titleLength = 1; titleLength <= 3 && encoded is null; titleLength++)
+        {
+            var candidate = EncodeTrackMessage(
+                BuildMessage(
+                    version: null,
+                    title: new string('t', titleLength),
+                    author: "a",
+                    length: 1000,
+                    identifier: "i",
+                    isStream: false,
+                    uri: null,
+                    artwork: null,
+                    isrc: null,
+                    source: "s",
+                    position: 62
+                ),
+                versioned: false
+            );
+            if (candidate.EndsWith('+'))
+                encoded = candidate;
+        }
+        await Assert.That(encoded).IsNotNull();
+
+        var track = Track.Decode(encoded!.Replace('+', ' '));
+
+        await Assert.That(track.Encoded).IsEqualTo(encoded);
+        await Assert.That(track.Info.PositionMilliseconds).IsEqualTo(62);
+    }
+
     [Test]
     public async Task TrackCodecs()
     {

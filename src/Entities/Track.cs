@@ -122,6 +122,8 @@ public sealed record Track
     /// <remarks>
     /// The size word of the header delimits the message, and the position is read from the message's final
     /// 8 bytes. Source-specific data before it and any appendix an encoder wrote after the message are ignored.
+    /// Spaces inside the base64 are ignored, a track that does not decode that way is read again with each
+    /// space as the plus a query string turned into one, a trailing one included.
     /// </remarks>
     /// <param name="encodedTrack">The base64 track to decode.</param>
     /// <returns>The decoded track, position included.</returns>
@@ -136,10 +138,26 @@ public sealed record Track
         if (string.IsNullOrWhiteSpace(encodedTrack))
             throw new InvalidTrackException("The encoded track is null, empty or whitespace.");
 
+        try
+        {
+            return DecodeCore(encodedTrack, spaceIsPlus: false);
+        }
+        catch (InvalidTrackException) when (encodedTrack.Contains(' '))
+        {
+            return DecodeCore(encodedTrack, spaceIsPlus: true);
+        }
+    }
+
+    private static Track DecodeCore(string encodedTrack, bool spaceIsPlus)
+    {
         byte[] raw;
         try
         {
-            raw = Convert.FromBase64String(encodedTrack);
+            raw = Convert.FromBase64String(
+                spaceIsPlus
+                    ? encodedTrack.TrimStart().TrimEnd('\r', '\n', '\t').Replace(' ', '+')
+                    : encodedTrack
+            );
         }
         catch (FormatException exception)
         {
