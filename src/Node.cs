@@ -48,7 +48,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <param name="options">The behavioral options, null uses the defaults.</param>
     public Node(Endpoint endpoint, NodeOptions? options = null)
     {
-        Endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+        ArgumentNullException.ThrowIfNull(endpoint);
+        Endpoint = endpoint;
         _options = options ?? new NodeOptions();
         ResetSessionSettings();
         ArgumentException.ThrowIfNullOrWhiteSpace(_options.Name);
@@ -774,8 +775,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     internal void ThrowIfDisposed()
     {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(Node));
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     internal static string LogSafe(string? text) =>
