@@ -17,11 +17,6 @@
   "automergeStrategy": "squash",
   "packageRules": [
     {
-      "description": "DSharpPlus and SlashCommands must stay on the same version",
-      "matchPackageNames": ["DSharpPlus", "DSharpPlus.SlashCommands"],
-      "groupName": "DSharpPlus"
-    },
-    {
       "description": "Self explanatory",
       "matchFileNames": ["src/Adapters/DSharpPlus/Nightly/**"],
       "matchPackageNames": ["DSharpPlus*"],

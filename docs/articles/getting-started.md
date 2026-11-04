@@ -91,4 +91,4 @@ The other reasons are on [TrackEndReason](../api/Nyra.Entities.TrackEndReason.ym
 - [Adapters](adapters.md) has the setup of each Discord library.
 - [When a connection breaks](connection.md) covers kicks, moves and a server going down.
 - [Lavalink and NodeLink](servers.md) lists what each server can do.
-- The [`examples`](https://github.com/Akinori107/Nyra/tree/dev/examples) folder has a slash command bot that uses all of this.
+- The [`examples`](https://github.com/Akinori107/Nyra/tree/dev/examples) folder has a slash command bot built on the Discord.Net adapter.

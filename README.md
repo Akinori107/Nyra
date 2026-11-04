@@ -78,11 +78,6 @@ A few methods only work on one server and throw `NotSupportedException` on the o
 
 ## Example bot
 
-A minimal slash-command bot lives in [`examples`](examples), with two files so you can try it out. It uses the DSharpPlus adapter. More commands may be added eventually.
+A slash-command bot lives in [`examples`](examples), with three files so you can try it out. It uses the Discord.Net adapter.
 
-Create a `.env` file inside `examples` with `DISCORD_TOKEN`, `NODE_HOST`, `NODE_PORT`, `NODE_PASSWORD` and optionally `NODE_SECURE`, then run it:
-
-```sh
-cd examples
-dotnet run
-```
+Create a `.env` file inside `examples` with `DISCORD_TOKEN`, `NODE_HOST`, `NODE_PORT`, `NODE_PASSWORD` and optionally `NODE_SECURE`, then run it.
