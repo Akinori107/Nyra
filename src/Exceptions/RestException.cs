@@ -18,18 +18,20 @@ public sealed class RestException : NyraException
     /// <summary>The body the server replied with, null when it sent none.</summary>
     /// <remarks>
     /// A client-side parse failure carries the client's diagnostic instead of the body, a reply the server
-    /// null-ed reads as null, the diagnostic is what the client kept. A body at or beyond the read bound is
-    /// carried truncated with a marker.
+    /// null-ed reads as null, the diagnostic is what the client kept. A body beyond the read bound is dropped,
+    /// it reads as an empty string.
     /// </remarks>
     public string? ResponseBody { get; }
 
     /// <summary>The path the failed request went to.</summary>
     public string Path { get; }
 
+    internal bool BodyUnreadable { get; init; }
+
     /// <summary>The retry delay the server asked for, null when it sent none.</summary>
     /// <remarks>
     /// NodeLink's admission control answers 429 with this header, so the caller knows how long to wait before
-    /// retrying.
+    /// retrying. A delay beyond one hour reads as one hour.
     /// </remarks>
     public TimeSpan? RetryAfter { get; }
 

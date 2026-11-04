@@ -15,6 +15,12 @@ public sealed class TrackFinishedEventArgs : System.EventArgs
     /// <remarks>
     /// A null carries no identity, it does not name the track that died and must not be read as certainly the
     /// current one, the reset the server reports may belong to an earlier playthrough.
+    /// <para>
+    /// The encoded track keeps the position it had when it ended, see
+    /// <see cref="TrackInfo.PositionMilliseconds"/>, so a server may play it again from there and not
+    /// from the start. To repeat a track, play the instance you played the first time, or pass
+    /// <see cref="PlayOptions.StartPosition"/> as <see cref="TimeSpan.Zero"/> to restart this one.
+    /// </para>
     /// </remarks>
     [JsonPropertyName("track"), JsonInclude]
     public Track? Track { get; internal set; }

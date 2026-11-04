@@ -11,6 +11,8 @@ internal sealed class EventPump
 
     private const int MaxBacklog = 4096;
 
+    private static readonly ErrorThrottle Errors = new();
+
     private readonly Channel<Func<Task>> _queue = Channel.CreateUnbounded<Func<Task>>(
         new UnboundedChannelOptions { SingleReader = true }
     );
@@ -149,16 +151,17 @@ internal sealed class EventPump
             }
             catch (Exception exception)
             {
-                try
-                {
-                    _logger?.LogError(
-                        _category,
-                        exception,
-                        "Event pump of {Owner} caught a work item failure.",
-                        _owner
-                    );
-                }
-                catch { }
+                if (Errors.TryAdmit(exception, out _))
+                    try
+                    {
+                        _logger?.LogError(
+                            _category,
+                            exception,
+                            "Event pump of {Owner} caught a work item failure.",
+                            _owner
+                        );
+                    }
+                    catch { }
             }
             finally
             {

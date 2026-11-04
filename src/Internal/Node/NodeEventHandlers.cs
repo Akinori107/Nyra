@@ -16,13 +16,19 @@ internal sealed class NodeEventHandlers
 
     private bool _readyEpilogueRunning;
 
+    private bool _stoppedSinceReady;
+
     private bool _resumingDisabledLogged;
 
     private (int Epoch, Stats Stats)? _statsBufferedDuringReady;
 
-    private readonly ErrorThrottle _errors = new();
+    private readonly ErrorThrottle _errors;
 
-    internal NodeEventHandlers(Node node) => _node = node;
+    internal NodeEventHandlers(Node node)
+    {
+        _node = node;
+        _errors = new ErrorThrottle(node.Time);
+    }
 
     private static string? UsableSessionId(string? sessionId) =>
         sessionId is null
@@ -142,6 +148,7 @@ internal sealed class NodeEventHandlers
                 : null;
 
         string? usableSessionId;
+        bool discordTracked;
 
         lock (_node.EventsLock)
         {
@@ -159,6 +166,8 @@ internal sealed class NodeEventHandlers
             _node.IsReady = true;
             _node.Connection.NoteReady();
             _readyEpilogueRunning = true;
+            discordTracked = !_stoppedSinceReady;
+            _stoppedSinceReady = false;
         }
 
         var effectiveResumed =
@@ -166,31 +175,24 @@ internal sealed class NodeEventHandlers
             && presentedSessionId is not null
             && eventArgs.SessionId == presentedSessionId;
 
+        if (!effectiveResumed)
+            _node.ResetSessionSettings();
+
         if (!effectiveResumed && !_node.Connections.IsEmpty)
-        {
-            var invalidated = _node.Connections.Values.ToArray();
-
-            foreach (var connection in invalidated)
-                connection.MarkTearingDown();
-
-            await InvalidateAsync(invalidated).ConfigureAwait(false);
-
-            try
-            {
-                _node.Logger?.LogWarning(
-                    LogEvents.Node,
-                    "The session of node {NodeName} was not resumed, {Count} guild connection(s) were invalidated. Reconnect the bot to the voice channels to resume playback.",
-                    _node.Name,
-                    invalidated.Length
-                );
-            }
-            catch { }
-        }
+            await GuardAllAsync(
+                    _node.Connections.Values.ToArray(),
+                    connection =>
+                        discordTracked
+                            ? connection.Teardown.HandleSessionLostAsync()
+                            : connection.Teardown.HandleSessionInvalidatedAsync()
+                )
+                .ConfigureAwait(false);
 
         if (effectiveResumed)
             foreach (var connection in _node.Connections.Values.ToArray())
                 try
                 {
+                    connection.DiscardRestoreSnapshot();
                     await connection.ResendPendingVoiceAsync().ConfigureAwait(false);
                 }
                 catch (Exception exception)
@@ -236,18 +238,6 @@ internal sealed class NodeEventHandlers
             }
         }
 
-        try
-        {
-            _node.Logger?.LogInformation(
-                LogEvents.Node,
-                "Node {NodeName} is ready (session {SessionId}, resumed: {Resumed}).",
-                _node.Name,
-                _node.SessionId ?? string.Empty,
-                effectiveResumed
-            );
-        }
-        catch { }
-
         lock (_node.EventsLock)
         {
             if (_node.Stopped || connectionEpoch != _connectionEpoch)
@@ -288,16 +278,6 @@ internal sealed class NodeEventHandlers
             await _node
                 .Rest.Session.UpdateAsync(true, _node.ResumeTimeoutSeconds, CancellationToken.None)
                 .ConfigureAwait(false);
-            try
-            {
-                _node.Logger?.LogInformation(
-                    LogEvents.Node,
-                    "Session resuming enabled for node {NodeName} (timeout {Timeout}s).",
-                    _node.Name,
-                    _node.ResumeTimeoutSeconds
-                );
-            }
-            catch { }
         }
         catch (Exception exception)
         {
@@ -311,11 +291,14 @@ internal sealed class NodeEventHandlers
     }
 
     private Task InvalidateAsync(GuildConnection[] invalidated) =>
+        GuardAllAsync(
+            invalidated,
+            connection => connection.Teardown.HandleSessionInvalidatedAsync()
+        );
+
+    private Task GuardAllAsync(GuildConnection[] connections, Func<GuildConnection, Task> handle) =>
         Task.WhenAll(
-            Array.ConvertAll(
-                invalidated,
-                connection => _node.GuardAsync(connection.Teardown.HandleSessionInvalidatedAsync())
-            )
+            Array.ConvertAll(connections, connection => _node.GuardAsync(handle(connection)))
         );
 
     internal void HandleStats(Stats stats)
@@ -367,35 +350,10 @@ internal sealed class NodeEventHandlers
         if (_node.Stopped || _node.Disposed)
             return;
 
-        if (eventArgs.AffectedGuilds is not { Count: > 0 })
-        {
-            _node.RaiseWorkerFailed(eventArgs);
-            try
-            {
-                _node.Logger?.LogWarning(
-                    LogEvents.Node,
-                    "A worker of node {NodeName} failed, no guild connection was affected.",
-                    _node.Name
-                );
-            }
-            catch { }
-            return;
-        }
-
-        await InvalidateAsync(invalidated).ConfigureAwait(false);
+        if (eventArgs.AffectedGuilds is { Count: > 0 })
+            await InvalidateAsync(invalidated).ConfigureAwait(false);
 
         _node.RaiseWorkerFailed(eventArgs);
-
-        try
-        {
-            _node.Logger?.LogWarning(
-                LogEvents.Node,
-                "A worker of node {NodeName} failed, {Count} guild connection(s) were invalidated. Reconnect the bot to the voice channels to resume playback.",
-                _node.Name,
-                invalidated.Length
-            );
-        }
-        catch { }
     }
 
     internal void HandleConnectionStatus(ConnectionStatus status)
@@ -446,6 +404,10 @@ internal sealed class NodeEventHandlers
                 new NodeDisconnectedEventArgs(closeStatus, closeDescription, final, exception)
             );
         }
+
+        if (_node.Options.RescuePlayback)
+            foreach (var connection in _node.Connections.Values)
+                connection.CaptureForRestore();
     }
 
     internal void HandleError(Exception exception)
@@ -485,6 +447,7 @@ internal sealed class NodeEventHandlers
         lock (_node.EventsLock)
         {
             _connectionEpoch++;
+            _stoppedSinceReady = true;
             DisarmReadyWatchdog();
         }
     }

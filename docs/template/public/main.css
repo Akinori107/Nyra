@@ -1,0 +1,36 @@
+#logo {
+  display: none;
+}
+
+:root {
+  --bs-link-color: #4f46e5;
+  --bs-link-color-rgb: 79, 70, 229;
+  --bs-link-hover-color: #3730a3;
+  --bs-link-hover-color-rgb: 55, 48, 163;
+}
+
+[data-bs-theme="dark"] {
+  --bs-link-color: #a5b4fc;
+  --bs-link-color-rgb: 165, 180, 252;
+  --bs-link-hover-color: #c7d2fe;
+  --bs-link-hover-color-rgb: 199, 210, 254;
+}
+
+.navbar-brand {
+  font-weight: 700;
+  color: var(--bs-link-color) !important;
+}
+
+code {
+  color: var(--bs-link-color);
+}
+
+.toc a.active,
+.toc .active > a {
+  color: var(--bs-link-color) !important;
+  font-weight: 600;
+}
+
+.contribution {
+  display: none !important;
+}

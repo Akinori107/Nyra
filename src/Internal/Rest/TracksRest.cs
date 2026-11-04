@@ -150,8 +150,11 @@ internal sealed class TracksRest
 
         using var request = _rest.CreateRequest(HttpMethod.Get, path, "application/octet-stream");
 
-        using var headerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        headerCts.CancelAfter(TimeSpan.FromSeconds(60));
+        using var headerCts = new TimeoutLink(
+            _rest.Node.Time,
+            TimeSpan.FromSeconds(60),
+            cancellationToken
+        );
         HttpResponseMessage response;
         try
         {
@@ -181,6 +184,7 @@ internal sealed class TracksRest
         if (!response.IsSuccessStatusCode)
         {
             string body;
+            bool bodyUnreadable;
             TimeSpan? retryAfter;
             try
             {
@@ -188,8 +192,8 @@ internal sealed class TracksRest
                     cancellationToken,
                     headerCts.Token
                 );
-                body = await response
-                    .Content.ReadAsStringAsync(tailCts.Token)
+                (body, bodyUnreadable) = await RestClient
+                    .ReadErrorBodyAsync(response.Content, tailCts.Token)
                     .ConfigureAwait(false);
                 retryAfter = RestClient.ReadRetryAfter(response);
             }
@@ -207,7 +211,10 @@ internal sealed class TracksRest
                 response.Dispose();
             }
 
-            throw new RestException((int)response.StatusCode, path, body, retryAfter);
+            throw new RestException((int)response.StatusCode, path, body, retryAfter)
+            {
+                BodyUnreadable = bodyUnreadable,
+            };
         }
 
         try

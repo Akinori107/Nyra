@@ -1,8 +1,8 @@
 # Nyra
 
-[![NuGet](https://img.shields.io/nuget/vpre/Nyra?color=4f46e5&labelColor=364048)](https://www.nuget.org/packages/Nyra) [![Downloads](https://img.shields.io/nuget/dt/Nyra?color=14b8a6&labelColor=364048)](https://www.nuget.org/packages/Nyra) [![Build](https://github.com/Akinori107/Nyra/actions/workflows/checks.yml/badge.svg?branch=dev)](https://github.com/Akinori107/Nyra/actions/workflows/checks.yml) [![License](https://img.shields.io/badge/license-BlueOak--1.0.0-blue?labelColor=364048)](LICENSE.md)
+[![NuGet](https://img.shields.io/nuget/vpre/Nyra?color=4f46e5&labelColor=2e363e)](https://www.nuget.org/packages/Nyra) [![Downloads](https://img.shields.io/nuget/dt/Nyra?color=14b8a6&labelColor=2e363e)](https://www.nuget.org/packages/Nyra) [![Build](https://github.com/Akinori107/Nyra/actions/workflows/checks.yml/badge.svg?branch=dev)](https://github.com/Akinori107/Nyra/actions/workflows/checks.yml) [![Codecov](https://img.shields.io/codecov/c/github/Akinori107/Nyra/dev?logo=codecov&label=Codecov&color=9bc405&labelColor=2e363e)](https://codecov.io/gh/Akinori107/Nyra) [![License](https://img.shields.io/badge/license-BlueOak--1.0.0-blue?labelColor=2e363e)](LICENSE.md)
 
-Nyra is a .NET 10 client for [Lavalink v4.2+](https://github.com/lavalink-devs/Lavalink) and [NodeLink v3.9+](https://github.com/PerformanC/NodeLink), with adapters for [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus), [Discord.Net](https://github.com/discord-net/Discord.Net) and [NetCord](https://github.com/NetCordDev/NetCord). One API works with both servers, finds out which one you're using, and gives you what only NodeLink has, like crossfade, ducking and exclusive filters such as reverb, chorus and phonograph. The two servers don't always behave the same, and the [NodeLink compatibility notes](#nodelink-compatibility-notes) cover some of the differences.
+Nyra is a .NET 10 client for [Lavalink v4.2+](https://github.com/lavalink-devs/Lavalink) and [NodeLink v3.9+](https://github.com/PerformanC/NodeLink), with adapters for [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus), [Discord.Net](https://github.com/discord-net/Discord.Net) and [NetCord](https://github.com/NetCordDev/NetCord). One API works with both servers, finds out which one you're using, and gives you what only NodeLink has, like crossfade, ducking and exclusive filters such as reverb, chorus and phonograph. The two servers don't always behave the same, and the [NodeLink compatibility notes](#nodelink-compatibility-notes) cover some of the differences. Guides and the full API reference are on the [docs site](https://nyradocs.pages.dev).
 
 ## Supported servers
 
@@ -46,7 +46,7 @@ using Nyra.Entities;
 var nyra = client.UseNyra();
 nyra.AddNode(new Node(
     new Endpoint("localhost", 2333, "youshallnotpass"),
-    new NodeOptions { Name = "main", Resuming = true }));
+    new NodeOptions { Name = "main" }));
 
 await nyra.ConnectAllNodesAsync();
 
@@ -78,11 +78,6 @@ A few methods only work on one server and throw `NotSupportedException` on the o
 
 ## Example bot
 
-A minimal slash-command bot lives in [`examples`](examples), with two files so you can try it out. It uses the DSharpPlus adapter. More commands may be added eventually.
+A slash-command bot lives in [`examples`](examples), with three files so you can try it out. It uses the Discord.Net adapter.
 
-Create a `.env` file inside `examples` with `DISCORD_TOKEN`, `NODE_HOST`, `NODE_PORT`, `NODE_PASSWORD` and optionally `NODE_SECURE`, then run it:
-
-```sh
-cd examples
-dotnet run
-```
+Create a `.env` file inside `examples` with `DISCORD_TOKEN`, `NODE_HOST`, `NODE_PORT`, `NODE_PASSWORD` and optionally `NODE_SECURE`, then run it.

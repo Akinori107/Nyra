@@ -6,8 +6,11 @@ using Nyra.Entities.Filters;
 
 namespace Nyra.Internal;
 
-internal sealed class FiltersConverter(bool isNodeLink, IReadOnlySet<string>? enabledFilters = null)
-    : JsonConverter<FilterChain>
+internal sealed class FiltersConverter(
+    bool isNodeLink,
+    IReadOnlySet<string>? enabledFilters = null,
+    bool forComparison = false
+) : JsonConverter<FilterChain>
 {
     public override FilterChain Read(
         ref Utf8JsonReader reader,
@@ -274,13 +277,14 @@ internal sealed class FiltersConverter(bool isNodeLink, IReadOnlySet<string>? en
         return true;
     }
 
-    private static void EndFilter(
+    private void EndFilter(
         Utf8JsonWriter writer,
         FilterTransition? transition,
         JsonSerializerOptions options
     )
     {
-        WriteTransition(writer, transition, options);
+        if (!forComparison)
+            WriteTransition(writer, transition, options);
         writer.WriteEndObject();
     }
 
@@ -307,19 +311,17 @@ internal sealed class FiltersConverter(bool isNodeLink, IReadOnlySet<string>? en
 
     private bool ShouldWrite(string key) => enabledFilters is null || enabledFilters.Contains(key);
 
-    private static void WriteMember(
-        Utf8JsonWriter writer,
-        string name,
-        double? value,
-        double neutral
-    ) => writer.WriteNumber(name, value ?? neutral);
+    private void WriteMember(Utf8JsonWriter writer, string name, double? value, double neutral)
+    {
+        if (value is not null || !forComparison)
+            writer.WriteNumber(name, value ?? neutral);
+    }
 
-    private static void WriteMember(
-        Utf8JsonWriter writer,
-        string name,
-        float? value,
-        float neutral
-    ) => writer.WriteNumber(name, value ?? neutral);
+    private void WriteMember(Utf8JsonWriter writer, string name, float? value, float neutral)
+    {
+        if (value is not null || !forComparison)
+            writer.WriteNumber(name, value ?? neutral);
+    }
 
     private static void WriteTransition(
         Utf8JsonWriter writer,

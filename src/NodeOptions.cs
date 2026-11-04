@@ -6,8 +6,36 @@ public sealed record NodeOptions
     /// <summary>The node's display name, used in logs and error messages, must not be blank.</summary>
     public string Name { get; init; } = "Nyra node";
 
-    /// <summary>When enabled, the session is marked resumable and the session id is replayed on reconnect.</summary>
-    public bool Resuming { get; init; }
+    /// <summary>
+    /// When enabled, the session is marked resumable and the session id is replayed on reconnect, on by default.
+    /// </summary>
+    public bool Resuming { get; init; } = true;
+
+    /// <summary>
+    /// Whether to play again what was playing when the node comes back with a session it could not resume, off
+    /// by default.
+    /// </summary>
+    /// <remarks>
+    /// A last resort. When the connection is restored on the new session, Nyra sends the volume,
+    /// the filters, the track from where it was when the node dropped, and the pause back to the node. The
+    /// position is an estimate. What Nyra does not keep, like the end time, the audio track, the crossfade,
+    /// the ducking and the mix, is not restored, and the queue lives in your app and is not affected. <see
+    /// cref="Nyra.EventArgs.GuildConnectionRestoredEventArgs.PlaybackResent"/> says whether the track was sent
+    /// again.
+    /// </remarks>
+    public bool RescuePlayback { get; init; }
+
+    /// <summary>
+    /// How long the node can stay down for <see cref="RescuePlayback"/> to still play the track again, 3 minutes
+    /// by default.
+    /// </summary>
+    /// <remarks>
+    /// Counted from the moment the node dropped. After that the connection is restored without playing, the bot
+    /// stays in its voice channel and <see
+    /// cref="Nyra.EventArgs.GuildConnectionRestoredEventArgs.PlaybackResent"/> is false. Use <see
+    /// cref="Timeout.InfiniteTimeSpan"/> for no limit. Only used while <see cref="RescuePlayback"/> is enabled.
+    /// </remarks>
+    public TimeSpan RescueTimeout { get; init; } = TimeSpan.FromMinutes(3);
 
     /// <summary>How long the server keeps a disconnected resumable session alive.</summary>
     /// <remarks>
@@ -60,4 +88,11 @@ public sealed record NodeOptions
     /// </para>
     /// </remarks>
     public TimeSpan ReadyTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// The clock the node and its connections read for elapsed time, timeouts and delays, the system clock by
+    /// default.
+    /// </summary>
+    /// <remarks>Pass a fake one in tests to move time without waiting for it.</remarks>
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 }

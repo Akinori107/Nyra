@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -8,16 +9,21 @@ namespace Nyra.Internal;
 
 internal sealed class RestClient
 {
+    internal const int MaxBodyBytes = 64 * 1024 * 1024;
+
+    private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromHours(1);
+
     private static readonly SocketsHttpHandler SharedHandler = new()
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         ConnectTimeout = TimeSpan.FromSeconds(10),
     };
 
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(60);
+
     private static readonly HttpClient Http = new(SharedHandler, disposeHandler: false)
     {
-        MaxResponseContentBufferSize = 64 * 1024 * 1024,
-        Timeout = TimeSpan.FromSeconds(60),
+        Timeout = Timeout.InfiniteTimeSpan,
     };
 
     internal static readonly HttpClient StreamingHttp = new(SharedHandler, disposeHandler: false)
@@ -98,6 +104,11 @@ internal sealed class RestClient
     private static bool SameFilters(IReadOnlySet<string> cached, IReadOnlySet<string> current) =>
         ReferenceEquals(cached, current)
         || (cached.Count == current.Count && cached.SetEquals(current));
+
+    internal static bool IndicatesMissingResource(RestException exception) =>
+        exception.StatusCode == 404
+        && !exception.BodyUnreadable
+        && !IndicatesMissingSession(exception);
 
     internal static bool IndicatesMissingSession(RestException exception)
     {
@@ -213,6 +224,32 @@ internal sealed class RestClient
         CancellationToken cancellationToken = default
     )
     {
+        try
+        {
+            var reply = await SendCoreAsync(method, path, jsonBody, cancellationToken)
+                .ConfigureAwait(false);
+            _node.NoteRestSuccess();
+            return reply;
+        }
+        catch (Exception exception)
+            when (exception
+                    is TimeoutException
+                        or NodeUnreachableException
+                        or RestException { StatusCode: 429 or >= 500 }
+            )
+        {
+            _node.NoteRestFailure();
+            throw;
+        }
+    }
+
+    private async Task<(int Status, byte[] Body)> SendCoreAsync(
+        HttpMethod method,
+        string path,
+        byte[]? jsonBody,
+        CancellationToken cancellationToken
+    )
+    {
         using var request = CreateRequest(method, path, "application/json");
 
         if (jsonBody is not null)
@@ -223,44 +260,53 @@ internal sealed class RestClient
 
         try
         {
-            using var response = await Http.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            HttpResponseMessage reply;
+            using (var headerCts = new TimeoutLink(_node.Time, RequestTimeout, cancellationToken))
+                reply = await Http.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        headerCts.Token
+                    )
+                    .ConfigureAwait(false);
+            using var response = reply;
 
-            using var bodyCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            bodyCts.CancelAfter(Http.Timeout);
+            using var bodyCts = new TimeoutLink(_node.Time, RequestTimeout, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
                 var retryAfter = ReadRetryAfter(response);
-                string body;
-                try
+                var (body, bodyUnreadable) = await ReadErrorBodyAsync(
+                        response.Content,
+                        bodyCts.Token
+                    )
+                    .ConfigureAwait(false);
+                throw new RestException((int)response.StatusCode, path, body, retryAfter)
                 {
-                    body = await response
-                        .Content.ReadAsStringAsync(bodyCts.Token)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception readFailure) when (readFailure is not OperationCanceledException)
-                {
-                    body = string.Empty;
-                }
-                throw new RestException((int)response.StatusCode, path, body, retryAfter);
+                    BodyUnreadable = bodyUnreadable,
+                };
             }
 
             var statusCode = (int)response.StatusCode;
-            return (
-                statusCode,
-                await response.Content.ReadAsByteArrayAsync(bodyCts.Token).ConfigureAwait(false)
-            );
+            var bytes = await ReadBoundedAsync(response.Content, MaxBodyBytes, bodyCts.Token)
+                .ConfigureAwait(false);
+            return bytes is null
+                ? throw new RestException(
+                    statusCode,
+                    path,
+                    $"The response body is larger than the {MaxBodyBytes} byte read bound."
+                )
+                : (statusCode, bytes);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new TimeoutException(
                 $"The node '{_node.Name}' at {_node.Endpoint} did not answer the request in time, the client's own bound fired and the caller's token is intact."
             );
+        }
+        catch (OperationCanceledException exception)
+            when (exception.CancellationToken != cancellationToken)
+        {
+            throw new OperationCanceledException(exception.Message, exception, cancellationToken);
         }
         catch (HttpRequestException exception)
         {
@@ -275,6 +321,64 @@ internal sealed class RestClient
                 $"The node '{_node.Name}' at {_node.Endpoint} is not reachable: {exception.Message}",
                 exception
             );
+        }
+    }
+
+    internal static async Task<(string Body, bool Unreadable)> ReadErrorBodyAsync(
+        HttpContent content,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await content
+                .LoadIntoBufferAsync(MaxBodyBytes, cancellationToken)
+                .ConfigureAwait(false);
+            return (
+                await content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false),
+                false
+            );
+        }
+        catch (Exception readFailure) when (readFailure is not OperationCanceledException)
+        {
+            return (string.Empty, true);
+        }
+    }
+
+    internal static async Task<byte[]?> ReadBoundedAsync(
+        HttpContent content,
+        int maxBytes,
+        CancellationToken cancellationToken
+    )
+    {
+        var declared = content.Headers.ContentLength;
+        if (declared > maxBytes)
+            return null;
+
+        var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using (stream.ConfigureAwait(false))
+        {
+            using var buffer = new MemoryStream((int)(declared ?? 0));
+            var chunk = ArrayPool<byte>.Shared.Rent(16 * 1024);
+            try
+            {
+                int read;
+                while (
+                    (read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false))
+                    > 0
+                )
+                {
+                    if (buffer.Length + read > maxBytes)
+                        return null;
+                    buffer.Write(chunk, 0, read);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(chunk);
+            }
+
+            return buffer.ToArray();
         }
     }
 
@@ -293,11 +397,11 @@ internal sealed class RestClient
         if (value is null)
             return null;
         if (value.Delta is { } delta)
-            return delta;
+            return delta < MaxRetryAfter ? delta : MaxRetryAfter;
         if (value.Date is { } date)
         {
             var span = date - DateTimeOffset.UtcNow;
-            return span > TimeSpan.Zero ? span : null;
+            return span > TimeSpan.Zero ? (span < MaxRetryAfter ? span : MaxRetryAfter) : null;
         }
         return null;
     }

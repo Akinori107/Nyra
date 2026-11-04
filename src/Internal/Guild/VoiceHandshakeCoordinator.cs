@@ -39,7 +39,7 @@ internal sealed class VoiceHandshakeCoordinator
         return reTicket;
     }
 
-    private static void EvictIfIdle(
+    private void EvictIfIdle(
         ConcurrentDictionary<ulong, LeaveEchoGuard> guard,
         ulong guildId,
         LeaveEchoGuard guildFence,
@@ -48,11 +48,14 @@ internal sealed class VoiceHandshakeCoordinator
     {
         if (pending.TryGetValue(guildId, out _))
             return;
-        guildFence.EvictIfIdleUnderLock(() =>
-        {
-            var pairs = (ICollection<KeyValuePair<ulong, LeaveEchoGuard>>)guard;
-            pairs.Remove(new KeyValuePair<ulong, LeaveEchoGuard>(guildId, guildFence));
-        });
+        guildFence.EvictIfIdleUnderLock(
+            () =>
+            {
+                var pairs = (ICollection<KeyValuePair<ulong, LeaveEchoGuard>>)guard;
+                pairs.Remove(new KeyValuePair<ulong, LeaveEchoGuard>(guildId, guildFence));
+            },
+            _time
+        );
     }
 
     private sealed class LeaveEchoGuard
@@ -66,11 +69,11 @@ internal sealed class VoiceHandshakeCoordinator
 
         private readonly record struct OwedEcho(long Deadline, long Ticket);
 
-        public void EvictIfIdleUnderLock(Action evict)
+        public void EvictIfIdleUnderLock(Action evict, TimeProvider time)
         {
             lock (_lock)
             {
-                var now = Environment.TickCount64;
+                var now = time.GetMilliseconds();
                 while (_owedEchoes.Count > 0 && _owedEchoes.Peek().Deadline <= now)
                     _owedEchoes.Dequeue();
 
@@ -154,9 +157,12 @@ internal sealed class VoiceHandshakeCoordinator
 
     private readonly TimeSpan _timeout;
 
-    public VoiceHandshakeCoordinator(TimeSpan timeout)
+    private readonly TimeProvider _time;
+
+    public VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? timeProvider = null)
     {
         _timeout = timeout;
+        _time = timeProvider ?? TimeProvider.System;
     }
 
     private string DescribeTimeout()
@@ -177,12 +183,12 @@ internal sealed class VoiceHandshakeCoordinator
         );
     }
 
-    private static bool IsSkippingStaleEvents(
+    private bool IsSkippingStaleEvents(
         ConcurrentDictionary<ulong, LeaveEchoGuard> guard,
         ulong guildId
     ) =>
         guard.TryGetValue(guildId, out var guildFence)
-        && guildFence.IsSkipping(Environment.TickCount64);
+        && guildFence.IsSkipping(_time.GetMilliseconds());
 
     public bool HandleVoiceStateUpdate(IDiscordBridge client, VoiceStateUpdatedEventArgs eventArgs)
     {
@@ -196,7 +202,7 @@ internal sealed class VoiceHandshakeCoordinator
             {
                 if (
                     !ConsumedEchoes.TryGetValue(eventArgs, out _)
-                    && guildFence.TryConsumeEcho(Environment.TickCount64)
+                    && guildFence.TryConsumeEcho(_time.GetMilliseconds())
                 )
                 {
                     ConsumedEchoes.GetValue(eventArgs, static _ => Marker);
@@ -204,10 +210,10 @@ internal sealed class VoiceHandshakeCoordinator
                     return true;
                 }
 
-                if (guildFence.IsSkipping(Environment.TickCount64))
+                if (guildFence.IsSkipping(_time.GetMilliseconds()))
                     return true;
             }
-            else if (guildFence.IsSkipping(Environment.TickCount64))
+            else if (guildFence.IsSkipping(_time.GetMilliseconds()))
                 return true;
         }
 
@@ -327,8 +333,7 @@ internal sealed class VoiceHandshakeCoordinator
         Task? joinSend = null;
         Task<DiscordVoiceState>? stateTask = null;
 
-        using var joinCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        joinCts.CancelAfter(_timeout);
+        using var joinCts = new TimeoutLink(_time, _timeout, cancellationToken);
         try
         {
             try
@@ -367,7 +372,7 @@ internal sealed class VoiceHandshakeCoordinator
             {
                 var updatesTask = Task.WhenAll(stateTask, serverTask);
                 var completed = await Task.WhenAny(updatesTask, movedTask)
-                    .WaitAsync(_timeout, cancellationToken)
+                    .WaitAsync(_timeout, _time, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (ReferenceEquals(completed, movedTask))
@@ -452,7 +457,7 @@ internal sealed class VoiceHandshakeCoordinator
                         ? ArmGuard(
                             client,
                             guildId,
-                            Environment.TickCount64 + (long)_timeout.TotalMilliseconds
+                            _time.GetMilliseconds() + (long)_timeout.TotalMilliseconds
                         )
                         : null;
 
@@ -477,7 +482,7 @@ internal sealed class VoiceHandshakeCoordinator
 
     public async Task LeaveChannelAsync(IDiscordBridge client, ulong guildId)
     {
-        var deadline = Environment.TickCount64 + (long)_timeout.TotalMilliseconds;
+        var deadline = _time.GetMilliseconds() + (long)_timeout.TotalMilliseconds;
         var armTicket = ArmGuard(client, guildId, deadline);
 
         try

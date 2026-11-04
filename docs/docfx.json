@@ -1,0 +1,47 @@
+{
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "..",
+          "files": [
+            "src/Nyra.csproj",
+            "src/Adapters/DSharpPlus/Stable/Nyra.DSharpPlus.csproj",
+            "src/Adapters/DiscordNet/Nyra.DiscordNet.csproj",
+            "src/Adapters/NetCord/Nyra.NetCord.csproj"
+          ]
+        }
+      ],
+      "dest": "api"
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": [
+          "api/**.yml"
+        ]
+      },
+      {
+        "files": [
+          "articles/**.md",
+          "articles/**/toc.yml",
+          "toc.yml",
+          "index.md"
+        ]
+      }
+    ],
+    "output": "_site",
+    "template": [
+      "default",
+      "modern",
+      "template"
+    ],
+    "globalMetadata": {
+      "_appName": "Nyra",
+      "_appTitle": "Nyra",
+      "_enableSearch": true,
+      "_appFooter": "<a href=\"https://github.com/Akinori107/Nyra\">GitHub</a> &middot; <a href=\"https://www.nuget.org/packages/Nyra\">NuGet</a>"
+    }
+  }
+}

@@ -20,8 +20,7 @@ internal sealed class PlayersRest
                 .ConfigureAwait(false);
             return _rest.Deserialize<Player>(json, path, options);
         }
-        catch (RestException exception)
-            when (exception.StatusCode == 404 && !RestClient.IndicatesMissingSession(exception))
+        catch (RestException exception) when (RestClient.IndicatesMissingResource(exception))
         {
             return null;
         }

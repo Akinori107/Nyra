@@ -1,10 +1,9 @@
-using DSharpPlus;
-using DSharpPlus.Entities;
-using DSharpPlus.SlashCommands;
-using DSharpPlus.SlashCommands.EventArgs;
+using Discord;
+using Discord.Interactions;
+using Discord.WebSocket;
 using Microsoft.Extensions.Logging;
 using Nyra;
-using Nyra.DSharpPlus;
+using Nyra.DiscordNet;
 using Nyra.Examples;
 using Nyra.Exceptions;
 
@@ -38,36 +37,38 @@ Console.CancelKeyPress += (_, eventArgs) =>
     cancellation.Cancel();
 };
 
-using var client = new DiscordClient(
-    new DiscordConfiguration
+using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+var logger = loggerFactory.CreateLogger("Nyra.Examples");
+Queue.Logger = logger;
+
+using var client = new DiscordSocketClient(
+    new DiscordSocketConfig
     {
-        Token = token,
-        TokenType = TokenType.Bot,
-        Intents = DiscordIntents.AllUnprivileged,
+        GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildVoiceStates,
     }
 );
 
-var nyra = client.UseNyra();
-nyra.AddNode(new Node(endpoint, new NodeOptions { Name = "main", Resuming = true }));
-var commands = client.UseSlashCommands(new SlashCommandsConfiguration());
-commands.RegisterCommands<MusicCommands>();
-commands.SlashCommandErrored += OnSlashCommandErrored;
+var nyra = client.UseNyra(logger);
+nyra.AddNode(new Node(endpoint, new NodeOptions { Name = "main", RescuePlayback = true }));
 
-client.Ready += async (_, _) =>
+using var interactions = new InteractionService(
+    client,
+    new InteractionServiceConfig { ThrowOnError = false }
+);
+await interactions.AddModuleAsync<MusicCommands>(null).ConfigureAwait(false);
+interactions.SlashCommandExecuted += (command, context, result) =>
+    OnSlashCommandExecutedAsync(logger, command, context, result);
+
+client.InteractionCreated += interaction =>
+    interactions.ExecuteCommandAsync(new SocketInteractionContext(client, interaction), null);
+client.Ready += () =>
 {
-    await nyra.ConnectAllNodesAsync().ConfigureAwait(false);
-
-    foreach (var node in nyra.Nodes)
-        if (node.IsConnected)
-            client.Logger.LogInformation(
-                "Audio node {Name}: {Software} {Version}.",
-                node.Name,
-                node.IsNodeLink ? "NodeLink" : "Lavalink",
-                node.Version?.ToString() ?? "dev build"
-            );
+    _ = StartAsync(interactions, nyra, logger);
+    return Task.CompletedTask;
 };
 
-await client.ConnectAsync().ConfigureAwait(false);
+await client.LoginAsync(TokenType.Bot, token).ConfigureAwait(false);
+await client.StartAsync().ConfigureAwait(false);
 
 try
 {
@@ -76,7 +77,7 @@ try
 catch (OperationCanceledException) { }
 finally
 {
-    await client.DisconnectAsync().ConfigureAwait(false);
+    await client.StopAsync().ConfigureAwait(false);
     await nyra.DisposeAsync().ConfigureAwait(false);
 }
 
@@ -108,44 +109,95 @@ static Dictionary<string, string> ParseEnvFile(string path)
 
     return values;
 }
-static async Task OnSlashCommandErrored(
-    SlashCommandsExtension extension,
-    SlashCommandErrorEventArgs error
+
+static async Task StartAsync(InteractionService interactions, NyraExtension nyra, ILogger logger)
+{
+    try
+    {
+        await interactions.RegisterCommandsGloballyAsync().ConfigureAwait(false);
+        await nyra.ConnectAllNodesAsync().ConfigureAwait(false);
+
+        foreach (var node in nyra.Nodes)
+            if (node.IsConnected)
+                logger.LogInformation(
+                    "Audio node {Name}: {Software} {Version}.",
+                    node.Name,
+                    node.IsNodeLink ? "NodeLink" : "Lavalink",
+                    node.Version?.ToString() ?? "dev build"
+                );
+    }
+    catch (Exception exception)
+    {
+        logger.LogError(exception, "Failed to register the commands or connect the audio nodes.");
+    }
+}
+
+static async Task OnSlashCommandExecutedAsync(
+    ILogger logger,
+    SlashCommandInfo command,
+    IInteractionContext context,
+    IResult result
 )
 {
-    extension.Client.Logger.LogError(
-        error.Exception,
-        "Slash command {Command} failed for {User}.",
-        error.Context.CommandName,
-        error.Context.User.Username
-    );
+    if (result.IsSuccess)
+        return;
 
-    var message = error.Exception
+    var exception = result is ExecuteResult { Exception: { } failure }
+        ? (failure as InteractionException)?.InnerException ?? failure
+        : null;
+    var expected =
+        exception
         is InvalidOperationException
             or IncompatibleServerException
             or VoiceHandshakeException
             or NotSupportedException
-            or ArgumentException
-        ? error.Exception.Message
-        : "Something went wrong while running that command, check the logs for details.";
+            or ArgumentException;
 
-    var embed = new DiscordEmbedBuilder
+    string message;
+    if (exception is null)
+    {
+        logger.LogWarning(
+            "Slash command {Command} was rejected for {User}: {Reason}",
+            command.Name,
+            context.User.Username,
+            result.ErrorReason
+        );
+        message = result.ErrorReason;
+    }
+    else if (expected)
+    {
+        logger.LogWarning(
+            "Slash command {Command} failed for {User}: {Message}",
+            command.Name,
+            context.User.Username,
+            exception.Message
+        );
+        message = exception.Message;
+    }
+    else
+    {
+        logger.LogError(
+            exception,
+            "Slash command {Command} failed for {User}.",
+            command.Name,
+            context.User.Username
+        );
+        message = "Something went wrong with that command. Check the logs for details.";
+    }
+
+    var embed = new EmbedBuilder
     {
         Title = "Command failed",
         Description = message,
-        Color = new DiscordColor(0xFF0000),
-    };
+        Color = new Color(0xFF0000),
+    }.Build();
 
-    try
+    if (!context.Interaction.HasResponded)
     {
-        await error.Context.CreateResponseAsync(embed, ephemeral: true).ConfigureAwait(false);
+        await context.Interaction.RespondAsync(embed: embed, ephemeral: true).ConfigureAwait(false);
+        return;
     }
-    catch
-    {
-        await error
-            .Context.FollowUpAsync(
-                new DiscordFollowupMessageBuilder().AddEmbed(embed).AsEphemeral()
-            )
-            .ConfigureAwait(false);
-    }
+
+    await context.Interaction.DeleteOriginalResponseAsync().ConfigureAwait(false);
+    await context.Interaction.FollowupAsync(embed: embed, ephemeral: true).ConfigureAwait(false);
 }

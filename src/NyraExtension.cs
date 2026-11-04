@@ -15,6 +15,8 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
     private readonly EventPump _events;
 
     private static readonly TimeSpan GatewayReadyTimeout = TimeSpan.FromSeconds(60);
+
+    private readonly TimeProvider _time;
     private volatile bool _disposed;
 
     /// <summary>Forwarded from every node when its websocket connects, with the node as sender.</summary>
@@ -55,10 +57,14 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
     /// <summary>Creates an extension bound to a Discord client bridge.</summary>
     /// <param name="client">The bridge the nodes attach to.</param>
-    public NyraExtension(IDiscordBridge client)
+    /// <param name="timeProvider">
+    /// The clock for the gateway wait and the disposal waits of the extension, the system clock by default.
+    /// </param>
+    public NyraExtension(IDiscordBridge client, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(client);
         Client = client;
+        _time = timeProvider ?? TimeProvider.System;
         _events = new EventPump("extension", client.Logger, LogEvents.Extension);
         _forwardError = OnForwardErrorAsync;
     }
@@ -95,11 +101,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
             if (
                 _nodes.Any(existing =>
-                    string.Equals(
-                        existing.Endpoint.Host,
-                        node.Endpoint.Host,
-                        StringComparison.OrdinalIgnoreCase
-                    )
+                    existing.Endpoint.NormalizedHost == node.Endpoint.NormalizedHost
                     && existing.Endpoint.Port == node.Endpoint.Port
                     && existing.Endpoint.IsSecure == node.Endpoint.IsSecure
                 )
@@ -183,7 +185,8 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
     /// <remarks>
     /// Skipped is not stopped, a node whose initial connect failed keeps retrying in the background and
     /// connects by itself once its server is reachable again, only <see cref="Node.DisconnectAsync"/> (or
-    /// removing and disposing the node) stops it.
+    /// removing and disposing the node) stops it. Calling this again while that node is still unreachable
+    /// skips it again right away, it does not wait for the node.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when every node settled.</returns>
@@ -195,54 +198,19 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         {
             await Client
                 .WaitForReadyAsync(cancellationToken)
-                .WaitAsync(GatewayReadyTimeout, cancellationToken)
+                .WaitAsync(GatewayReadyTimeout, _time, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (TimeoutException exception)
         {
-            try
-            {
-                Client.Logger?.LogError(
-                    LogEvents.Extension,
-                    exception,
-                    "The Discord gateway of the client did not become ready within {Timeout}, ConnectAllNodesAsync gave up waiting.",
-                    GatewayReadyTimeout
-                );
-            }
-            catch { }
-
             throw new TimeoutException(
                 $"The Discord gateway did not become ready within {GatewayReadyTimeout}, ConnectAllNodesAsync gave up waiting.",
                 exception
             );
         }
-        catch (InvalidOperationException exception)
-        {
-            try
-            {
-                Client.Logger?.LogError(
-                    LogEvents.Extension,
-                    exception,
-                    "The Discord gateway of the client closed fatally before becoming ready."
-                );
-            }
-            catch { }
-
-            throw;
-        }
-        catch (OperationCanceledException exception)
+        catch (OperationCanceledException)
             when (_disposed && !cancellationToken.IsCancellationRequested)
         {
-            try
-            {
-                Client.Logger?.LogError(
-                    LogEvents.Extension,
-                    exception,
-                    "The extension was disposed while connecting, the bridge's dispose failed the pending ready wait."
-                );
-            }
-            catch { }
-
             throw new ObjectDisposedException(
                 nameof(NyraExtension),
                 "The extension was disposed while connecting, the bridge's dispose failed the pending ready wait."
@@ -271,35 +239,29 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         {
             throw;
         }
-        catch (Exception exception)
-        {
-            try
-            {
-                Client.Logger?.LogError(
-                    LogEvents.Extension,
-                    exception,
-                    "The node {NodeName} failed to connect and was skipped.",
-                    node.Name
-                );
-            }
-            catch { }
-        }
+        catch (Exception) { }
     }
 
     /// <summary>The ready node with the fewest playing players, nodes without stats yet rank last.</summary>
-    /// <remarks>Null while no node is ready.</remarks>
+    /// <remarks>
+    /// A node whose last REST request failed (unreachable, timed out, 429 or a 5xx) in the past 30 seconds
+    /// ranks after the others, it is still returned when it is the only ready node. Null while no node is
+    /// ready.
+    /// </remarks>
     /// <returns>The best node, null while none is ready.</returns>
     public Node? GetNode()
     {
         Node? best = null;
-        var bestScore = int.MaxValue;
+        var bestScore = long.MaxValue;
         lock (_lock)
             foreach (var node in _nodes)
             {
                 if (!node.IsReady)
                     continue;
 
-                var score = node.Stats?.PlayingPlayers ?? int.MaxValue;
+                var score =
+                    (node.RestDegraded ? 1L << 32 : 0L)
+                    + (node.Stats?.PlayingPlayers ?? int.MaxValue);
                 if (best is null || score < bestScore)
                 {
                     bestScore = score;
@@ -363,7 +325,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         await _events.CompleteAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
         if (firstDisposeFailure is not null)
-            LogAndThrowDisposeFailure(firstDisposeFailure);
+            ExceptionDispatchInfo.Throw(firstDisposeFailure);
     }
 
     /// <summary>Disconnects and disposes every node of the extension and the bridge it routes through.</summary>
@@ -394,7 +356,12 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
             )
         );
 
-        if (!nodesDisposed.Wait(TimeSpan.FromSeconds(30)))
+        try
+        {
+            nodesDisposed.WaitAsync(TimeSpan.FromSeconds(30), _time).GetAwaiter().GetResult();
+        }
+        catch (TimeoutException)
+        {
             Interlocked.CompareExchange(
                 ref firstDisposeFailure,
                 new TimeoutException(
@@ -402,6 +369,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
                 ),
                 null
             );
+        }
 
         try
         {
@@ -421,7 +389,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         catch { }
 
         if (firstDisposeFailure is not null)
-            LogAndThrowDisposeFailure(firstDisposeFailure);
+            ExceptionDispatchInfo.Throw(firstDisposeFailure);
     }
 
     private Node[]? DetachNodes()
@@ -443,21 +411,6 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
             return nodes;
         }
-    }
-
-    private void LogAndThrowDisposeFailure(Exception failure)
-    {
-        try
-        {
-            Client.Logger?.LogError(
-                LogEvents.Extension,
-                failure,
-                "A node or the bridge of the extension failed to dispose."
-            );
-        }
-        catch { }
-
-        ExceptionDispatchInfo.Throw(failure);
     }
 
     private async ValueTask DisposeBridgeAsync()

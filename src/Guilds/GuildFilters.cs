@@ -206,6 +206,63 @@ public sealed class GuildFilters
             .ConfigureAwait(false);
     }
 
+    /// <summary>Whether the chain holds this filter, the same kind with the values the filter sets.</summary>
+    /// <remarks>
+    /// A member the filter leaves null is not compared, the server fills in its default for it. A transition
+    /// is not compared either. The equalizer is not an <see cref="IFilter"/>.
+    /// </remarks>
+    /// <param name="filter">The filter to look for.</param>
+    /// <returns>Whether the chain holds the filter, false when it holds another value of the same kind.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="filter"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="filter"/> is a user-defined implementation of <see cref="IFilter"/>.
+    /// </exception>
+    public bool IsApplied(IFilter filter)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (!FilterSlots.TryGetValue(filter.GetType(), out var place))
+            throw new ArgumentException(
+                $"The filter type '{filter.GetType().Name}' is not supported.",
+                nameof(filter)
+            );
+
+        using var blank = Wire(place(new FilterChain(), null));
+        using var wanted = Wire(place(new FilterChain(), filter), NyraJson.ComparisonOptions);
+        using var held = Wire(_filters);
+
+        foreach (var member in wanted.RootElement.EnumerateObject())
+        {
+            if (
+                blank.RootElement.TryGetProperty(member.Name, out var empty)
+                && empty.GetRawText() == member.Value.GetRawText()
+            )
+                continue;
+
+            return held.RootElement.TryGetProperty(member.Name, out var current)
+                && Holds(current, member.Value);
+        }
+
+        return false;
+    }
+
+    private static JsonDocument Wire(FilterChain chain, JsonSerializerOptions? options = null) =>
+        JsonDocument.Parse(NyraJson.SerializeToUtf8Bytes(chain, options ?? NormalizeOptions));
+
+    private static bool Holds(JsonElement held, JsonElement wanted) =>
+        wanted.ValueKind switch
+        {
+            JsonValueKind.Object => held.ValueKind == JsonValueKind.Object
+                && wanted
+                    .EnumerateObject()
+                    .All(member =>
+                        held.TryGetProperty(member.Name, out var value)
+                        && Holds(value, member.Value)
+                    ),
+            JsonValueKind.Number => held.ValueKind == JsonValueKind.Number
+                && held.GetDouble() == wanted.GetDouble(),
+            _ => JsonElement.DeepEquals(held, wanted),
+        };
+
     /// <summary>Removes all audio filters, including the volume filter, the equalizer and plugin filters.</summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the chain was cleared.</returns>
@@ -475,7 +532,7 @@ public sealed class GuildFilters
 
     internal async Task ResendPendingFiltersAsync()
     {
-        if (Environment.TickCount64 < Volatile.Read(ref _resendNotBefore.Value))
+        if (_node.Time.GetMilliseconds() < Volatile.Read(ref _resendNotBefore.Value))
             return;
 
         await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -489,10 +546,11 @@ public sealed class GuildFilters
             )
                 return;
 
-            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(
+            using var attemptCts = new TimeoutLink(
+                _node.Time,
+                ResendDeadline,
                 _filterSendCts.Token
             );
-            attemptCts.CancelAfter(ResendDeadline);
             if (
                 await PatchAndLandAsync(desired, countDivergence: true, attemptCts.Token)
                     .ConfigureAwait(false)
@@ -508,11 +566,11 @@ public sealed class GuildFilters
         {
             Volatile.Write(
                 ref _resendNotBefore.Value,
-                Environment.TickCount64 + (long)retryAfter.TotalMilliseconds
+                _node.Time.GetMilliseconds() + (long)retryAfter.TotalMilliseconds
             );
             _node.HandleError(
                 new InvalidOperationException(
-                    $"The server of guild {GuildId} answered the filter re-send with 429, waiting the retry-after before the next attempt.",
+                    $"The server of guild {GuildId} answered the filter re-send with {restFailure.StatusCode}, waiting the retry-after before the next attempt.",
                     restFailure
                 )
             );
@@ -590,19 +648,38 @@ public sealed class GuildFilters
         }
     }
 
-    internal async Task ResetAsync()
+    internal async Task LandRescuedAsync(Player player, FilterChain desired)
     {
-        _filterSendCts.Cancel();
+        await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            Land(player, desired, oldTimescale: null, countDivergence: false);
+        }
+        finally
+        {
+            _filterGate.Release();
+        }
+    }
+
+    internal async Task ResetForNewSessionAsync()
+    {
         await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
             _pendingFilters = null;
+            _pendingFilterDivergences = 0;
             _filters = new();
         }
         finally
         {
             _filterGate.Release();
         }
+    }
+
+    internal async Task ResetAsync()
+    {
+        _filterSendCts.Cancel();
+        await ResetForNewSessionAsync().ConfigureAwait(false);
     }
 
     private bool CommitPendingUnderLock(
@@ -682,7 +759,7 @@ public sealed class GuildFilters
         };
     }
 
-    private static FilterChain Normalize(FilterChain chain) =>
+    internal static FilterChain Normalize(FilterChain chain) =>
         NyraJson.Deserialize<FilterChain>(
             NyraJson.SerializeToUtf8Bytes(chain, NormalizeOptions),
             NormalizeOptions

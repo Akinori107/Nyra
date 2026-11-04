@@ -58,10 +58,14 @@ internal sealed class NodeBridgeWiring
             var channelId = eventArgs.VoiceState.ChannelId;
             if (channelId is null)
             {
-                if (connection.IsConnected && !connection.IsTearingDown)
+                if (
+                    connection.IsConnected
+                    && !connection.IsTearingDown
+                    && _node.Logger?.IsEnabled(LogLevel.Debug) == true
+                )
                     try
                     {
-                        _node.Logger?.LogWarning(
+                        _node.Logger?.LogDebug(
                             LogEvents.Node,
                             "The gateway reported no voice channel for guild {GuildId} on a connected connection, treating it as a leave. On the cache-backed bridges (DSharpPlus 4.x, Discord.Net) an unresolved channel reports the same null, and a move into it would tear down a player that is still connected.",
                             eventArgs.GuildId

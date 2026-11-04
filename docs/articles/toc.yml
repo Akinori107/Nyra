@@ -1,0 +1,8 @@
+- name: Getting started
+  href: getting-started.md
+- name: Adapters
+  href: adapters.md
+- name: When a connection breaks
+  href: connection.md
+- name: Lavalink and NodeLink
+  href: servers.md

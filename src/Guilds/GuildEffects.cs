@@ -118,7 +118,7 @@ public sealed class GuildEffects
             {
                 NextTrack = new PlayerUpdateTrack { Encoded = nextTrack.Encoded },
             };
-        var requestTick = Environment.TickCount64;
+        var requestTick = _node.Time.GetMilliseconds();
         var player = await _connection
             .Patches.SendAsync(
                 ct => _node.Rest.Players.UpdateAsync(GuildId, payload, ct),

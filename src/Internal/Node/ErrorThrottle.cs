@@ -2,8 +2,10 @@ using System.Runtime.InteropServices;
 
 namespace Nyra.Internal;
 
-internal sealed class ErrorThrottle
+internal sealed class ErrorThrottle(TimeProvider? timeProvider = null)
 {
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+
     internal const long WindowMilliseconds = 30_000;
 
     private const int ReportsPerWindow = 5;
@@ -21,7 +23,7 @@ internal sealed class ErrorThrottle
 
     internal bool TryAdmit(Exception exception, out int suppressed)
     {
-        var now = Environment.TickCount64;
+        var now = _time.GetMilliseconds();
         lock (_lock)
         {
             ref var window = ref CollectionsMarshal.GetValueRefOrAddDefault(

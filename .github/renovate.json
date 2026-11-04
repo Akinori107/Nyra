@@ -10,18 +10,15 @@
     ":semanticCommitTypeAll(chore)",
     ":semanticCommitScopeDisabled"
   ],
+  "prConcurrentLimit": 0,
+  "prHourlyLimit": 0,
   "ignorePresets": [":ignoreModulesAndTests"],
   "baseBranchPatterns": ["dev"],
   "automergeStrategy": "squash",
   "packageRules": [
     {
-      "description": "DSharpPlus and SlashCommands must stay on the same version",
-      "matchPackageNames": ["DSharpPlus", "DSharpPlus.SlashCommands"],
-      "groupName": "DSharpPlus"
-    },
-    {
       "description": "Self explanatory",
-      "matchFileNames": ["src/Clients/DSharpPlus/Nightly/**"],
+      "matchFileNames": ["src/Adapters/DSharpPlus/Nightly/**"],
       "matchPackageNames": ["DSharpPlus*"],
       "groupName": "DSharpPlus Nightly",
       "ignoreUnstable": false

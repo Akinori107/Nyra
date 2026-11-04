@@ -154,10 +154,11 @@ internal sealed class GuildRegistry
             Connections[guildId] = connection;
             try
             {
-                using var patchCts = CancellationTokenSource.CreateLinkedTokenSource(
+                using var patchCts = new TimeoutLink(
+                    _node.Time,
+                    _node.Options.VoiceHandshakeTimeout,
                     cancellationToken
                 );
-                patchCts.CancelAfter(_node.Options.VoiceHandshakeTimeout);
                 await _node
                     .Rest.Players.UpdateAsync(
                         guildId,
@@ -375,7 +376,7 @@ internal sealed class GuildRegistry
         if (destroyed > 0)
             try
             {
-                _node.Logger?.LogInformation(
+                _node.Logger?.LogDebug(
                     LogEvents.Node,
                     "Node {NodeName} resumed its session with {Count} player(s) no guild connection owns, they were destroyed.",
                     _node.Name,

@@ -11,6 +11,9 @@ internal static class NyraJson
 {
     internal static JsonSerializerOptions SerializerOptions { get; } = Create();
 
+    internal static JsonSerializerOptions ComparisonOptions { get; } =
+        Create(false, forComparison: true);
+
     private static readonly JsonSerializerOptions LavalinkOptions = Create(false);
     private static readonly JsonSerializerOptions NodeLinkOptions = Create(true);
 
@@ -56,7 +59,8 @@ internal static class NyraJson
 
     private static JsonSerializerOptions Create(
         bool? isNodeLink = null,
-        IReadOnlySet<string>? enabledFilters = null
+        IReadOnlySet<string>? enabledFilters = null,
+        bool forComparison = false
     )
     {
         var options = new JsonSerializerOptions
@@ -71,7 +75,7 @@ internal static class NyraJson
 
         if (isNodeLink is { } nodelink)
         {
-            options.Converters.Add(new FiltersConverter(nodelink, enabledFilters));
+            options.Converters.Add(new FiltersConverter(nodelink, enabledFilters, forComparison));
             options.Converters.Add(new LoadResultConverter(nodelink));
         }
 
@@ -174,11 +178,58 @@ internal sealed class TolerantSnowflakeConverter()
 internal sealed class NullableSnowflakeConverter()
     : NullAsNullConverter<ulong>(new SnowflakeConverter());
 
+internal abstract class GarbageAsDefaultConverter<T>(JsonConverter<T> strict)
+    : NullAsDefaultConverter<T>(strict)
+    where T : struct
+{
+    public override T Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    )
+    {
+        try
+        {
+            return base.Read(ref reader, typeToConvert, options);
+        }
+        catch (JsonException)
+        {
+            reader.Skip();
+            return default;
+        }
+    }
+}
+
+internal abstract class GarbageAsNullConverter<T>(JsonConverter<T> strict)
+    : NullAsNullConverter<T>(strict)
+    where T : struct
+{
+    public override T? Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    )
+    {
+        try
+        {
+            return base.Read(ref reader, typeToConvert, options);
+        }
+        catch (JsonException)
+        {
+            reader.Skip();
+            return null;
+        }
+    }
+}
+
 internal sealed class TolerantRoundedInt32Converter()
-    : NullAsDefaultConverter<int>(new RoundedInt32Converter());
+    : GarbageAsDefaultConverter<int>(new RoundedInt32Converter());
 
 internal sealed class TolerantRoundedInt64Converter()
-    : NullAsDefaultConverter<long>(new RoundedInt64Converter());
+    : GarbageAsDefaultConverter<long>(new RoundedInt64Converter());
+
+internal sealed class TolerantNullableRoundedInt64Converter()
+    : GarbageAsNullConverter<long>(new RoundedInt64Converter());
 
 internal sealed class StringOrNumberConverter : JsonConverter<string?>
 {

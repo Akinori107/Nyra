@@ -48,11 +48,12 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <param name="options">The behavioral options, null uses the defaults.</param>
     public Node(Endpoint endpoint, NodeOptions? options = null)
     {
-        Endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+        ArgumentNullException.ThrowIfNull(endpoint);
+        Endpoint = endpoint;
         _options = options ?? new NodeOptions();
-        _resumingEnabled = _options.Resuming;
-        _resumeTimeoutSeconds = (int)_options.ResumeTimeout.TotalSeconds;
+        ResetSessionSettings();
         ArgumentException.ThrowIfNullOrWhiteSpace(_options.Name);
+        ArgumentNullException.ThrowIfNull(_options.TimeProvider, nameof(NodeOptions.TimeProvider));
 
         if (_options.ReconnectDelay <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(
@@ -73,6 +74,14 @@ public sealed class Node : IAsyncDisposable, IDisposable
                 nameof(options),
                 "NodeOptions.ResumeTimeout must be zero or a positive number of seconds."
             );
+        if (
+            _options.RescueTimeout != Timeout.InfiniteTimeSpan
+            && _options.RescueTimeout <= TimeSpan.Zero
+        )
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "NodeOptions.RescueTimeout must be positive, or Timeout.InfiniteTimeSpan for no limit."
+            );
         ThrowIfNotPositive(
             _options.VoiceHandshakeTimeout,
             nameof(NodeOptions.VoiceHandshakeTimeout)
@@ -91,7 +100,10 @@ public sealed class Node : IAsyncDisposable, IDisposable
             dispatcher,
             cancellationToken => EnsureServerInfoAsync(cancellationToken, forceProbe: true)
         );
-        _voiceHandshake = new VoiceHandshakeCoordinator(_options.VoiceHandshakeTimeout);
+        _voiceHandshake = new VoiceHandshakeCoordinator(
+            _options.VoiceHandshakeTimeout,
+            _options.TimeProvider
+        );
         _queries = new NodeQueries(this);
         _serverInfo = new NodeServerInfo(this);
         _connector = new NodeConnector(this);
@@ -163,6 +175,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     internal NodeOptions Options => _options;
 
+    internal TimeProvider Time => _options.TimeProvider;
+
     /// <summary>The node session id of the current connection, null before the node first became ready.</summary>
     /// <remarks>
     /// Kept across disconnects so a resuming connection can replay it. Not a Discord voice session id.
@@ -190,6 +204,30 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     private int _resumeTimeoutSeconds;
+
+    internal void ResetSessionSettings()
+    {
+        ResumingEnabled = _options.Resuming;
+        ResumeTimeoutSeconds = (int)_options.ResumeTimeout.TotalSeconds;
+    }
+
+    private const long RestFailureMemoryMilliseconds = 30_000;
+
+    private long _restFailedAt = -1;
+
+    internal bool RestDegraded
+    {
+        get
+        {
+            var failedAt = Volatile.Read(ref _restFailedAt);
+            return failedAt >= 0
+                && Time.GetMilliseconds() - failedAt < RestFailureMemoryMilliseconds;
+        }
+    }
+
+    internal void NoteRestFailure() => Volatile.Write(ref _restFailedAt, Time.GetMilliseconds());
+
+    internal void NoteRestSuccess() => Volatile.Write(ref _restFailedAt, -1);
 
     /// <summary>
     /// Whether the websocket to the server is open, wait for <see cref="IsReady"/> before issuing requests.
@@ -737,15 +775,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     internal void ThrowIfDisposed()
     {
-        if (_disposed)
-        {
-            Logger?.LogError(
-                LogEvents.Node,
-                "Node {NodeName} was disposed, it cannot be used anymore.",
-                Name
-            );
-            throw new ObjectDisposedException(nameof(Node));
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     internal static string LogSafe(string? text) =>

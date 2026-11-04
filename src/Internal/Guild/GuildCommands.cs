@@ -51,7 +51,7 @@ internal sealed class GuildCommands
         var refusable = options?.NoReplace == true && _connection.CurrentTrack is not null;
 
         var stamps = _connection.Playback.StampPlayRequested();
-        var requestTick = Environment.TickCount64;
+        var requestTick = _node.Time.GetMilliseconds();
 
         Task<Player> SendPlayAsync(CancellationToken ct) =>
             _node.Rest.Players.UpdateAsync(
@@ -80,10 +80,15 @@ internal sealed class GuildCommands
             )
             .ConfigureAwait(false);
 
-        if (urlStart is not null && !refusable && GuildConnection.IsSameTrack(player.Track, track))
+        var landed = !refusable && GuildConnection.IsSameTrack(player.Track, track);
+        if (urlStart is not null && landed)
             track.StartPosition = null;
 
-        _connection.CaptureState(player, requestTick);
+        _connection.CaptureState(
+            player,
+            requestTick,
+            landed && options?.NoReplace != true ? positionMilliseconds ?? 0 : null
+        );
     }
 
     internal async Task<Track> PlayIdentifierAsync(
@@ -107,7 +112,7 @@ internal sealed class GuildCommands
         positionMilliseconds ??= UrlStartPosition.ParseMilliseconds(identifier);
 
         var stamps = _connection.Playback.StampPlayRequested();
-        var requestTick = Environment.TickCount64;
+        var requestTick = _node.Time.GetMilliseconds();
         var before = _connection.CurrentTrack;
 
         Task<Player> SendIdentifierAsync(CancellationToken ct) =>
@@ -138,7 +143,8 @@ internal sealed class GuildCommands
             )
             .ConfigureAwait(false);
 
-        _connection.CaptureState(player, requestTick);
+        var landed = options?.NoReplace != true && player.Track is not null;
+        _connection.CaptureState(player, requestTick, landed ? positionMilliseconds ?? 0 : null);
         return player.Track
             ?? throw new InvalidOperationException(
                 "The server did not resolve the identifier into a track."
@@ -159,7 +165,7 @@ internal sealed class GuildCommands
         _connection.EnsureActive();
 
         var payload = new EndTimeUpdate { EndTime = (long?)endTime?.TotalMilliseconds };
-        var requestTick = Environment.TickCount64;
+        var requestTick = _node.Time.GetMilliseconds();
         var player = await _connection
             .Patches.SendAsync(
                 ct => _node.Rest.Players.UpdateAsync(GuildId, payload, ct),
@@ -188,7 +194,7 @@ internal sealed class GuildCommands
         var stamps = paused
             ? _connection.Playback.StampPauseRequested()
             : _connection.Playback.StampResumeRequested();
-        var requestTick = Environment.TickCount64;
+        var requestTick = _node.Time.GetMilliseconds();
 
         Task<Player> SendPausedAsync(CancellationToken ct) =>
             _node.Rest.Players.UpdateAsync(
@@ -241,7 +247,7 @@ internal sealed class GuildCommands
     {
         _connection.EnsureActive();
 
-        var requestTick = Environment.TickCount64;
+        var requestTick = _node.Time.GetMilliseconds();
         var requestTicket = GuildFilters.NextTicket();
         var player =
             await _node.Rest.Players.GetAsync(GuildId, cancellationToken).ConfigureAwait(false)
