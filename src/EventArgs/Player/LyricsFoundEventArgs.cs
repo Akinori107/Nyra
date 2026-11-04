@@ -88,11 +88,9 @@ public sealed class SubscribedLyrics
     [JsonPropertyName("lines"), JsonInclude]
     public IReadOnlyList<SyncedLyricsLine>? Lines
     {
-        get => _lines;
-        internal set => _lines = value is null ? [] : [.. value.Where(v => v is not null)];
-    }
-
-    private IReadOnlyList<SyncedLyricsLine> _lines = [];
+        get;
+        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+    } = [];
 }
 
 /// <summary>The lyrics of the current track were loaded.</summary>

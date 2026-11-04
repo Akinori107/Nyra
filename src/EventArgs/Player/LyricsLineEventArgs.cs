@@ -27,11 +27,9 @@ public sealed class LyricsLineEventArgs : System.EventArgs
     [JsonPropertyName("line"), JsonInclude]
     public SyncedLyricsLine Line
     {
-        get => _line ??= new();
-        internal set => _line = value;
+        get => field ??= new();
+        internal set;
     }
-
-    private SyncedLyricsLine? _line;
 
     /// <summary>
     /// True when the line is out of step with playback, the event was emitted after the line's timestamp had

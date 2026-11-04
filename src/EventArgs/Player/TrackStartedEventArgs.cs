@@ -11,8 +11,6 @@ public sealed class TrackStartedEventArgs : System.EventArgs
     [JsonConverter(typeof(TolerantSnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
-    private Track? _track;
-
     /// <summary>The track that started.</summary>
     /// <remarks>
     /// Absorbs a null track the server sends, the getter materializes a fresh instance, so handlers never read
@@ -22,8 +20,8 @@ public sealed class TrackStartedEventArgs : System.EventArgs
     [JsonPropertyName("track"), JsonInclude]
     public Track Track
     {
-        get => _track ??= new();
-        internal set => _track = value;
+        get => field ??= new();
+        internal set;
     }
 
     /// <summary>The itag of the audio format the track is playing with, NodeLink only.</summary>

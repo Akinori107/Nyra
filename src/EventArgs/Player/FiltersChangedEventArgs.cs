@@ -21,9 +21,7 @@ public sealed class FiltersChangedEventArgs : System.EventArgs
     [JsonPropertyName("filters"), JsonInclude]
     public FilterChain Filters
     {
-        get => _filters ??= new();
-        internal set => _filters = value;
+        get => field ??= new();
+        internal set;
     }
-
-    private FilterChain? _filters;
 }
