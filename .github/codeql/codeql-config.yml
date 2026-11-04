@@ -7,3 +7,6 @@ queries:
 query-filters:
   - exclude:
       problem.severity: recommendation
+
+paths-ignore:
+  - tests
