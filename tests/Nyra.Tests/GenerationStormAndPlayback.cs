@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
+using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
 
@@ -83,7 +85,8 @@ public sealed class GenerationStormAndPlayback
         bool lavalink = false,
         bool multiGuild = false,
         TimeSpan? handshakeTimeout = null,
-        TimeSpan? readyTimeout = null
+        TimeSpan? readyTimeout = null,
+        TimeProvider? time = null
     )
     {
         var server = new FakeNodeServer
@@ -136,12 +139,13 @@ public sealed class GenerationStormAndPlayback
         }
         var bridge = new FakeBridge();
         bridge.GoReady();
-        var extension = new NyraExtension(bridge);
+        var extension = new NyraExtension(bridge, time);
         var node = new Node(
             new Nyra.Endpoint("127.0.0.1", server.Port, server.Password),
             new Nyra.NodeOptions
             {
                 Name = "storm",
+                TimeProvider = time ?? TimeProvider.System,
                 Resuming = true,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
@@ -309,7 +313,8 @@ public sealed class GenerationStormAndPlayback
     [Test]
     public async Task HandshakeStorm()
     {
-        var rig = await RigAsync(handshakeTimeout: TimeSpan.FromMilliseconds(250))
+        var time = new FakeTimeProvider();
+        var rig = await RigAsync(handshakeTimeout: TimeSpan.FromMilliseconds(250), time: time)
             .ConfigureAwait(false);
         await using (rig.ConfigureAwait(false))
         {
@@ -320,9 +325,17 @@ public sealed class GenerationStormAndPlayback
                 var connects = new Task[6];
                 for (var attempt = 0; attempt < connects.Length; attempt++)
                     connects[attempt] = rig.Node.ConnectAsync(888_000UL, 555);
+                var all = Task.WhenAll(connects);
+                await AdvanceUntilAsync(
+                        time,
+                        all,
+                        TimeSpan.FromMilliseconds(100),
+                        TimeSpan.FromSeconds(10)
+                    )
+                    .ConfigureAwait(false);
                 try
                 {
-                    await Task.WhenAll(connects).ConfigureAwait(false);
+                    await all.ConfigureAwait(false);
                 }
                 catch
                 {
@@ -333,7 +346,7 @@ public sealed class GenerationStormAndPlayback
             }
             await Assert.That(failed).IsEqualTo(10);
             await Assert.That(raced).IsEqualTo(10);
-            await Task.Delay(600).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(600)).ConfigureAwait(false);
             await Assert
                 .That(() => rig.Node.GetConnection(888_000UL) is null)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
@@ -343,7 +356,8 @@ public sealed class GenerationStormAndPlayback
     [Test]
     public async Task PlaybackRead()
     {
-        var rig = await RigAsync().ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var rig = await RigAsync(time: time).ConfigureAwait(false);
         await using (rig.ConfigureAwait(false))
         {
             var track = ParseTrack();
@@ -375,7 +389,7 @@ public sealed class GenerationStormAndPlayback
             await Assert
                 .That(() => rig.Connection.Position?.TotalMilliseconds >= 175_000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await Task.Delay(1200).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(1200)).ConfigureAwait(false);
             await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(176_000);
 
             SetReply(rig, PlayerJson(null));
@@ -668,7 +682,8 @@ public sealed class GenerationStormAndPlayback
             await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(frozenAt);
         }
 
-        var pauseRig = await RigAsync().ConfigureAwait(false);
+        var pauseTime = new FakeTimeProvider();
+        var pauseRig = await RigAsync(time: pauseTime).ConfigureAwait(false);
         await using (pauseRig.ConfigureAwait(false))
         {
             var track = ParseTrack();
@@ -677,7 +692,7 @@ public sealed class GenerationStormAndPlayback
             await Assert
                 .That(() => pauseRig.Connection.Position?.TotalMilliseconds >= 175_000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await Task.Delay(1100).ConfigureAwait(false);
+            await RunForAsync(pauseTime, TimeSpan.FromMilliseconds(1100)).ConfigureAwait(false);
             await PushPauseAsync(pauseRig, true).ConfigureAwait(false);
             await Assert
                 .That(() => pauseRig.Connection.Position?.TotalMilliseconds == 176_000)

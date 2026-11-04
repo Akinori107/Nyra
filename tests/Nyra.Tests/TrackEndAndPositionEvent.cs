@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Nyra.Entities;
 using Nyra.EventArgs;
+using Nyra.Internal;
 
 namespace Nyra.Tests;
 
@@ -121,7 +122,7 @@ public sealed class TrackEndAndPositionEvent
             var track = ParseTrack();
             await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
 
-            var requestTick = Environment.TickCount64;
+            var requestTick = TimeProvider.System.GetMilliseconds();
             await Reflect.NextTickAsync().ConfigureAwait(false);
             rig.Connection.Playback.OnTrackEnd(
                 new TrackFinishedEventArgs { Track = track, EndReason = TrackEndReason.Finished }
@@ -150,7 +151,7 @@ public sealed class TrackEndAndPositionEvent
             );
             await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
 
-            var requestTick = Environment.TickCount64;
+            var requestTick = TimeProvider.System.GetMilliseconds();
             await Reflect.NextTickAsync().ConfigureAwait(false);
             rig.Connection.Playback.OnTrackEnd(
                 new TrackFinishedEventArgs { Track = null, EndReason = TrackEndReason.Cleanup }

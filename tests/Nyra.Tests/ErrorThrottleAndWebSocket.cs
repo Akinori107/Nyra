@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Nyra.Exceptions;
 using Nyra.WebSocket;
 
@@ -27,6 +28,7 @@ public sealed class ErrorThrottleAndWebSocket
     [Test]
     public async Task ThrottleRollover()
     {
+        var time = new FakeTimeProvider();
         var sink = new CapturingLogger();
         var refusing = false;
         var server = new FakeNodeServer();
@@ -49,6 +51,7 @@ public sealed class ErrorThrottleAndWebSocket
             new Nyra.NodeOptions
             {
                 Name = "throttle-throttle",
+                TimeProvider = time,
                 Resuming = false,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
@@ -94,8 +97,11 @@ public sealed class ErrorThrottleAndWebSocket
         await Assert.That(logged).IsEqualTo(5);
         await Assert.That(reported).IsEqualTo(5);
 
-        await Task.Delay(31_000).ConfigureAwait(false);
+        time.Advance(TimeSpan.FromSeconds(31));
         bridge.FireVoiceServer(777, "tok-rolled", "127.0.0.1");
+        await Assert
+            .That(() => reported)
+            .WaitsFor(assert => assert.IsEqualTo(6), TimeSpan.FromSeconds(5));
 
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();

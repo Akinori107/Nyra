@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Nyra.Tests;
 
@@ -29,15 +30,17 @@ public sealed class GatewayWait
     [Test]
     public async Task AGatewayThatNeverReadiesTimesOut()
     {
+        var time = new FakeTimeProvider();
         var server = new FakeNodeServer();
         var logger = new CollectingLogger();
         var bridge = new FakeBridge { Logger = logger };
-        var extension = new NyraExtension(bridge);
+        var extension = new NyraExtension(bridge, time);
         var node = new Node(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions
             {
                 Name = "gateway-wait",
+                TimeProvider = time,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
                 ReadyTimeout = TimeSpan.FromSeconds(2),
@@ -47,14 +50,12 @@ public sealed class GatewayWait
 
         try
         {
+            var connect = extension.ConnectAllNodesAsync();
+            await NodeHarness
+                .AdvanceUntilAsync(time, connect, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(75))
+                .ConfigureAwait(false);
             await Assert
-                .That(async () =>
-                {
-                    await extension
-                        .ConnectAllNodesAsync()
-                        .WaitAsync(TimeSpan.FromSeconds(75))
-                        .ConfigureAwait(false);
-                })
+                .That(async () => await connect.ConfigureAwait(false))
                 .Throws<TimeoutException>();
         }
         finally

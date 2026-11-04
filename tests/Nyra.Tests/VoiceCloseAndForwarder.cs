@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using DSharpPlus;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using NetCord;
 using NetCord.Gateway;
 using Nyra.Abstractions;
@@ -37,17 +38,21 @@ public sealed class VoiceCloseAndForwarder
         }
     }
 
-    private static async Task<SupervisionLoopRace.Stack> StartAsync(string name = "voice-close")
+    private static async Task<SupervisionLoopRace.Stack> StartAsync(
+        string name = "voice-close",
+        TimeProvider? time = null
+    )
     {
         var server = new FakeNodeServer();
         var bridge = new FakeBridge();
         bridge.GoReady();
-        var extension = new NyraExtension(bridge);
+        var extension = new NyraExtension(bridge, time);
         var node = new Node(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions
             {
                 Name = name,
+                TimeProvider = time ?? TimeProvider.System,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(250),
                 ReadyTimeout = TimeSpan.FromSeconds(5),
@@ -115,7 +120,8 @@ public sealed class VoiceCloseAndForwarder
     [Test]
     public async Task VoiceCloseReentry()
     {
-        var stack = await StartAsync("close-reentry").ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync("close-reentry", time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
@@ -127,18 +133,18 @@ public sealed class VoiceCloseAndForwarder
                     """{"op":"event","guildId":"777","type":"WebSocketClosedEvent","code":1000,"reason":"first","byRemote":true}"""
                 )
                 .ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(400)).ConfigureAwait(false);
             await server
                 .PushAsync(
                     """{"op":"event","guildId":"777","type":"WebSocketClosedEvent","code":1000,"reason":"second","byRemote":true}"""
                 )
                 .ConfigureAwait(false);
-            await Task.Delay(3000).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(3000)).ConfigureAwait(false);
 
             var rescueSends = bridge.VoiceSends.Count(s => s.ChannelId == 555);
             await Assert.That(rescueSends).IsEqualTo(1);
             bridge.HangVoiceSends = false;
-            await Task.Delay(10_500).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(10_500)).ConfigureAwait(false);
             _ = conn;
         }
     }
@@ -146,7 +152,8 @@ public sealed class VoiceCloseAndForwarder
     [Test]
     public async Task VoiceCloseSecondRescueSettles()
     {
-        var stack = await StartAsync("close-settle").ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync("close-settle", time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
@@ -158,9 +165,9 @@ public sealed class VoiceCloseAndForwarder
                 )
                 .ConfigureAwait(false);
 
-            await Task.Delay(4600).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(4600)).ConfigureAwait(false);
             bridge.FireVoiceState(777, 555, "vsess2");
-            await Task.Delay(5200).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(5200)).ConfigureAwait(false);
 
             var kept = node.GetConnection(777);
             await Assert.That(kept).IsNotNull();

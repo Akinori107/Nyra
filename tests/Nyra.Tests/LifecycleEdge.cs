@@ -1,4 +1,5 @@
 using DSharpPlus.Entities;
+using Microsoft.Extensions.Time.Testing;
 using NetCord;
 using NetCord.Gateway;
 using Nyra.Exceptions;
@@ -11,17 +12,21 @@ public sealed class LifecycleEdge
 {
     private const string GhostPath = "/v4/sessions/fake-session/players/888";
 
-    private static async Task<Stack> StartAsync(FakeNodeServer? server = null)
+    private static async Task<Stack> StartAsync(
+        FakeNodeServer? server = null,
+        TimeProvider? time = null
+    )
     {
         server ??= new FakeNodeServer();
         var bridge = new FakeBridge();
         bridge.GoReady();
-        var extension = new NyraExtension(bridge);
+        var extension = new NyraExtension(bridge, time);
         var node = new Node(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions
             {
                 Name = "lifecycle-edge",
+                TimeProvider = time ?? TimeProvider.System,
                 Resuming = true,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
@@ -669,7 +674,8 @@ public sealed class LifecycleEdge
     [Test]
     public async Task SixtySecondWalls()
     {
-        var stack = await StartAsync().ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync(time: time).ConfigureAwait(false);
         try
         {
             stack.Server.On(
@@ -677,7 +683,7 @@ public sealed class LifecycleEdge
                 "/v4/decodetrack",
                 _ =>
                 {
-                    Thread.Sleep(61000);
+                    stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
                     return new FakeRestResponse(200, "{}");
                 }
             );
@@ -686,7 +692,7 @@ public sealed class LifecycleEdge
                 "/v4/loadstream",
                 _ =>
                 {
-                    Thread.Sleep(61000);
+                    stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
                     return new FakeRestResponse(200, "audio");
                 }
             );
@@ -713,7 +719,10 @@ public sealed class LifecycleEdge
                             .ConfigureAwait(false)
                     )
                     .Throws<TimeoutException>();
-            await Task.WhenAll(Decode(), Stream()).ConfigureAwait(false);
+            var both = Task.WhenAll(Decode(), Stream());
+            await AdvanceUntilAsync(time, both, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(61))
+                .ConfigureAwait(false);
+            await both.ConfigureAwait(false);
         }
         finally
         {

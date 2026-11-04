@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Sockets;
@@ -7,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using NetCord.Gateway;
 using Nyra.Abstractions;
 using Nyra.Exceptions;
@@ -211,6 +213,8 @@ internal sealed class FakeNodeServer : IDisposable
 
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _cts = new();
+
+    public CancellationToken Stopping => _cts.Token;
     private readonly Task _acceptLoop;
 
     private readonly ConcurrentDictionary<string, Func<FakeRestCall, FakeRestResponse>> _handlers =
@@ -878,6 +882,71 @@ internal static class NodeHarness
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
+    }
+
+    public static async Task AdvanceUntilAsync(
+        FakeTimeProvider time,
+        Task task,
+        TimeSpan step,
+        TimeSpan limit
+    )
+    {
+        var guard = Stopwatch.StartNew();
+        var elapsed = TimeSpan.Zero;
+        while (!task.IsCompleted && elapsed < limit)
+        {
+            if (guard.Elapsed > TimeSpan.FromSeconds(30))
+                throw new TimeoutException(
+                    "The task did not settle while the fake clock advanced."
+                );
+
+            time.Advance(step);
+            elapsed += step;
+            await Task.Delay(5).ConfigureAwait(false);
+        }
+
+        var real = Stopwatch.StartNew();
+        while (!task.IsCompleted && real.Elapsed < TimeSpan.FromSeconds(1))
+            await Task.Delay(5).ConfigureAwait(false);
+
+        if (!task.IsCompleted)
+            throw new TimeoutException($"The task did not settle within {limit} of fake time.");
+    }
+
+    public static async Task RunForAsync(FakeTimeProvider time, TimeSpan duration)
+    {
+        var step = TimeSpan.FromMilliseconds(100);
+        var remaining = duration;
+        while (remaining > TimeSpan.Zero)
+        {
+            var slice = remaining < step ? remaining : step;
+            time.Advance(slice);
+            remaining -= slice;
+            await Task.Delay(2).ConfigureAwait(false);
+        }
+
+        await Task.Delay(20).ConfigureAwait(false);
+    }
+
+    public static async Task<bool> AdvanceUntilAsync(
+        FakeTimeProvider time,
+        Func<bool> condition,
+        TimeSpan limit
+    )
+    {
+        var step = TimeSpan.FromMilliseconds(100);
+        var elapsed = TimeSpan.Zero;
+        while (!condition() && elapsed < limit)
+        {
+            time.Advance(step);
+            elapsed += step;
+            await Task.Delay(2).ConfigureAwait(false);
+        }
+
+        var real = Stopwatch.StartNew();
+        while (!condition() && real.Elapsed < TimeSpan.FromSeconds(1))
+            await Task.Delay(5).ConfigureAwait(false);
+        return condition();
     }
 
     public static async Task AwaitRestAsync(Func<Task> call)

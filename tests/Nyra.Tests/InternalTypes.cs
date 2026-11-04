@@ -148,7 +148,7 @@ public sealed class InternalTypes
     [Test]
     public async Task PlaybackStamp()
     {
-        var playback = new GuildPlayback(null!);
+        var playback = new GuildPlayback(null!, TimeProvider.System);
         var stamp = playback.StampPlayRequested();
         await Assert.That(stamp.Kind).IsEqualTo(GuildPlayback.RequestKind.Play);
         playback.RestoreRequestTicks(stamp);

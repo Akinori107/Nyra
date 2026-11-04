@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using Nyra.Entities;
 using Nyra.Exceptions;
 using static Nyra.Tests.NodeHarness;
@@ -10,17 +11,21 @@ public sealed class ConnectionLifecycle
     private const string TrackJson =
         """{"encoded":"QXRsZWFzdA==","info":{"identifier":"ph8qt3dhvwo","author":"SoAD - Topic","title":"ATWA","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
 
-    private static async Task<Stack> StartAsync(FakeNodeServer? server = null)
+    private static async Task<Stack> StartAsync(
+        FakeNodeServer? server = null,
+        TimeProvider? time = null
+    )
     {
         server ??= new FakeNodeServer();
         var bridge = new FakeBridge();
         bridge.GoReady();
-        var extension = new NyraExtension(bridge);
+        var extension = new NyraExtension(bridge, time);
         var node = new Node(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions
             {
                 Name = "lifecycle",
+                TimeProvider = time ?? TimeProvider.System,
                 Resuming = true,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
@@ -223,7 +228,8 @@ public sealed class ConnectionLifecycle
     public async Task VoiceCloseGrace()
     {
         var server = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
-        var stack = await StartAsync(server).ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync(server, time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
@@ -235,20 +241,20 @@ public sealed class ConnectionLifecycle
                 )
                 .ConfigureAwait(false);
 
-            var tornDown = false;
-            for (var i = 0; i < 160 && !tornDown; i++)
-            {
-                await Task.Delay(100).ConfigureAwait(false);
-                tornDown = node.GetConnection(777) is null;
-            }
+            var tornDown = await AdvanceUntilAsync(
+                    time,
+                    () => node.GetConnection(777) is null,
+                    TimeSpan.FromSeconds(16)
+                )
+                .ConfigureAwait(false);
             await Assert.That(tornDown).IsTrue();
 
-            var leaveSent = false;
-            for (var i = 0; i < 20 && !leaveSent; i++)
-            {
-                await Task.Delay(100).ConfigureAwait(false);
-                leaveSent = bridge.VoiceSends.Contains((777, null));
-            }
+            var leaveSent = await AdvanceUntilAsync(
+                    time,
+                    () => bridge.VoiceSends.Contains((777, null)),
+                    TimeSpan.FromSeconds(2)
+                )
+                .ConfigureAwait(false);
             await Assert.That(leaveSent).IsTrue();
 
             await stack.Extension.DisposeAsync().ConfigureAwait(false);

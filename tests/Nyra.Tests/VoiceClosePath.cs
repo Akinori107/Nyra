@@ -1,20 +1,25 @@
+using Microsoft.Extensions.Time.Testing;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
 
 public sealed class VoiceClosePath
 {
-    private static async Task<Stack> StartAsync(FakeNodeServer? server = null)
+    private static async Task<Stack> StartAsync(
+        FakeNodeServer? server = null,
+        TimeProvider? time = null
+    )
     {
         server ??= new FakeNodeServer();
         var bridge = new FakeBridge();
         bridge.GoReady();
-        var extension = new NyraExtension(bridge);
+        var extension = new NyraExtension(bridge, time);
         var node = new Node(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions
             {
                 Name = "close-paths",
+                TimeProvider = time ?? TimeProvider.System,
                 Resuming = true,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
@@ -37,7 +42,8 @@ public sealed class VoiceClosePath
     public async Task SuppressedCloseIsAChannelSwitch()
     {
         var server = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
-        var stack = await StartAsync(server).ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync(server, time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
@@ -50,7 +56,7 @@ public sealed class VoiceClosePath
                 .ConfigureAwait(false);
             bridge.FireVoiceServer(777, "tok2", "127.0.0.1");
 
-            await Task.Delay(3200).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(3200)).ConfigureAwait(false);
             await Assert.That(node.GetConnection(777)).IsNotNull();
             await Assert.That(conn.IsConnected).IsTrue();
             await Assert.That(bridge.VoiceSends.Any(s => s.ChannelId is null)).IsFalse();
@@ -63,7 +69,8 @@ public sealed class VoiceClosePath
     public async Task TornDownDuringGrace()
     {
         var server = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
-        var stack = await StartAsync(server).ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync(server, time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
@@ -76,7 +83,7 @@ public sealed class VoiceClosePath
             await Task.Delay(400).ConfigureAwait(false);
             await conn.DisconnectAsync().ConfigureAwait(false);
             await Assert.That(node.GetConnection(777)).IsNull();
-            await Task.Delay(2500).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(2500)).ConfigureAwait(false);
             await Assert.That(node.GetConnection(777)).IsNull();
             await Assert.That(conn.IsConnected).IsFalse();
         }
@@ -89,7 +96,8 @@ public sealed class VoiceClosePath
     public async Task RescueAnsweredByFreshForward()
     {
         var server = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
-        var stack = await StartAsync(server).ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync(server, time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
@@ -120,20 +128,19 @@ public sealed class VoiceClosePath
                 .ConfigureAwait(false);
 
             var sendsBeforeClose = bridge.VoiceSends.Count;
-            var deadline = Environment.TickCount64 + 4000;
-            var rejoinSent = false;
-            while (Environment.TickCount64 < deadline && !rejoinSent)
-            {
-                await Task.Delay(100).ConfigureAwait(false);
-                rejoinSent = bridge.VoiceSends.Count > sendsBeforeClose;
-            }
+            var rejoinSent = await AdvanceUntilAsync(
+                    time,
+                    () => bridge.VoiceSends.Count > sendsBeforeClose,
+                    TimeSpan.FromSeconds(4)
+                )
+                .ConfigureAwait(false);
             await Assert.That(rejoinSent).IsTrue();
 
             AcceptPlayerPatch(sv);
             bridge.FireVoiceState(777, 555, "vsess2");
             bridge.FireVoiceServer(777, "tok3", "127.0.0.1");
 
-            await Task.Delay(6500).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(6500)).ConfigureAwait(false);
             await Assert.That(node.GetConnection(777)).IsNotNull();
             await Assert.That(conn.IsConnected).IsTrue();
 
@@ -145,7 +152,8 @@ public sealed class VoiceClosePath
     public async Task RescueThroughADeadGateway()
     {
         var server = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
-        var stack = await StartAsync(server).ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync(server, time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
@@ -169,12 +177,12 @@ public sealed class VoiceClosePath
                 )
                 .ConfigureAwait(false);
 
-            var removed = false;
-            for (var i = 0; i < 140 && !removed; i++)
-            {
-                await Task.Delay(100).ConfigureAwait(false);
-                removed = node.GetConnection(777) is null;
-            }
+            var removed = await AdvanceUntilAsync(
+                    time,
+                    () => node.GetConnection(777) is null,
+                    TimeSpan.FromSeconds(14)
+                )
+                .ConfigureAwait(false);
             await Assert.That(removed).IsTrue();
             await Assert.That(conn.IsConnected).IsFalse();
         }
@@ -184,7 +192,8 @@ public sealed class VoiceClosePath
     public async Task TornDownDuringRescueWindow()
     {
         var server = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
-        var stack = await StartAsync(server).ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync(server, time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
@@ -207,11 +216,11 @@ public sealed class VoiceClosePath
                 )
                 .ConfigureAwait(false);
 
-            await Task.Delay(2600).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(2600)).ConfigureAwait(false);
             await Assert.That(bridge.VoiceSends).Contains(s => s.ChannelId == 555);
             await conn.DisconnectAsync().ConfigureAwait(false);
             await Assert.That(node.GetConnection(777)).IsNull();
-            await Task.Delay(5500).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(5500)).ConfigureAwait(false);
             await Assert.That(node.GetConnection(777)).IsNull();
             await Assert.That(conn.IsConnected).IsFalse();
         }

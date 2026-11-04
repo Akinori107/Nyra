@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
 using Nyra.Entities;
 using Nyra.Exceptions;
@@ -118,17 +119,21 @@ public sealed class ConnectorAndTransportEdge
         await Assert.That(client.IsConnected).IsFalse();
     }
 
-    private static async Task<Stack> StartAsync(FakeNodeServer? server = null)
+    private static async Task<Stack> StartAsync(
+        FakeNodeServer? server = null,
+        TimeProvider? time = null
+    )
     {
         server ??= new FakeNodeServer();
         var bridge = new FakeBridge();
         bridge.GoReady();
-        var extension = new NyraExtension(bridge);
+        var extension = new NyraExtension(bridge, time);
         var node = new Node(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions
             {
                 Name = "transport-edge",
+                TimeProvider = time ?? TimeProvider.System,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
                 ReadyTimeout = TimeSpan.FromSeconds(5),
@@ -549,7 +554,8 @@ public sealed class ConnectorAndTransportEdge
     [Test]
     public async Task LoadStreamBodyWall()
     {
-        var stack = await StartAsync().ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync(time: time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             stack.Server.OnRaw(
@@ -565,23 +571,22 @@ public sealed class ConnectorAndTransportEdge
                         .WriteAsync(Encoding.UTF8.GetBytes("{\"message\":"))
                         .ConfigureAwait(false);
                     await stream.FlushAsync().ConfigureAwait(false);
-                    Thread.Sleep(61000);
+                    stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
                     stream.Close();
                 }
             );
+            var open = stack.Node.Rest.Tracks.OpenLoadStreamAsync(
+                "track",
+                100,
+                0,
+                null,
+                LoadStreamFormat.Raw,
+                CancellationToken.None
+            );
+            await AdvanceUntilAsync(time, open, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(61))
+                .ConfigureAwait(false);
             await Assert
-                .That(async () =>
-                    await stack
-                        .Node.Rest.Tracks.OpenLoadStreamAsync(
-                            "track",
-                            100,
-                            0,
-                            null,
-                            LoadStreamFormat.Raw,
-                            CancellationToken.None
-                        )
-                        .ConfigureAwait(false)
-                )
+                .That(async () => await open.ConfigureAwait(false))
                 .Throws<TimeoutException>();
         }
     }
@@ -589,10 +594,14 @@ public sealed class ConnectorAndTransportEdge
     [Test]
     public async Task GatewayWallHostileLogger()
     {
+        var time = new FakeTimeProvider();
         var bridge = new NeverReadyBridge { Logger = new HostileLogger() };
-        var extension = new NyraExtension(bridge);
+        var extension = new NyraExtension(bridge, time);
+        var connect = extension.ConnectAllNodesAsync();
+        await AdvanceUntilAsync(time, connect, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(75))
+            .ConfigureAwait(false);
         await Assert
-            .That(async () => await extension.ConnectAllNodesAsync().ConfigureAwait(false))
+            .That(async () => await connect.ConfigureAwait(false))
             .Throws<TimeoutException>();
         await extension.DisposeAsync().ConfigureAwait(false);
     }

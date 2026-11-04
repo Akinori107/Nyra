@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
 using Nyra.EventArgs;
 using Nyra.Exceptions;
@@ -33,17 +34,21 @@ public sealed class ReadyAndRegistryRace
         }
     }
 
-    private static async Task<SupervisionLoopRace.Stack> StartAsync(string name = "ready-registry")
+    private static async Task<SupervisionLoopRace.Stack> StartAsync(
+        string name = "ready-registry",
+        TimeProvider? time = null
+    )
     {
         var server = new FakeNodeServer();
         var bridge = new FakeBridge();
         bridge.GoReady();
-        var extension = new NyraExtension(bridge);
+        var extension = new NyraExtension(bridge, time);
         var node = new Node(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions
             {
                 Name = name,
+                TimeProvider = time ?? TimeProvider.System,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(250),
                 ReadyTimeout = TimeSpan.FromSeconds(5),
@@ -105,7 +110,8 @@ public sealed class ReadyAndRegistryRace
     [Test]
     public async Task ExtensionDisposeOutwaitsNode()
     {
-        var stack = await StartAsync("ext-timeout").ConfigureAwait(false);
+        var time = new FakeTimeProvider();
+        var stack = await StartAsync("ext-timeout", time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var node = stack.Node;
@@ -123,10 +129,16 @@ public sealed class ReadyAndRegistryRace
 
             try
             {
-                await Assert
-                    .That(async () =>
-                        await Task.Run(() => stack.Extension.Dispose()).ConfigureAwait(false)
+                var disposal = Task.Run(() => stack.Extension.Dispose());
+                await AdvanceUntilAsync(
+                        time,
+                        disposal,
+                        TimeSpan.FromSeconds(1),
+                        TimeSpan.FromSeconds(40)
                     )
+                    .ConfigureAwait(false);
+                await Assert
+                    .That(async () => await disposal.ConfigureAwait(false))
                     .Throws<TimeoutException>();
             }
             finally
