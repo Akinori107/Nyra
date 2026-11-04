@@ -322,7 +322,7 @@ public sealed class NightlyAdapter
         readyBridge.OnClientStarted(ready, Reflect.New<DspStartedArgs>()).Wait(2000);
         var stillPending = !readyBridge.WaitForReadyAsync().Wait(500);
         readyBridge.OnSessionCreated(ready, Reflect.New<DspSessionArgs>()).Wait(2000);
-        var info = readyBridge.WaitForReadyAsync().GetAwaiter().GetResult();
+        var info = await readyBridge.WaitForReadyAsync().ConfigureAwait(false);
         await Assert.That(stillPending).IsTrue();
         await Assert.That(info.CurrentUserId).IsEqualTo(11);
     }
@@ -339,7 +339,7 @@ public sealed class NightlyAdapter
         var client = NewOfflineClient(12);
         using var bridge = new NightlyBridge();
         bridge.OnSessionCreated(client, Reflect.New<DspSessionArgs>()).Wait(2000);
-        var info = bridge.WaitForReadyAsync().GetAwaiter().GetResult();
+        var info = await bridge.WaitForReadyAsync().ConfigureAwait(false);
         await Assert.That(info.CurrentUserId).IsEqualTo(12);
     }
 

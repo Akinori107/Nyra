@@ -163,7 +163,7 @@ public sealed class DiscordNetBridgeTests
         using var socket = new DiscordSocketClient();
         SetCurrentUser(socket, 42);
         using var bridge = new Nyra.DiscordNet.DiscordNetBridge(socket);
-        var info = bridge.WaitForReadyAsync().GetAwaiter().GetResult();
+        var info = await bridge.WaitForReadyAsync().ConfigureAwait(false);
         await Assert.That(info.CurrentUserId).IsEqualTo(42);
 
         using var carrier = new DiscordSocketClient();
@@ -171,7 +171,7 @@ public sealed class DiscordNetBridgeTests
         using var sharded = new DiscordShardedClient();
         Reflect.Field(sharded, "_shards", new DiscordSocketClient[] { carrier });
         using var shardedBridge = new Nyra.DiscordNet.DiscordNetBridge(sharded);
-        var shardedInfo = shardedBridge.WaitForReadyAsync().GetAwaiter().GetResult();
+        var shardedInfo = await shardedBridge.WaitForReadyAsync().ConfigureAwait(false);
         await Assert.That(shardedInfo.CurrentUserId).IsEqualTo(7);
     }
 
@@ -358,14 +358,14 @@ public sealed class DiscordNetBridgeTests
         SetCurrentUser(client, 42);
 
         Reflect.Invoke(bridge, "OnClientReady");
-        var info = bridge.WaitForReadyAsync().GetAwaiter().GetResult();
+        var info = await bridge.WaitForReadyAsync().ConfigureAwait(false);
         await Assert.That(info.CurrentUserId).IsEqualTo(42);
 
         using var shard = new DiscordSocketClient();
         SetCurrentUser(shard, 99);
         Reflect.Invoke(bridge, "OnShardReady", shard);
         await Assert
-            .That(bridge.WaitForReadyAsync().GetAwaiter().GetResult().CurrentUserId)
+            .That((await bridge.WaitForReadyAsync().ConfigureAwait(false)).CurrentUserId)
             .IsEqualTo(42);
     }
 
@@ -485,7 +485,7 @@ public sealed class DiscordNetBridgeTests
         Reflect.Invoke(bridge, "PublishUserId", 99UL);
         await Assert.That(settled).IsTrue();
         await Assert
-            .That(bridge.WaitForReadyAsync().GetAwaiter().GetResult().CurrentUserId)
+            .That((await bridge.WaitForReadyAsync().ConfigureAwait(false)).CurrentUserId)
             .IsEqualTo(42);
         await Assert.That(sink.Count).IsEqualTo(0);
     }

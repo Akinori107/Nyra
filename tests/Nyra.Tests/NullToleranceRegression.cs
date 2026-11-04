@@ -111,7 +111,7 @@ public sealed class NullToleranceRegression
 
         var handler = new AsyncEventHandler<System.EventArgs>(Handler);
         var origin = new object();
-        handler.RaiseAsync(origin, System.EventArgs.Empty, OnError).GetAwaiter().GetResult();
+        await handler.RaiseAsync(origin, System.EventArgs.Empty, OnError).ConfigureAwait(false);
         await Assert.That(seen.Count).IsEqualTo(0);
     }
 

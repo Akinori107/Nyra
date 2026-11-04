@@ -229,7 +229,7 @@ public sealed class ClientEntryPoint
         );
         SeedShards(client, 2);
 
-        var extensions = client.UseNyraAsync().GetAwaiter().GetResult();
+        var extensions = await client.UseNyraAsync().ConfigureAwait(false);
         using (Assert.Multiple())
         {
             await Assert.That(extensions.Count).IsEqualTo(2);
@@ -238,12 +238,12 @@ public sealed class ClientEntryPoint
             await Assert.That(extensions.Values.All(e => e is not null && !e.IsDisposed)).IsTrue();
         }
 
-        var again = client.UseNyraAsync().GetAwaiter().GetResult();
+        var again = await client.UseNyraAsync().ConfigureAwait(false);
         await Assert.That(again.Count).IsEqualTo(2);
         await Assert.That(ReferenceEquals(again[0], extensions[0])).IsTrue();
         await Assert.That(ReferenceEquals(again[1], extensions[1])).IsTrue();
 
-        var read = client.GetNyraAsync().GetAwaiter().GetResult();
+        var read = await client.GetNyraAsync().ConfigureAwait(false);
         await Assert.That(read.Count).IsEqualTo(2);
         await Assert.That(ReferenceEquals(read[0], extensions[0])).IsTrue();
         await Assert.That(ReferenceEquals(read[1], extensions[1])).IsTrue();
@@ -257,7 +257,7 @@ public sealed class ClientEntryPoint
             }
         );
         SeedShards(bare, 1);
-        var empty = bare.GetNyraAsync().GetAwaiter().GetResult();
+        var empty = await bare.GetNyraAsync().ConfigureAwait(false);
         await Assert.That(empty.Count).IsEqualTo(0);
 
         foreach (var extension in extensions.Values)
