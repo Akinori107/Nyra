@@ -227,7 +227,7 @@ public sealed class GuildFilters
             );
 
         using var blank = Wire(place(new FilterChain(), null));
-        using var wanted = Wire(place(new FilterChain(), filter));
+        using var wanted = Wire(place(new FilterChain(), filter), NyraJson.ComparisonOptions);
         using var held = Wire(_filters);
 
         foreach (var member in wanted.RootElement.EnumerateObject())
@@ -245,13 +245,12 @@ public sealed class GuildFilters
         return false;
     }
 
-    private static JsonDocument Wire(FilterChain chain) =>
-        JsonDocument.Parse(NyraJson.SerializeToUtf8Bytes(chain, NormalizeOptions));
+    private static JsonDocument Wire(FilterChain chain, JsonSerializerOptions? options = null) =>
+        JsonDocument.Parse(NyraJson.SerializeToUtf8Bytes(chain, options ?? NormalizeOptions));
 
     private static bool Holds(JsonElement held, JsonElement wanted) =>
         wanted.ValueKind switch
         {
-            JsonValueKind.Null => true,
             JsonValueKind.Object => held.ValueKind == JsonValueKind.Object
                 && wanted
                     .EnumerateObject()

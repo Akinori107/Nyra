@@ -11,6 +11,9 @@ internal static class NyraJson
 {
     internal static JsonSerializerOptions SerializerOptions { get; } = Create();
 
+    internal static JsonSerializerOptions ComparisonOptions { get; } =
+        Create(false, forComparison: true);
+
     private static readonly JsonSerializerOptions LavalinkOptions = Create(false);
     private static readonly JsonSerializerOptions NodeLinkOptions = Create(true);
 
@@ -56,7 +59,8 @@ internal static class NyraJson
 
     private static JsonSerializerOptions Create(
         bool? isNodeLink = null,
-        IReadOnlySet<string>? enabledFilters = null
+        IReadOnlySet<string>? enabledFilters = null,
+        bool forComparison = false
     )
     {
         var options = new JsonSerializerOptions
@@ -71,7 +75,7 @@ internal static class NyraJson
 
         if (isNodeLink is { } nodelink)
         {
-            options.Converters.Add(new FiltersConverter(nodelink, enabledFilters));
+            options.Converters.Add(new FiltersConverter(nodelink, enabledFilters, forComparison));
             options.Converters.Add(new LoadResultConverter(nodelink));
         }
 
