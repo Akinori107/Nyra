@@ -22,9 +22,13 @@ internal sealed class NodeEventHandlers
 
     private (int Epoch, Stats Stats)? _statsBufferedDuringReady;
 
-    private readonly ErrorThrottle _errors = new();
+    private readonly ErrorThrottle _errors;
 
-    internal NodeEventHandlers(Node node) => _node = node;
+    internal NodeEventHandlers(Node node)
+    {
+        _node = node;
+        _errors = new ErrorThrottle(node.Time);
+    }
 
     private static string? UsableSessionId(string? sessionId) =>
         sessionId is null

@@ -154,10 +154,11 @@ internal sealed class GuildRegistry
             Connections[guildId] = connection;
             try
             {
-                using var patchCts = CancellationTokenSource.CreateLinkedTokenSource(
+                using var patchCts = new TimeoutLink(
+                    _node.Time,
+                    _node.Options.VoiceHandshakeTimeout,
                     cancellationToken
                 );
-                patchCts.CancelAfter(_node.Options.VoiceHandshakeTimeout);
                 await _node
                     .Rest.Players.UpdateAsync(
                         guildId,

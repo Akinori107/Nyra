@@ -85,8 +85,11 @@ internal sealed class GuildVoiceForwarder
         _pendingVoiceForward = voice;
         try
         {
-            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(_sendCts.Token);
-            attemptCts.CancelAfter(VoiceSendDeadline);
+            using var attemptCts = new TimeoutLink(
+                _connection.Time,
+                VoiceSendDeadline,
+                _sendCts.Token
+            );
             await _connection
                 .Node.Rest.Players.UpdateAsync(
                     _connection.GuildId,
@@ -95,7 +98,7 @@ internal sealed class GuildVoiceForwarder
                 )
                 .ConfigureAwait(false);
             _pendingVoiceForward = null;
-            Interlocked.Exchange(ref _lastForwardTick, Environment.TickCount64);
+            Interlocked.Exchange(ref _lastForwardTick, _connection.Time.GetMilliseconds());
         }
         catch (OperationCanceledException) when (_sendCts.IsCancellationRequested) { }
         catch (Exception exception)

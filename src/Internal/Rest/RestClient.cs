@@ -19,9 +19,11 @@ internal sealed class RestClient
         ConnectTimeout = TimeSpan.FromSeconds(10),
     };
 
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(60);
+
     private static readonly HttpClient Http = new(SharedHandler, disposeHandler: false)
     {
-        Timeout = TimeSpan.FromSeconds(60),
+        Timeout = Timeout.InfiniteTimeSpan,
     };
 
     internal static readonly HttpClient StreamingHttp = new(SharedHandler, disposeHandler: false)
@@ -258,15 +260,17 @@ internal sealed class RestClient
 
         try
         {
-            using var response = await Http.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            HttpResponseMessage reply;
+            using (var headerCts = new TimeoutLink(_node.Time, RequestTimeout, cancellationToken))
+                reply = await Http.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        headerCts.Token
+                    )
+                    .ConfigureAwait(false);
+            using var response = reply;
 
-            using var bodyCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            bodyCts.CancelAfter(Http.Timeout);
+            using var bodyCts = new TimeoutLink(_node.Time, RequestTimeout, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {

@@ -172,7 +172,7 @@ internal sealed class NodeConnection : IDisposable
         if (supervisionTask is not null)
         {
             await supervisionTask
-                .WaitAsync(TimeSpan.FromSeconds(5))
+                .WaitAsync(TimeSpan.FromSeconds(5), _node.Time)
                 .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             if (!supervisionTask.IsCompleted)
                 supervisionTask.ObserveFaults();
@@ -243,8 +243,7 @@ internal sealed class NodeConnection : IDisposable
 
     private async Task<bool> ConnectOnceAsync(int generation, CancellationToken lifetimeCt)
     {
-        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(lifetimeCt);
-        probeCts.CancelAfter(_node.Options.ReadyTimeout);
+        using var probeCts = new TimeoutLink(_node.Time, _node.Options.ReadyTimeout, lifetimeCt);
         try
         {
             await _preConnect(probeCts.Token).ConfigureAwait(false);
@@ -273,8 +272,11 @@ internal sealed class NodeConnection : IDisposable
         {
             client.TextMessageReceived += OnText;
             client.Closed += OnClosed;
-            using var handshakeCts = CancellationTokenSource.CreateLinkedTokenSource(lifetimeCt);
-            handshakeCts.CancelAfter(_node.Options.ReadyTimeout);
+            using var handshakeCts = new TimeoutLink(
+                _node.Time,
+                _node.Options.ReadyTimeout,
+                lifetimeCt
+            );
             try
             {
                 await client
@@ -492,7 +494,7 @@ internal sealed class NodeConnection : IDisposable
 
                     try
                     {
-                        await Task.Delay(delay, lifetimeCt).ConfigureAwait(false);
+                        await Task.Delay(delay, _node.Time, lifetimeCt).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {

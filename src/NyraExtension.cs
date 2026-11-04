@@ -15,6 +15,8 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
     private readonly EventPump _events;
 
     private static readonly TimeSpan GatewayReadyTimeout = TimeSpan.FromSeconds(60);
+
+    private readonly TimeProvider _time;
     private volatile bool _disposed;
 
     /// <summary>Forwarded from every node when its websocket connects, with the node as sender.</summary>
@@ -55,10 +57,14 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
     /// <summary>Creates an extension bound to a Discord client bridge.</summary>
     /// <param name="client">The bridge the nodes attach to.</param>
-    public NyraExtension(IDiscordBridge client)
+    /// <param name="timeProvider">
+    /// The clock for the gateway wait and the disposal waits of the extension, the system clock by default.
+    /// </param>
+    public NyraExtension(IDiscordBridge client, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(client);
         Client = client;
+        _time = timeProvider ?? TimeProvider.System;
         _events = new EventPump("extension", client.Logger, LogEvents.Extension);
         _forwardError = OnForwardErrorAsync;
     }
@@ -192,7 +198,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         {
             await Client
                 .WaitForReadyAsync(cancellationToken)
-                .WaitAsync(GatewayReadyTimeout, cancellationToken)
+                .WaitAsync(GatewayReadyTimeout, _time, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (TimeoutException exception)
@@ -350,7 +356,12 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
             )
         );
 
-        if (!nodesDisposed.Wait(TimeSpan.FromSeconds(30)))
+        try
+        {
+            nodesDisposed.WaitAsync(TimeSpan.FromSeconds(30), _time).GetAwaiter().GetResult();
+        }
+        catch (TimeoutException)
+        {
             Interlocked.CompareExchange(
                 ref firstDisposeFailure,
                 new TimeoutException(
@@ -358,6 +369,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
                 ),
                 null
             );
+        }
 
         try
         {

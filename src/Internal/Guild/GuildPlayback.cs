@@ -39,7 +39,13 @@ internal sealed class GuildPlayback
 
     private Track? _anchorTrack;
 
-    internal GuildPlayback(GuildConnection connection) => _connection = connection;
+    private readonly TimeProvider _time;
+
+    internal GuildPlayback(GuildConnection connection, TimeProvider time)
+    {
+        _connection = connection;
+        _time = time;
+    }
 
     internal enum RequestKind
     {
@@ -94,7 +100,7 @@ internal sealed class GuildPlayback
     {
         lock (_positionLock)
         {
-            var stamp = new RequestTicks(kind, Environment.TickCount64, tick, ++_requestSequence);
+            var stamp = new RequestTicks(kind, _time.GetMilliseconds(), tick, ++_requestSequence);
             tick = stamp.Stamped;
             ownerSequence = stamp.Sequence;
             return stamp;
@@ -135,7 +141,7 @@ internal sealed class GuildPlayback
     private void Anchor(long positionMilliseconds, Track? track, long? tick = null)
     {
         _positionMilliseconds = positionMilliseconds;
-        _positionTick = tick ?? Environment.TickCount64;
+        _positionTick = tick ?? _time.GetMilliseconds();
         _hasPosition = true;
         _anchorTrack = track;
         _endedSinceAnchor = false;
@@ -147,10 +153,10 @@ internal sealed class GuildPlayback
         return double.IsFinite(speed) ? Math.Max(0.0, speed) : 1.0;
     }
 
-    private static long PaceDelta(long fromTick, double pace, long ceiling)
+    private long PaceDelta(long fromTick, double pace, long ceiling)
     {
         const double maxLong = 9.2233720368547747E18;
-        var delta = (Environment.TickCount64 - fromTick) * pace;
+        var delta = (_time.GetMilliseconds() - fromTick) * pace;
         var capped = Math.Min(delta, ceiling);
         return capped >= maxLong ? long.MaxValue - 1 : (long)Math.Round(capped);
     }
@@ -169,7 +175,7 @@ internal sealed class GuildPlayback
                 && _lastPauseRequestSequence > _lastResumeRequestSequence;
 
             if (!pauseHoldsOverStart)
-                _lastPauseEventTick = Environment.TickCount64;
+                _lastPauseEventTick = _time.GetMilliseconds();
         }
 
         if (!pauseHoldsOverStart)
@@ -191,7 +197,7 @@ internal sealed class GuildPlayback
             )
             {
                 _positionMilliseconds = 0;
-                _positionTick = Environment.TickCount64;
+                _positionTick = _time.GetMilliseconds();
             }
 
             _endedSinceAnchor = false;
@@ -248,7 +254,7 @@ internal sealed class GuildPlayback
             var ended = eventArgs.Track ?? (admitted ? previous : null);
             if (ended is not null)
             {
-                _lastTrackEndTick = Environment.TickCount64;
+                _lastTrackEndTick = _time.GetMilliseconds();
                 _lastEndedTrack = ended;
             }
 
@@ -290,7 +296,7 @@ internal sealed class GuildPlayback
         {
             if (_connection.CurrentTrack is null)
                 return;
-            _lastSoughtTick = Environment.TickCount64;
+            _lastSoughtTick = _time.GetMilliseconds();
             Anchor(
                 eventArgs.PositionMilliseconds is >= 0 and <= TrackInfo.MaxTimeSpanMilliseconds
                     ? eventArgs.PositionMilliseconds
@@ -304,13 +310,13 @@ internal sealed class GuildPlayback
     {
         lock (_positionLock)
         {
-            _lastPauseEventTick = Environment.TickCount64;
+            _lastPauseEventTick = _time.GetMilliseconds();
             _connection.IsPaused = eventArgs.IsPaused;
             if (eventArgs.IsPaused)
                 FreezePosition();
             else
             {
-                _positionTick = Environment.TickCount64;
+                _positionTick = _time.GetMilliseconds();
                 _positionAdvancing =
                     (_connection.State?.Connected ?? true)
                     && _connection.CurrentTrack is { Info.IsStream: false };
@@ -321,7 +327,7 @@ internal sealed class GuildPlayback
     internal void OnVolumeChanged(VolumeChangedEventArgs eventArgs)
     {
         lock (_positionLock)
-            _lastVolumeEventTick = Environment.TickCount64;
+            _lastVolumeEventTick = _time.GetMilliseconds();
 
         _connection.Volume = eventArgs.Volume;
     }
@@ -381,7 +387,7 @@ internal sealed class GuildPlayback
             return;
 
         _positionMilliseconds = ProjectedPosition(oldTimescale);
-        _positionTick = Environment.TickCount64;
+        _positionTick = _time.GetMilliseconds();
     }
 
     private void FreezePosition()
@@ -392,7 +398,7 @@ internal sealed class GuildPlayback
                 return;
 
             _positionMilliseconds = ProjectedPosition(_connection.Filters.Applied.Timescale);
-            _positionTick = Environment.TickCount64;
+            _positionTick = _time.GetMilliseconds();
             _positionAdvancing = false;
         }
     }

@@ -52,6 +52,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         _options = options ?? new NodeOptions();
         ResetSessionSettings();
         ArgumentException.ThrowIfNullOrWhiteSpace(_options.Name);
+        ArgumentNullException.ThrowIfNull(_options.TimeProvider, nameof(NodeOptions.TimeProvider));
 
         if (_options.ReconnectDelay <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(
@@ -98,7 +99,10 @@ public sealed class Node : IAsyncDisposable, IDisposable
             dispatcher,
             cancellationToken => EnsureServerInfoAsync(cancellationToken, forceProbe: true)
         );
-        _voiceHandshake = new VoiceHandshakeCoordinator(_options.VoiceHandshakeTimeout);
+        _voiceHandshake = new VoiceHandshakeCoordinator(
+            _options.VoiceHandshakeTimeout,
+            _options.TimeProvider
+        );
         _queries = new NodeQueries(this);
         _serverInfo = new NodeServerInfo(this);
         _connector = new NodeConnector(this);
@@ -170,6 +174,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     internal NodeOptions Options => _options;
 
+    internal TimeProvider Time => _options.TimeProvider;
+
     /// <summary>The node session id of the current connection, null before the node first became ready.</summary>
     /// <remarks>
     /// Kept across disconnects so a resuming connection can replay it. Not a Discord voice session id.
@@ -214,11 +220,11 @@ public sealed class Node : IAsyncDisposable, IDisposable
         {
             var failedAt = Volatile.Read(ref _restFailedAt);
             return failedAt >= 0
-                && Environment.TickCount64 - failedAt < RestFailureMemoryMilliseconds;
+                && Time.GetMilliseconds() - failedAt < RestFailureMemoryMilliseconds;
         }
     }
 
-    internal void NoteRestFailure() => Volatile.Write(ref _restFailedAt, Environment.TickCount64);
+    internal void NoteRestFailure() => Volatile.Write(ref _restFailedAt, Time.GetMilliseconds());
 
     internal void NoteRestSuccess() => Volatile.Write(ref _restFailedAt, -1);
 

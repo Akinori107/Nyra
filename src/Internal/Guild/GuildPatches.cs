@@ -98,7 +98,7 @@ internal sealed class GuildPatches
         CancellationToken cancellationToken
     )
     {
-        var requestTick = Environment.TickCount64;
+        var requestTick = _node.Time.GetMilliseconds();
         var player = await SendAsync(
                 ct => _node.Rest.Players.UpdateAsync(GuildId, payload, ct),
                 cancellationToken

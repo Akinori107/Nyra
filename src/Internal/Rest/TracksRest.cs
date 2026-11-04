@@ -150,8 +150,11 @@ internal sealed class TracksRest
 
         using var request = _rest.CreateRequest(HttpMethod.Get, path, "application/octet-stream");
 
-        using var headerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        headerCts.CancelAfter(TimeSpan.FromSeconds(60));
+        using var headerCts = new TimeoutLink(
+            _rest.Node.Time,
+            TimeSpan.FromSeconds(60),
+            cancellationToken
+        );
         HttpResponseMessage response;
         try
         {

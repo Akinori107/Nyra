@@ -73,7 +73,7 @@ public sealed class GuildConnection
         _sponsorBlock = new GuildSponsorBlock(this);
         _mix = new GuildMix(this);
         _effects = new GuildEffects(this);
-        _playback = new GuildPlayback(this);
+        _playback = new GuildPlayback(this, node.Time);
         _voiceForward = new GuildVoiceForwarder(this);
         _patches = new GuildPatches(this);
         _teardown = new GuildTeardown(this);
@@ -155,6 +155,8 @@ public sealed class GuildConnection
 
     /// <summary>The node this connection plays through.</summary>
     public Node Node => _node;
+
+    internal TimeProvider Time => _node.Time;
 
     /// <summary>The audio filters of the connection.</summary>
     public GuildFilters Filters => _filters;
@@ -526,7 +528,7 @@ public sealed class GuildConnection
                 Volume,
                 _filters.Applied,
                 IsPaused,
-                Environment.TickCount64
+                _node.Time.GetMilliseconds()
             ),
             null
         );
@@ -586,7 +588,7 @@ public sealed class GuildConnection
 
     private bool IsRescueExpired(RestoreSnapshot snapshot) =>
         _node.Options.RescueTimeout != Timeout.InfiniteTimeSpan
-        && Environment.TickCount64 - snapshot.CapturedTick
+        && _node.Time.GetMilliseconds() - snapshot.CapturedTick
             > _node.Options.RescueTimeout.TotalMilliseconds;
 
     private async Task<bool> ResendPlaybackAsync(RestoreSnapshot snapshot)
@@ -648,7 +650,7 @@ public sealed class GuildConnection
         else if (volume is null && filters is null)
             return;
 
-        var requestTick = Environment.TickCount64;
+        var requestTick = _node.Time.GetMilliseconds();
 
         using var timeout = new CancellationTokenSource(GuildVoiceForwarder.VoiceSendDeadline);
         var player = await _patches
@@ -731,7 +733,10 @@ public sealed class GuildConnection
         Dispatch(WebSocketClosed, eventArgs);
 
         if (!_node.IsNodeLink)
-            _ = DisconnectAfterVoiceClosedWithGraceAsync(eventArgs.Code, Environment.TickCount64);
+            _ = DisconnectAfterVoiceClosedWithGraceAsync(
+                eventArgs.Code,
+                _node.Time.GetMilliseconds()
+            );
     }
 
     internal Lock PlaybackPositionLock => _playback.PositionLock;
@@ -743,7 +748,8 @@ public sealed class GuildConnection
     {
         var transientClose = closeCode is 4009 or 4015 or 4022;
 
-        await Task.Delay(VoiceCloseGracePeriod, CancellationToken.None).ConfigureAwait(false);
+        await Task.Delay(VoiceCloseGracePeriod, _node.Time, CancellationToken.None)
+            .ConfigureAwait(false);
 
         if (_tearingDown)
             return;
@@ -753,7 +759,7 @@ public sealed class GuildConnection
             !_voiceForward.HasPending
             && (
                 transientClose
-                    ? Environment.TickCount64 - lastForwardTick
+                    ? _node.Time.GetMilliseconds() - lastForwardTick
                         < VoiceCloseGracePeriod.TotalMilliseconds
                             + ForwardActivityWindow.TotalMilliseconds
                     : lastForwardTick >= closeTick
@@ -769,11 +775,11 @@ public sealed class GuildConnection
             if (
                 closeCode is not 4014
                 && _node.Client is { } bridge
-                && Environment.TickCount64 - Volatile.Read(ref _voiceRescueTick)
+                && _node.Time.GetMilliseconds() - Volatile.Read(ref _voiceRescueTick)
                     > VoiceRescueInterval.TotalMilliseconds
             )
             {
-                Volatile.Write(ref _voiceRescueTick, Environment.TickCount64);
+                Volatile.Write(ref _voiceRescueTick, _node.Time.GetMilliseconds());
                 var baseline = _voiceForward.LastForwardTick;
 
                 await SendRescueJoinAsync(bridge, leaveFirst: false).ConfigureAwait(false);
@@ -795,7 +801,7 @@ public sealed class GuildConnection
 
     private async Task<bool> RescueSettledAsync(TimeSpan window, long baseline)
     {
-        await Task.Delay(window, CancellationToken.None).ConfigureAwait(false);
+        await Task.Delay(window, _node.Time, CancellationToken.None).ConfigureAwait(false);
         return _tearingDown || _voiceForward.LastForwardTick > baseline;
     }
 

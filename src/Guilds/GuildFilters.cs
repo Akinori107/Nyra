@@ -532,7 +532,7 @@ public sealed class GuildFilters
 
     internal async Task ResendPendingFiltersAsync()
     {
-        if (Environment.TickCount64 < Volatile.Read(ref _resendNotBefore.Value))
+        if (_node.Time.GetMilliseconds() < Volatile.Read(ref _resendNotBefore.Value))
             return;
 
         await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -546,10 +546,11 @@ public sealed class GuildFilters
             )
                 return;
 
-            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(
+            using var attemptCts = new TimeoutLink(
+                _node.Time,
+                ResendDeadline,
                 _filterSendCts.Token
             );
-            attemptCts.CancelAfter(ResendDeadline);
             if (
                 await PatchAndLandAsync(desired, countDivergence: true, attemptCts.Token)
                     .ConfigureAwait(false)
@@ -565,7 +566,7 @@ public sealed class GuildFilters
         {
             Volatile.Write(
                 ref _resendNotBefore.Value,
-                Environment.TickCount64 + (long)retryAfter.TotalMilliseconds
+                _node.Time.GetMilliseconds() + (long)retryAfter.TotalMilliseconds
             );
             _node.HandleError(
                 new InvalidOperationException(

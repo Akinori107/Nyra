@@ -88,4 +88,11 @@ public sealed record NodeOptions
     /// </para>
     /// </remarks>
     public TimeSpan ReadyTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// The clock the node and its connections read for elapsed time, timeouts and delays, the system clock by
+    /// default.
+    /// </summary>
+    /// <remarks>Pass a fake one in tests to move time without waiting for it.</remarks>
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 }
