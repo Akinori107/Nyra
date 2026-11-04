@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Nyra.Entities;
 
-[assembly: NotInParallel]
 [assembly: Timeout(300_000)]
 
 namespace Nyra.Tests;
