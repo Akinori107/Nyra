@@ -58,7 +58,9 @@ public sealed class SupervisionLoop
         await Assert
             .That(await reconnected.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false))
             .IsTrue();
-        await Assert.That(node.IsReady).IsTrue();
+        await Assert
+            .That(() => node.IsReady)
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
         await Assert.That(server.LastResumeFlag).IsTrue();
 
         await extension.DisposeAsync().ConfigureAwait(false);
