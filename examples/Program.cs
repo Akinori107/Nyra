@@ -39,7 +39,7 @@ Console.CancelKeyPress += (_, eventArgs) =>
 
 using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
 var logger = loggerFactory.CreateLogger("Nyra.Examples");
-Queue.Logger = logger;
+MusicCommands.Logger = logger;
 
 using var client = new DiscordSocketClient(
     new DiscordSocketConfig
