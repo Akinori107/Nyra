@@ -180,9 +180,7 @@ public sealed class EntityAndExceptionSurface
             NyraJson.OptionsFor(true)
         );
         await Assert
-            .That(
-                errorFallback is LoadResult.LoadFailed fallback && fallback.Error.Message == "nope"
-            )
+            .That(errorFallback is LoadFailed fallback && fallback.Error.Message == "nope")
             .IsTrue();
         Throws<JsonException>(() =>
             JsonSerializer.Deserialize<LoadResult>(
@@ -194,9 +192,7 @@ public sealed class EntityAndExceptionSurface
             """{"loadType":"error","data":{"message":"lava"}}""",
             NyraJson.OptionsFor(false)
         );
-        await Assert
-            .That(errorLava is LoadResult.LoadFailed lava && lava.Error.Message == "lava")
-            .IsTrue();
+        await Assert.That(errorLava is LoadFailed lava && lava.Error.Message == "lava").IsTrue();
 
         const string trackJson =
             """{"encoded":"QXRsZWFzdA==","info":{"identifier":"ph8qt3dhvwo","author":"SoAD - Topic","title":"ATWA","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
@@ -215,7 +211,7 @@ public sealed class EntityAndExceptionSurface
             """{"loadType":"error","data":{"message":"x","severity":"fault","cause":"y","exception":{"message":"boom","severity":"fault","cause":"upstream"}}}"""
         );
         await Assert
-            .That(errorLoad is LoadResult.LoadFailed { LoadType: var lt } && lt == LoadType.Error)
+            .That(errorLoad is LoadFailed { LoadType: var lt } && lt == LoadType.Error)
             .IsTrue();
 
         Throws<JsonException>(() =>

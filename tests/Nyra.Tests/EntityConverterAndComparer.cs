@@ -183,10 +183,8 @@ public sealed class EntityConverterAndComparer
         var groupB = Parse<Group>("""{"id":"1","name":"g"}""");
         await Assert.That(groupA?.GetHashCode()).IsEqualTo(groupB?.GetHashCode());
 
-        var noMatches = new LoadResult.NoMatches();
-        var failed = new LoadResult.LoadFailed(
-            Parse<ErrorInfo>("""{"message":"m"}""") ?? new ErrorInfo()
-        );
+        var noMatches = new NoMatches();
+        var failed = new LoadFailed(Parse<ErrorInfo>("""{"message":"m"}""") ?? new ErrorInfo());
         await Assert.That(noMatches.GetHashCode()).IsEqualTo((noMatches with { }).GetHashCode());
         await Assert.That(failed.GetHashCode()).IsEqualTo((failed with { }).GetHashCode());
 

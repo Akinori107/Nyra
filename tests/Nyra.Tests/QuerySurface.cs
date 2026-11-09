@@ -134,7 +134,7 @@ public sealed class QuerySurface
                 .ConfigureAwait(false);
             await Assert
                 .That(
-                    urlResult is LoadResult.TrackLoaded { Track.StartPosition: { } start }
+                    urlResult is TrackLoaded { Track.StartPosition: { } start }
                         && start == TimeSpan.FromSeconds(15)
                 )
                 .IsTrue();
@@ -154,7 +154,7 @@ public sealed class QuerySurface
                 var bareLoaded = await bareStack
                     .Node.LoadTracksAsync("atwa", SearchType.Spotify)
                     .ConfigureAwait(false);
-                await Assert.That(bareLoaded is LoadResult.TrackLoaded).IsTrue();
+                await Assert.That(bareLoaded is TrackLoaded).IsTrue();
 
                 var lavaServer = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
                 var lavaStack = await StartAsync(lavaServer).ConfigureAwait(false);
@@ -434,14 +434,12 @@ public sealed class QuerySurface
             var marked = await node.LoadTracksAsync("\u200bytsearch:atwa\u200b")
                 .ConfigureAwait(false);
             var markedCall = server.RestCalls.Last(c => c.Path == "/v4/loadtracks");
-            await Assert.That(marked is LoadResult.TrackLoaded).IsTrue();
+            await Assert.That(marked is TrackLoaded).IsTrue();
             await Assert.That(markedCall.Query?.Contains("ytsearch")).IsTrue();
             await Assert.That(markedCall.Query).DoesNotContain("%E2%80%8B");
 
             var plain = await node.LoadTracksAsync("plain query").ConfigureAwait(false);
-            await Assert
-                .That(plain is LoadResult.TrackLoaded { Track.StartPosition: null })
-                .IsTrue();
+            await Assert.That(plain is TrackLoaded { Track.StartPosition: null }).IsTrue();
 
             server.On(
                 "GET",
@@ -455,7 +453,7 @@ public sealed class QuerySurface
                 .ConfigureAwait(false);
             await Assert
                 .That(
-                    search is LoadResult.SearchLoaded { } loaded
+                    search is SearchLoaded { } loaded
                         && loaded.Tracks.All(t => t.StartPosition == TimeSpan.FromSeconds(90))
                 )
                 .IsTrue();
@@ -472,7 +470,7 @@ public sealed class QuerySurface
                 .ConfigureAwait(false);
             await Assert
                 .That(
-                    playlist is LoadResult.PlaylistLoaded { } mix
+                    playlist is PlaylistLoaded { } mix
                         && mix.Tracks[0].StartPosition is null
                         && mix.Tracks[1].StartPosition == TimeSpan.FromSeconds(60)
                 )
@@ -490,7 +488,7 @@ public sealed class QuerySurface
                 .ConfigureAwait(false);
             await Assert
                 .That(
-                    orphan is LoadResult.PlaylistLoaded { } orphaned
+                    orphan is PlaylistLoaded { } orphaned
                         && orphaned.Tracks.All(t => t.StartPosition is null)
                 )
                 .IsTrue();

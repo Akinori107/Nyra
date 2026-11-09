@@ -53,7 +53,7 @@ await nyra.ConnectAllNodesAsync();
 var node = nyra.GetNode()!;
 var connection = await node.ConnectAsync(guildId, voiceChannelId);
 
-if (await node.LoadTracksAsync("never gonna give you up") is LoadResult.SearchLoaded { Tracks: [var track, ..] })
+if (await node.LoadTracksAsync("never gonna give you up") is SearchLoaded { Tracks: [var track, ..] })
     await connection.PlayAsync(track);
 ```
 

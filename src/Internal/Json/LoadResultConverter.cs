@@ -70,7 +70,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 var track =
                     NyraJson.Deserialize<Track>(ref data, options)
                     ?? throw new JsonException("Track load result 'data' member is null.");
-                return new LoadResult.TrackLoaded(track);
+                return new TrackLoaded(track);
             }
 
             case TypePlaylist:
@@ -94,11 +94,11 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                         throw new JsonException(
                             "The search load result contained a null track element."
                         );
-                return new LoadResult.SearchLoaded(tracks);
+                return new SearchLoaded(tracks);
             }
 
             case TypeEmpty:
-                return new LoadResult.NoMatches();
+                return new NoMatches();
 
             case TypeError:
             {
@@ -109,7 +109,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 if (error.TokenType != JsonTokenType.StartObject)
                     throw new JsonException("Error load result is missing its exception.");
 
-                return new LoadResult.LoadFailed(
+                return new LoadFailed(
                     NyraJson.Deserialize<ErrorInfo>(ref error, options)
                         ?? throw new JsonException("Error load result exception is null.")
                 );
@@ -118,7 +118,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
             default:
             {
                 var reported = unknownLoadType ?? (hasLoadType ? "not a string" : "missing");
-                return new LoadResult.LoadFailed(
+                return new LoadFailed(
                     new ErrorInfo
                     {
                         Message = $"The server reported an unknown load type '{reported}'.",
@@ -164,7 +164,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
         return 0;
     }
 
-    private static LoadResult.PlaylistLoaded ReadPlaylist(
+    private static PlaylistLoaded ReadPlaylist(
         ref Utf8JsonReader data,
         JsonSerializerOptions options
     )
@@ -224,7 +224,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 data.Skip();
         }
 
-        return new LoadResult.PlaylistLoaded(
+        return new PlaylistLoaded(
             new PlaylistInfo { Name = name, SelectedTrack = selectedTrack },
             tracks ?? [],
             pluginInfo

@@ -213,13 +213,13 @@ public sealed class EntityEqualityAndJson
             """{"loadType":"track","data":{"encoded":"AAA","info":{}},"whatever":123}""",
             nodeLink
         );
-        await Assert.That(load is LoadResult.TrackLoaded).IsTrue();
+        await Assert.That(load is TrackLoaded).IsTrue();
 
         var playlist = JsonSerializer.Deserialize<LoadResult>(
             """{"loadType":"playlist","data":{"info":{"name":"x","selectedTrack":-1},"tracks":[],"pluginInfo":5}}""",
             nodeLink
         );
-        var plugin = playlist as LoadResult.PlaylistLoaded;
+        var plugin = playlist as PlaylistLoaded;
         await Assert.That(plugin?.PluginInfo).IsNull();
     }
 

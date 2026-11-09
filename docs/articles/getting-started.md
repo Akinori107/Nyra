@@ -55,9 +55,9 @@ var result = await node.LoadTracksAsync("never gonna give you up");
 
 var track = result switch
 {
-    LoadResult.TrackLoaded loaded => loaded.Track,
-    LoadResult.SearchLoaded { Tracks: [var first, ..] } => first,
-    LoadResult.PlaylistLoaded { Tracks: [var first, ..] } => first,
+    TrackLoaded loaded => loaded.Track,
+    SearchLoaded { Tracks: [var first, ..] } => first,
+    PlaylistLoaded { Tracks: [var first, ..] } => first,
     _ => null,
 };
 
@@ -65,7 +65,7 @@ if (track is not null)
     await connection.PlayAsync(track);
 ```
 
-`LoadResult.LoadFailed` means the server failed, and `Error.Message` says why.
+`LoadFailed` means the server failed, and `Error.Message` says why.
 
 Later, in another command, `nyra.GetConnection(guildId)` gives the connection back. With several servers, `GetNode()` gives the one with the fewest playing players, a node whose recent REST requests failed ranks after the others.
 

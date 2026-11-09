@@ -71,7 +71,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
 
         var result = await connection.Node.LoadTracksAsync(query, searchType).ConfigureAwait(false);
 
-        if (result is LoadResult.LoadFailed { Error.Message: { } failure })
+        if (result is LoadFailed { Error.Message: { } failure })
         {
             await FailDeferredAsync($"Couldn't load that track: {failure}").ConfigureAwait(false);
             return;
@@ -84,7 +84,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
             return;
         }
 
-        var summary = result is LoadResult.PlaylistLoaded { PlaylistInfo: var info }
+        var summary = result is PlaylistLoaded { PlaylistInfo: var info }
             ? $"Added {tracks.Count} tracks from {info.Name} to the queue."
             : $"Added {tracks[0].Info.Title} to the queue.";
         await EnqueueAsync(connection, tracks, summary).ConfigureAwait(false);
@@ -113,7 +113,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
             return;
 
         var result = await connection.Node.LoadTracksAsync(name, searchType).ConfigureAwait(false);
-        if (result is not LoadResult.SearchLoaded { Tracks: { Count: > 0 } found })
+        if (result is not SearchLoaded { Tracks: { Count: > 0 } found })
         {
             await FailDeferredAsync($"No results found for {name}.").ConfigureAwait(false);
             return;
@@ -706,9 +706,9 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
     private static IReadOnlyList<Track> TracksToQueue(LoadResult result) =>
         result switch
         {
-            LoadResult.TrackLoaded loaded => [loaded.Track],
-            LoadResult.SearchLoaded { Tracks: [var first, ..] } => [first],
-            LoadResult.PlaylistLoaded playlist => playlist.Tracks,
+            TrackLoaded loaded => [loaded.Track],
+            SearchLoaded { Tracks: [var first, ..] } => [first],
+            PlaylistLoaded playlist => playlist.Tracks,
             _ => [],
         };
 
@@ -1025,7 +1025,7 @@ internal sealed class TrackHandler : AutocompleteHandler
                 node is null
                 || await node.LoadTracksAsync(typed, searchType ?? SearchType.Auto)
                     .ConfigureAwait(false)
-                    is not LoadResult.SearchLoaded { Tracks: var tracks }
+                    is not SearchLoaded { Tracks: var tracks }
             )
                 return AutocompletionResult.FromSuccess([]);
 

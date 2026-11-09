@@ -511,17 +511,15 @@ public sealed class Entity
         var trackLoad = ParseLava<LoadResult>(
             $$$$"""{"loadType":"track","data":{{{{trackJson}}}}}"""
         );
-        await Assert
-            .That(trackLoad is LoadResult.TrackLoaded { Track.Encoded: "QXRsZWFzdA==" })
-            .IsTrue();
+        await Assert.That(trackLoad is TrackLoaded { Track.Encoded: "QXRsZWFzdA==" }).IsTrue();
 
         var episode = Parse<LoadResult>($$$$"""{"loadType":"episode","data":{{{{trackJson}}}}}""");
-        await Assert.That(episode is LoadResult.TrackLoaded).IsTrue();
+        await Assert.That(episode is TrackLoaded).IsTrue();
 
         var search = ParseLava<LoadResult>(
             $$$$"""{"loadType":"search","data":[{{{{trackJson}}}},{{{{trackJson}}}}]}"""
         );
-        await Assert.That(search is LoadResult.SearchLoaded { Tracks.Count: 2 }).IsTrue();
+        await Assert.That(search is SearchLoaded { Tracks.Count: 2 }).IsTrue();
 
         var playlist = ParseLava<LoadResult>(
             $$$$"""{"loadType":"playlist","data":{"info":{"name":"SOAD radio","selectedTrack":1},"tracks":[{{{{trackJson}}}}],"pluginInfo":{"a":1}}}"""
@@ -529,7 +527,7 @@ public sealed class Entity
         await Assert
             .That(
                 playlist
-                    is LoadResult.PlaylistLoaded
+                    is PlaylistLoaded
                     {
                         PlaylistInfo: { Name: "SOAD radio", SelectedTrack: 1 },
                         Tracks.Count: 1,
@@ -551,11 +549,11 @@ public sealed class Entity
             var like = Parse<LoadResult>(
                 $$$$"""{"loadType":"{{{{kind}}}}","data":{"info":{"name":"n"},"tracks":[{{{{trackJson}}}}]}}"""
             );
-            await Assert.That(like is LoadResult.PlaylistLoaded { Tracks.Count: 1 }).IsTrue();
+            await Assert.That(like is PlaylistLoaded { Tracks.Count: 1 }).IsTrue();
         }
 
         var noMatches = ParseLava<LoadResult>("""{"loadType":"empty"}""");
-        await Assert.That(noMatches is LoadResult.NoMatches).IsTrue();
+        await Assert.That(noMatches is NoMatches).IsTrue();
 
         var lavaError = ParseLava<LoadResult>(
             """{"loadType":"error","data":{"message":"nope","severity":"fault","cause":"upstream","causeStackTrace":"at Lava"}}"""
@@ -563,7 +561,7 @@ public sealed class Entity
         await Assert
             .That(
                 lavaError
-                    is LoadResult.LoadFailed
+                    is LoadFailed
                     {
                         Error:
                         { Message: "nope", Severity: ErrorSeverity.Fault, Cause: "upstream" },
@@ -572,7 +570,7 @@ public sealed class Entity
             .IsTrue();
         await Assert
             .That(
-                lavaError is LoadResult.LoadFailed { Error: { } lavaErr }
+                lavaError is LoadFailed { Error: { } lavaErr }
                     && lavaErr.ToString() == "[Fault] nope"
             )
             .IsTrue();
@@ -580,15 +578,13 @@ public sealed class Entity
         var nodeLinkError = Parse<LoadResult>(
             """{"loadType":"error","exception":{"message":"provider down"}}"""
         );
-        await Assert
-            .That(nodeLinkError is LoadResult.LoadFailed { Error.Message: "provider down" })
-            .IsTrue();
+        await Assert.That(nodeLinkError is LoadFailed { Error.Message: "provider down" }).IsTrue();
 
         var unknown = Parse<LoadResult>("""{"loadType":"holo","data":{}}""");
         await Assert
             .That(
                 unknown
-                    is LoadResult.LoadFailed
+                    is LoadFailed
                     {
                         Error.Message: "The server reported an unknown load type 'holo'.",
                     }
@@ -599,7 +595,7 @@ public sealed class Entity
         await Assert
             .That(
                 notString
-                    is LoadResult.LoadFailed
+                    is LoadFailed
                     {
                         Error.Message: "The server reported an unknown load type 'not a string'.",
                     }
@@ -610,7 +606,7 @@ public sealed class Entity
         await Assert
             .That(
                 missing
-                    is LoadResult.LoadFailed
+                    is LoadFailed
                     {
                         Error.Message: "The server reported an unknown load type 'missing'.",
                     }
@@ -649,12 +645,9 @@ public sealed class Entity
             $$$$"""{"loadType":"playlist","data":{"info":{"name":"n"},"tracks":null}}"""
         );
         await Assert
-            .That(
-                missingTracks
-                    is LoadResult.PlaylistLoaded { Tracks.Count: 0, PlaylistInfo.Name: "n" }
-            )
+            .That(missingTracks is PlaylistLoaded { Tracks.Count: 0, PlaylistInfo.Name: "n" })
             .IsTrue();
-        await Assert.That(nullTracks is LoadResult.PlaylistLoaded { Tracks.Count: 0 }).IsTrue();
+        await Assert.That(nullTracks is PlaylistLoaded { Tracks.Count: 0 }).IsTrue();
     }
 
     [Test]

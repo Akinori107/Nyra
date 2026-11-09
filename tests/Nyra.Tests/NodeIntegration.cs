@@ -107,9 +107,7 @@ public sealed class NodeIntegration
                 _ => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
             );
             var loaded = await node.LoadTracksAsync("ytsearch:atwa").ConfigureAwait(false);
-            await Assert
-                .That(loaded is LoadResult.TrackLoaded { Track.Encoded: "QXRsZWFzdA==" })
-                .IsTrue();
+            await Assert.That(loaded is TrackLoaded { Track.Encoded: "QXRsZWFzdA==" }).IsTrue();
             var loadCall = server.RestCalls.FirstOrDefault(c => c.Path == "/v4/loadtracks");
             await Assert
                 .That(
