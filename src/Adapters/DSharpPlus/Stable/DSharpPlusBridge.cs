@@ -178,7 +178,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
         if (_client is DiscordClient client)
         {
             if (
-                _shardCount is int total
+                _shardCount is { } total
                 && total > 1
                 && GuildShard.IdFor(guildId, total) != client.ShardId
             )

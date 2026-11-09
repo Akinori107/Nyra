@@ -34,7 +34,7 @@ public static class DiscordClientExtensions
             if (Extensions.TryGetValue(client, out var existing) && !existing.IsDisposed)
             {
                 if (
-                    shardCount is int total
+                    shardCount is { } total
                     && total > 1
                     && existing.Client is DSharpPlusBridge bridge
                     && bridge.ShardCountHint != total

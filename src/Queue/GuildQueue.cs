@@ -402,7 +402,7 @@ public sealed class GuildQueue
     )
     {
         var notes = new QueueNotes();
-        Track? started = null;
+        Track? started;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

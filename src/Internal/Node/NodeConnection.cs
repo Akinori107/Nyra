@@ -341,7 +341,6 @@ internal sealed class NodeConnection : IDisposable
 
         var poisonedTail = false;
         lock (_lock)
-        {
             if (_stopped || _generation != generation)
             {
                 wired.Detach();
@@ -349,7 +348,6 @@ internal sealed class NodeConnection : IDisposable
             }
             else
                 _publishedConnectionEpoch = connectionEpoch;
-        }
 
         if (poisonedTail)
         {

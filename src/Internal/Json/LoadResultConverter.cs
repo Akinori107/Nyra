@@ -29,7 +29,6 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
         var hasData = false;
 
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-        {
             if (reader.ValueTextEquals("loadType"u8))
             {
                 hasLoadType = true;
@@ -58,7 +57,6 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
             }
             else
                 reader.Skip();
-        }
 
         switch (loadType)
         {

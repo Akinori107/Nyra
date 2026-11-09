@@ -375,7 +375,6 @@ internal sealed class FiltersConverter(
             if (name.ValueTextEquals("volume"u8))
                 if (reader.TokenType == JsonTokenType.StartObject)
                     while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-                    {
                         if (reader.ValueTextEquals("value"u8))
                         {
                             reader.Read();
@@ -383,7 +382,6 @@ internal sealed class FiltersConverter(
                         }
                         else
                             reader.Skip();
-                    }
                 else
                     ReadVolumeScalar(ref reader, ref volume);
             else if (name.ValueTextEquals("equalizer"u8))
@@ -544,7 +542,6 @@ internal sealed class FiltersConverter(
         IReadOnlyList<EqualizerBand>? bands = null;
         FilterTransition? transition = null;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-        {
             if (reader.ValueTextEquals("bands"u8))
             {
                 reader.Read();
@@ -563,7 +560,6 @@ internal sealed class FiltersConverter(
             }
             else
                 reader.Skip();
-        }
 
         return (bands, bands is null ? null : transition);
     }
@@ -582,7 +578,6 @@ internal sealed class FiltersConverter(
 
         var peek = reader;
         while (peek.Read() && peek.TokenType != JsonTokenType.EndObject)
-        {
             if (peek.ValueTextEquals("_disabled"u8))
             {
                 peek.Read();
@@ -596,7 +591,6 @@ internal sealed class FiltersConverter(
             }
             else
                 peek.Skip();
-        }
 
         return ReadFiniteFilter<TFilter>(ref reader, options);
     }

@@ -55,7 +55,6 @@ internal sealed class NodeEventDispatcher
         var op = 0;
         var type = 0;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-        {
             if (reader.ValueTextEquals("op"u8))
             {
                 reader.Read();
@@ -78,7 +77,6 @@ internal sealed class NodeEventDispatcher
             }
             else
                 reader.Skip();
-        }
 
         switch (op)
         {
