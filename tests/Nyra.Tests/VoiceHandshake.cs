@@ -24,7 +24,7 @@ public sealed class VoiceHandshake
             remove { }
         }
 
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public Microsoft.Extensions.Logging.ILogger? Logger => null;
 
         public Task SendVoiceUpdateAsync(
             ulong guildId,
@@ -313,7 +313,7 @@ public sealed class VoiceHandshake
 
         public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
 
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public Microsoft.Extensions.Logging.ILogger? Logger => null;
 
         public RecordingList<(ulong GuildId, ulong? ChannelId)> VoiceSends { get; } = new();
 

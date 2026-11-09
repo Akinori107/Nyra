@@ -288,7 +288,8 @@ public sealed class VoiceHandshakeEdge
         var stack = await StartAsync(TimeSpan.FromSeconds(8)).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
+            var node = stack.Node;
+            var server = stack.Server;
             AcceptPlayerPatch(server);
 
             using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));

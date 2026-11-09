@@ -241,10 +241,6 @@ internal sealed class FakeNodeServer : IDisposable
 
     public bool GhostProbes { get; set; }
 
-    public bool FailWebsocketHandshakes { get; set; }
-
-    public bool CloseAfterHandshake { get; set; }
-
     public string? InfoBody { get; set; }
 
     public int InfoStatus { get; set; } = 200;
@@ -252,8 +248,6 @@ internal sealed class FakeNodeServer : IDisposable
     public bool RejectWrongPassword { get; init; } = true;
 
     public ConcurrentQueue<FakeRestCall> RestCalls { get; } = [];
-
-    public ConcurrentQueue<string> WebsocketIns { get; } = [];
 
     public ConcurrentQueue<Dictionary<string, string>> WebsocketHeaders { get; } = [];
 
@@ -440,8 +434,7 @@ internal sealed class FakeNodeServer : IDisposable
                 {
                     WebsocketHeaders.Enqueue(headers);
                     Interlocked.Increment(ref WebsocketConnections);
-                    await HandleWebsocketAsync(stream, headers, buffer, total, carried)
-                        .ConfigureAwait(false);
+                    await HandleWebsocketAsync(stream, headers).ConfigureAwait(false);
                     return;
                 }
 
@@ -573,10 +566,7 @@ internal sealed class FakeNodeServer : IDisposable
 
     private async Task HandleWebsocketAsync(
         NetworkStream stream,
-        Dictionary<string, string> headers,
-        byte[] buffer,
-        int consumed,
-        int carried
+        Dictionary<string, string> headers
     )
     {
         _stream = stream;
@@ -584,18 +574,6 @@ internal sealed class FakeNodeServer : IDisposable
         if (GhostHandshakes)
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, _cts.Token).ConfigureAwait(false);
-            return;
-        }
-        if (FailWebsocketHandshakes)
-        {
-            await stream
-                .WriteAsync(
-                    Encoding.UTF8.GetBytes(
-                        "HTTP/1.1 500 Server Refuses\r\nConnection: close\r\n\r\n"
-                    ),
-                    _cts.Token
-                )
-                .ConfigureAwait(false);
             return;
         }
         if (RejectWrongPassword && RejectedUpgrade(headers) is { } rejection)
@@ -611,25 +589,6 @@ internal sealed class FakeNodeServer : IDisposable
             return;
         }
         var key = headers["Sec-WebSocket-Key"];
-        if (CloseAfterHandshake)
-        {
-            var acceptKey = Convert.ToBase64String(
-                SHA1.HashData(Encoding.ASCII.GetBytes(key + WsGuid))
-            );
-            await stream
-                .WriteAsync(
-                    Encoding.UTF8.GetBytes(
-                        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "
-                            + acceptKey
-                            + "\r\n\r\n"
-                    ),
-                    _cts.Token
-                )
-                .ConfigureAwait(false);
-            await Task.Delay(100, _cts.Token).ConfigureAwait(false);
-            stream.Close();
-            return;
-        }
         if (HandshakeDelay > TimeSpan.Zero)
             await Task.Delay(HandshakeDelay, _cts.Token).ConfigureAwait(false);
         var accept = Convert.ToBase64String(SHA1.HashData(Encoding.ASCII.GetBytes(key + WsGuid)));
@@ -672,9 +631,6 @@ internal sealed class FakeNodeServer : IDisposable
                 return;
             switch (frame.Opcode)
             {
-                case 0x1:
-                    WebsocketIns.Enqueue(Encoding.UTF8.GetString(frame.Payload));
-                    break;
                 case 0x8:
                     if (IgnoreWebsocketClose)
                         break;

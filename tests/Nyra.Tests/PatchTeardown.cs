@@ -268,7 +268,7 @@ public sealed class PatchTeardown
             }
         );
         var resumeCts = new CancellationTokenSource();
-        var resuming = conn.ResumeAsync(resumeCts.Token);
+        _ = conn.ResumeAsync(resumeCts.Token);
         await Task.Delay(150).ConfigureAwait(false);
         var tearingDown = conn.DisconnectAsync();
         await Task.Delay(150).ConfigureAwait(false);

@@ -12,8 +12,6 @@ public sealed class Extension
     {
         public int DisposeCount;
 
-        public bool Disposed => DisposeCount > 0;
-
         public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
             add { }
@@ -26,7 +24,7 @@ public sealed class Extension
             remove { }
         }
 
-        public ILogger? Logger { get; set; }
+        public ILogger? Logger => null;
 
         public Task SendVoiceUpdateAsync(
             ulong guildId,
@@ -96,7 +94,7 @@ public sealed class Extension
             remove { }
         }
 
-        public ILogger? Logger { get; set; }
+        public ILogger? Logger => null;
 
         public Task SendVoiceUpdateAsync(
             ulong guildId,

@@ -13,7 +13,7 @@ public sealed class PayloadDeserialization
         await LyricsPayload(options).ConfigureAwait(false);
         await GroupPayload(options).ConfigureAwait(false);
         await TrackPayload(options).ConfigureAwait(false);
-        await LoadResultPayload(options).ConfigureAwait(false);
+        await LoadResultPayload().ConfigureAwait(false);
     }
 
     private static async Task PlayerPayload(JsonSerializerOptions options)
@@ -241,7 +241,7 @@ public sealed class PayloadDeserialization
         }
     }
 
-    private static async Task LoadResultPayload(JsonSerializerOptions options)
+    private static async Task LoadResultPayload()
     {
         var lava = NyraJson.OptionsFor(false);
         var trackJson =

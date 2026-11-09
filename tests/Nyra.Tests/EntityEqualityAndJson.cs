@@ -235,6 +235,4 @@ public sealed class EntityEqualityAndJson
         await Assert.That(written).Contains("\"timestamp\":10");
         await Assert.That(written).DoesNotContain("duration");
     }
-
-    private sealed class ProbeEventArgs : System.EventArgs { }
 }

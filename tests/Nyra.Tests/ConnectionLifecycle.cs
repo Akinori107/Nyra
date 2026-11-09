@@ -233,7 +233,7 @@ public sealed class ConnectionLifecycle
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
-            var conn = await ConnectGuildAsync(bridge, node, sv).ConfigureAwait(false);
+            await ConnectGuildAsync(bridge, node, sv).ConfigureAwait(false);
             await Assert.That(node.IsNodeLink).IsFalse();
 
             await sv.PushAsync(

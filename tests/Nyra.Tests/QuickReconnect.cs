@@ -152,7 +152,7 @@ public sealed class QuickReconnect
                 bridge.FireVoiceServer(777, "tok", "127.0.0.1");
                 return await connect.ConfigureAwait(false);
             });
-            var e2 = await connectTask.ConfigureAwait(false);
+            await connectTask.ConfigureAwait(false);
             await disconnect.ConfigureAwait(false);
 
             await Assert.That(second.GetConnection(777) is { }).IsTrue();
@@ -163,10 +163,9 @@ public sealed class QuickReconnect
             var lastLeave = sends.FindLastIndex(s => s.ChannelId is null);
             await Assert.That(lastLeave).IsLessThan(lastJoin);
 
-            var lateEchoKilled = false;
             bridge.FireVoiceState(777, null, "vsess");
             await Task.Delay(200).ConfigureAwait(false);
-            lateEchoKilled = second.GetConnection(777) is null;
+            var lateEchoKilled = second.GetConnection(777) is null;
             await Assert.That(lateEchoKilled).IsTrue();
 
             var e2Final = second.GetConnection(777);

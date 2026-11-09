@@ -204,14 +204,13 @@ public sealed class GuildFeature
                 )
                 .IsTrue();
 
-            var stopped = false;
             stack.Server.On(
                 "DELETE",
                 mixPath + "/layer-1",
                 _ => new FakeRestResponse(204, string.Empty)
             );
             await conn.Mix.StopAsync("layer-1").ConfigureAwait(false);
-            stopped = stack.Server.RestCalls.Any(c =>
+            var stopped = stack.Server.RestCalls.Any(c =>
                 c is { Method: "DELETE" } && c.Path == mixPath + "/layer-1"
             );
             await Assert.That(stopped).IsTrue();

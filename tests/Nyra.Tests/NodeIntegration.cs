@@ -51,7 +51,7 @@ public sealed class NodeIntegration
         var stack = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            var (bridge, extension, node, server) = (
+            var (_, extension, node, server) = (
                 stack.Bridge,
                 stack.Extension,
                 stack.Node,
@@ -101,7 +101,7 @@ public sealed class NodeIntegration
             server.On(
                 "GET",
                 "/v4/loadtracks",
-                call => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
+                _ => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
             );
             var loaded = await node.LoadTracksAsync("ytsearch:atwa").ConfigureAwait(false);
             await Assert
@@ -852,7 +852,7 @@ public sealed class NodeIntegration
             server.On(
                 "PATCH",
                 "/v4/sessions/fake-session/players/777",
-                call =>
+                _ =>
                 {
                     return new FakeRestResponse(
                         200,
@@ -861,7 +861,7 @@ public sealed class NodeIntegration
                 }
             );
 
-            var identified = await conn.PlayIdentifierAsync("ytsearch:atwa").ConfigureAwait(false);
+            await conn.PlayIdentifierAsync("ytsearch:atwa").ConfigureAwait(false);
             await Assert
                 .That(LastPlayerBody(server)?.Contains("\"identifier\":\"ytsearch:atwa\""))
                 .IsTrue();
@@ -1694,13 +1694,6 @@ public sealed class NodeIntegration
         {
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
-
-            var unexpected = 0;
-            stack.Extension.NodeError += (_, _) =>
-            {
-                unexpected++;
-                return Task.CompletedTask;
-            };
 
             await server.PushAsync("""{"op":"brand-new"}""").ConfigureAwait(false);
             await server

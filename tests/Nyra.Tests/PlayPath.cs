@@ -141,7 +141,7 @@ public sealed class PlayPath
             stack.Server.On(
                 "PATCH",
                 PlayerPath,
-                call =>
+                _ =>
                 {
                     patches++;
                     return new FakeRestResponse(200, PlayerWithTrack);
@@ -169,8 +169,7 @@ public sealed class PlayPath
             var conn = stack.Node.GetConnection(777)!;
             stack.Server.On("PATCH", PlayerPath, 200, "@");
             stack.Server.On("GET", PlayerPath, 200, PlayerWithTrack);
-            var exception = await PlayThrowsAsync(() => conn.PlayAsync(Track()))
-                .ConfigureAwait(false);
+            await PlayThrowsAsync(() => conn.PlayAsync(Track())).ConfigureAwait(false);
             await Assert.That(conn.CurrentTrack?.Encoded).IsEqualTo("QXRsZWFzdA==");
         }
 
@@ -203,7 +202,7 @@ public sealed class PlayPath
 
             stack.Server.On("PATCH", PlayerPath, 200, "@");
             stack.Server.On("GET", PlayerPath, 200, PlayerWithOtherTrack);
-            var landed = await PlayThrowsAsync(() => conn.PlayIdentifierAsync("ytsearch:atwa"))
+            await PlayThrowsAsync(() => conn.PlayIdentifierAsync("ytsearch:atwa"))
                 .ConfigureAwait(false);
             await Assert.That(conn.CurrentTrack?.Info.Title).IsEqualTo("Other");
 

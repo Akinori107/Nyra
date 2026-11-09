@@ -18,8 +18,6 @@ public sealed class RestParsingAndTimeout
 
         public required FakeNodeServer Server { get; init; }
 
-        public required CaptureLogger Logger { get; init; }
-
         public async ValueTask DisposeAsync()
         {
             await Extension.DisposeAsync().ConfigureAwait(false);
@@ -48,15 +46,6 @@ public sealed class RestParsingAndTimeout
         {
             lock (Entries)
                 Entries.Add(new Entry(level, formatter(state, exception), exception?.Message));
-        }
-
-        public int Count
-        {
-            get
-            {
-                lock (Entries)
-                    return Entries.Count;
-            }
         }
     }
 
@@ -88,7 +77,6 @@ public sealed class RestParsingAndTimeout
             Extension = extension,
             Node = node,
             Server = server,
-            Logger = logger,
         };
     }
 
@@ -135,7 +123,7 @@ public sealed class RestParsingAndTimeout
         {
             var (node, server) = (stack.Node, stack.Server);
 
-            server.On("GET", "/v4/stats", call => new FakeRestResponse(429, "{}", RetryAfter: "2"));
+            server.On("GET", "/v4/stats", _ => new FakeRestResponse(429, "{}", RetryAfter: "2"));
             var delta = await Catch429Async(() =>
                     node.Rest.Info.GetStatsAsync(CancellationToken.None)
                 )
@@ -146,11 +134,7 @@ public sealed class RestParsingAndTimeout
             var future = DateTimeOffset
                 .UtcNow.AddSeconds(30)
                 .ToString("R", CultureInfo.InvariantCulture);
-            server.On(
-                "GET",
-                "/v4/stats",
-                call => new FakeRestResponse(429, "{}", RetryAfter: future)
-            );
+            server.On("GET", "/v4/stats", _ => new FakeRestResponse(429, "{}", RetryAfter: future));
             var dated = await Catch429Async(() =>
                     node.Rest.Info.GetStatsAsync(CancellationToken.None)
                 )
@@ -162,11 +146,7 @@ public sealed class RestParsingAndTimeout
             var past = DateTimeOffset
                 .UtcNow.AddSeconds(-30)
                 .ToString("R", CultureInfo.InvariantCulture);
-            server.On(
-                "GET",
-                "/v4/stats",
-                call => new FakeRestResponse(429, "{}", RetryAfter: past)
-            );
+            server.On("GET", "/v4/stats", _ => new FakeRestResponse(429, "{}", RetryAfter: past));
             var stale = await Catch429Async(() =>
                     node.Rest.Info.GetStatsAsync(CancellationToken.None)
                 )
@@ -217,7 +197,7 @@ public sealed class RestParsingAndTimeout
             var info = "/v4/info";
 
             stack.Server.On("GET", info, 200, "[]");
-            var rooted = await CatchIncompatibleAsync(() =>
+            await CatchIncompatibleAsync(() =>
                     node.Rest.Info.GetServerInfoAsync(CancellationToken.None)
                 )
                 .ConfigureAwait(false);
@@ -228,7 +208,7 @@ public sealed class RestParsingAndTimeout
                 200,
                 """{"version":{"semver":"3.9.1"}}{"version":{"semver":"1.0.0"}}"""
             );
-            var doubled = await CatchIncompatibleAsync(() =>
+            await CatchIncompatibleAsync(() =>
                     node.Rest.Info.GetServerInfoAsync(CancellationToken.None)
                 )
                 .ConfigureAwait(false);
@@ -280,17 +260,13 @@ public sealed class RestParsingAndTimeout
         }
     }
 
-    private static async Task<IncompatibleServerException?> CatchIncompatibleAsync(Func<Task> call)
+    private static async Task CatchIncompatibleAsync(Func<Task> call)
     {
         try
         {
             await call().ConfigureAwait(false);
-            return null;
         }
-        catch (IncompatibleServerException exception)
-        {
-            return exception;
-        }
+        catch (IncompatibleServerException) { }
     }
 
     [Test]

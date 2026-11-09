@@ -133,7 +133,7 @@ public sealed class NodeSurface
             var track = JsonSerializer.Deserialize<Track>(TrackJson, NyraJson.SerializerOptions)!;
             const string groupPath = "/v4/sessions/fake-session/groups/g1";
 
-            string PatchBody(string body) =>
+            string PatchBody() =>
                 server.RestCalls.Last(c => c is { Method: "PATCH", Path: groupPath }).Body
                 ?? string.Empty;
 
@@ -191,13 +191,13 @@ public sealed class NodeSurface
                 _ => new FakeRestResponse(200, """{"id":"g1","createdAt":1}""")
             );
             await node.Groups.StopAsync("g1").ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"encoded\":null");
+            await Assert.That(PatchBody()).Contains("\"encoded\":null");
             await node.Groups.PauseAsync("g1").ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"paused\":true");
+            await Assert.That(PatchBody()).Contains("\"paused\":true");
             await node.Groups.ResumeAsync("g1").ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"paused\":false");
+            await Assert.That(PatchBody()).Contains("\"paused\":false");
             await node.Groups.SetVolumeAsync("g1", 250).ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"volume\":250");
+            await Assert.That(PatchBody()).Contains("\"volume\":250");
 
             await Assert
                 .That(async () =>
@@ -238,7 +238,7 @@ public sealed class NodeSurface
             await node
                 .Groups.PlayTrackAsync("g1", track, position: TimeSpan.FromSeconds(2))
                 .ConfigureAwait(false);
-            var playBody = PatchBody(string.Empty);
+            var playBody = PatchBody();
             await Assert.That(playBody).Contains("QXRsZWFzdA==");
             await Assert.That(playBody).Contains("\"position\":2000");
 
@@ -258,9 +258,9 @@ public sealed class NodeSurface
             await node
                 .Groups.AddPlayersAsync("g1", new List<ulong> { 111 }.Where(_ => true))
                 .ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"add\":[\"111\"]");
+            await Assert.That(PatchBody()).Contains("\"add\":[\"111\"]");
             await node.Groups.RemovePlayersAsync("g1", [222]).ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"remove\":[\"222\"]");
+            await Assert.That(PatchBody()).Contains("\"remove\":[\"222\"]");
 
             string? lastSessionBody = null;
             server.On(

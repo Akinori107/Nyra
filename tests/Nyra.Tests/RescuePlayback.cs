@@ -89,7 +89,7 @@ public sealed class RescuePlayback
     [Test]
     public async Task ResendsThePlaybackInOneUpdate()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(rescue: true)
+        var (_, _, server, conn, extension) = await ConnectAsync(rescue: true)
             .ConfigureAwait(false);
         await conn.PlayAsync(Track()).ConfigureAwait(false);
         await conn
@@ -130,7 +130,7 @@ public sealed class RescuePlayback
     [Arguments(true, 1)]
     public async Task ResendsNothingWhenOffOrExpired(bool rescue, int timeoutMilliseconds)
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(
+        var (_, _, server, conn, extension) = await ConnectAsync(
                 rescue,
                 TimeSpan.FromMilliseconds(timeoutMilliseconds)
             )
@@ -149,10 +149,7 @@ public sealed class RescuePlayback
     [Test]
     public async Task ResendsFromTheLastMillisecondAtTheEnd()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(
-                rescue: true,
-                paused: false
-            )
+        var (_, _, server, conn, extension) = await ConnectAsync(rescue: true, paused: false)
             .ConfigureAwait(false);
         await conn.PlayAsync(Track()).ConfigureAwait(false);
         var updated = new TaskCompletionSource();
@@ -181,7 +178,7 @@ public sealed class RescuePlayback
     [Test]
     public async Task AStoppedNodeInvalidatesInsteadOfRestoring()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(rescue: true)
+        var (_, node, server, conn, extension) = await ConnectAsync(rescue: true)
             .ConfigureAwait(false);
         var invalidated = new TaskCompletionSource();
         var restored = false;

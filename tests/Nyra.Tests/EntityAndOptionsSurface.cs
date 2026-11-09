@@ -12,18 +12,18 @@ public sealed class EntityAndOptionsSurface
     private static T? Parse<T>(string json)
         where T : class => JsonSerializer.Deserialize<T>(json, Options);
 
-    private static T? Throws<T>(Action action)
+    private static void Throws<T>(Action action)
         where T : Exception
     {
         try
         {
             action();
-            return null;
         }
-        catch (T exception)
+        catch (T)
         {
-            return exception;
+            return;
         }
+        throw new InvalidOperationException($"the expected {typeof(T).Name} never came");
     }
 
     private static readonly string TrackBody =
@@ -289,7 +289,7 @@ public sealed class EntityAndOptionsSurface
         var duckingHuge = Parse<DuckingOptions>("""{"duration":1e40}""");
         await Assert.That(duckingHuge?.DurationMilliseconds).IsEqualTo(int.MaxValue);
 
-        var garbageFade = Throws<JsonException>(() => Parse<FadeSection>("""{"duration":"abc"}"""));
+        Throws<JsonException>(() => Parse<FadeSection>("""{"duration":"abc"}"""));
     }
 
     [Test]

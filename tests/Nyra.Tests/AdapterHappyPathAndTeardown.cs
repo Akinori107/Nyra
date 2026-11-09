@@ -6,7 +6,6 @@ using DSharpPlus;
 using DSharpPlus.AsyncEvents;
 using DSharpPlus.EventArgs;
 using DSharpPlus.Net.WebSocket;
-using Microsoft.Extensions.Logging;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -292,7 +291,7 @@ public sealed class AdapterHappyPathAndTeardown
             stack.Server.OnRaw(
                 "GET",
                 "/v4/loadstream",
-                async (call, raw) =>
+                async (_, _) =>
                 {
                     callerCts.Cancel();
                     await Task.Delay(TimeSpan.FromSeconds(80)).ConfigureAwait(false);
@@ -346,7 +345,7 @@ public sealed class AdapterHappyPathAndTeardown
             server.OnRaw(
                 "PATCH",
                 PlayerPath,
-                async (call, raw) =>
+                async (_, raw) =>
                 {
                     await raw.DisposeAsync().ConfigureAwait(false);
                 }
@@ -358,25 +357,6 @@ public sealed class AdapterHappyPathAndTeardown
             await Assert
                 .That(server.RestCalls.Any(c => c is { Method: "GET", Path: PlayerPath }))
                 .IsTrue();
-        }
-    }
-
-    private sealed class SleepingLogger : ILogger
-    {
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            Thread.Sleep(60);
         }
     }
 }

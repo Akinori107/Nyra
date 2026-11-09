@@ -174,7 +174,7 @@ public sealed class ReadyAndRegistryRace
             remove { }
         }
 
-        public ILogger? Logger { get; set; }
+        public ILogger? Logger => null;
 
         public Task<ClientInformation> WaitForReadyAsync(
             CancellationToken cancellationToken = default

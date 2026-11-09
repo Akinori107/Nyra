@@ -12,8 +12,6 @@ public sealed class VersionProbe
 
         public required FakeNodeServer Server { get; init; }
 
-        public required CollectingLogger Logger { get; init; }
-
         public async ValueTask DisposeAsync()
         {
             await Extension.DisposeAsync().ConfigureAwait(false);
@@ -68,7 +66,6 @@ public sealed class VersionProbe
             Extension = extension,
             Node = node,
             Server = server,
-            Logger = logger,
         };
     }
 

@@ -73,7 +73,7 @@ public sealed class NodeEventEdge
         var forwardFailed = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-        node.Error += (_, args) =>
+        node.Error += (_, _) =>
         {
             forwardFailed.TrySetResult(true);
             return Task.CompletedTask;

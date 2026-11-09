@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DSharpPlus;
-using Microsoft.Extensions.Logging;
 using Nyra.DSharpPlus;
 using Nyra.Entities;
 using Nyra.Exceptions;
@@ -318,27 +317,5 @@ public sealed class RestAndAdapterRegression
                     .ConfigureAwait(false)
             )
             .ThrowsNothing();
-    }
-
-    private sealed class RecordingLogger : ILogger
-    {
-        public List<(LogLevel Level, string Text)> Lines { get; } = [];
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            lock (Lines)
-                Lines.Add((logLevel, formatter(state, exception)));
-        }
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
     }
 }

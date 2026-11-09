@@ -96,7 +96,7 @@ public sealed class BoundaryToleranceRegression
         server.On(
             "PATCH",
             "/v4/sessions/fake-session/players/777",
-            call =>
+            _ =>
             {
                 Thread.Sleep(4000);
                 return new FakeRestResponse(

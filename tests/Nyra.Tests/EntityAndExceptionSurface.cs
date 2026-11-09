@@ -61,9 +61,9 @@ public sealed class EntityAndExceptionSurface
         var host = new Endpoint("example.com", 3000, "pass");
         await Assert.That(host.Host).IsEqualTo("example.com");
 
-        var spacedHost = Throws<ArgumentException>(() => new Endpoint("a b", 1, "p"));
-        var urlHost = Throws<ArgumentException>(() => new Endpoint("http://x", 1, "p"));
-        var colonHost = Throws<ArgumentException>(() => new Endpoint("host:1", 1, "p"));
+        Throws<ArgumentException>(() => new Endpoint("a b", 1, "p"));
+        Throws<ArgumentException>(() => new Endpoint("http://x", 1, "p"));
+        Throws<ArgumentException>(() => new Endpoint("host:1", 1, "p"));
         using (Assert.Multiple())
         {
             await Assert
@@ -172,7 +172,7 @@ public sealed class EntityAndExceptionSurface
         var probeWithInner = new ProbeException("wrapped", new InvalidOperationException("cause"));
         await Assert.That(probeWithInner.InnerException is InvalidOperationException).IsTrue();
 
-        var nonObject = Throws<JsonException>(() => LavaParse<LoadResult>("5"));
+        Throws<JsonException>(() => LavaParse<LoadResult>("5"));
 
         var errorFallback = JsonSerializer.Deserialize<LoadResult>(
             """{"loadType":"error","data":{"message":"nope"}}""",
@@ -183,7 +183,7 @@ public sealed class EntityAndExceptionSurface
                 errorFallback is LoadResult.LoadFailed fallback && fallback.Error.Message == "nope"
             )
             .IsTrue();
-        var errorRefuses = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<LoadResult>(
                 """{"loadType":"error","data":5}""",
                 NyraJson.OptionsFor(true)
@@ -199,7 +199,7 @@ public sealed class EntityAndExceptionSurface
 
         const string trackJson =
             """{"encoded":"QXRsZWFzdA==","info":{"identifier":"ph8qt3dhvwo","author":"SoAD - Topic","title":"ATWA","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
-        var nullTrack = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             LavaParse<LoadResult>(
                 $$$"""{"loadType":"playlist","data":{"info":{},"tracks":[{{{trackJson}}},null]}}"""
             )
@@ -220,7 +220,7 @@ public sealed class EntityAndExceptionSurface
             )
             .IsTrue();
 
-        var serialized = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             System.Text.Json.JsonSerializer.Serialize(errorLoad, NyraJson.OptionsFor(false))
         );
     }

@@ -48,7 +48,7 @@ public sealed class TrackEndAndPositionEvent
         bridge.FireVoiceState(777, 555, "vsess");
         bridge.FireVoiceServer(777, "tok", "127.0.0.1");
         var connection = await connect.ConfigureAwait(false);
-        return new Rig(bridge, extension, node, server, connection, holder);
+        return new Rig(extension, server, connection, holder);
     }
 
     private sealed class Holder
@@ -58,9 +58,7 @@ public sealed class TrackEndAndPositionEvent
     }
 
     private sealed record Rig(
-        FakeBridge Bridge,
         NyraExtension Extension,
-        Node Node,
         FakeNodeServer Server,
         GuildConnection Connection,
         Holder Reply

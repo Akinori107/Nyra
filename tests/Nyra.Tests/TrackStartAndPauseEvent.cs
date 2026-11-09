@@ -17,9 +17,7 @@ public sealed class TrackStartAndPauseEvent
 
     private sealed class Rig : IAsyncDisposable
     {
-        public required FakeBridge Bridge { get; init; }
         public required NyraExtension Extension { get; init; }
-        public required Node Node { get; init; }
         public required FakeNodeServer Server { get; init; }
         public required GuildConnection Connection { get; init; }
         public required List<string> Reply { get; init; }
@@ -107,9 +105,7 @@ public sealed class TrackStartAndPauseEvent
         var connection = await connect.ConfigureAwait(false);
         return new Rig
         {
-            Bridge = bridge,
             Extension = extension,
-            Node = node,
             Server = server,
             Connection = connection,
             Reply = holder,

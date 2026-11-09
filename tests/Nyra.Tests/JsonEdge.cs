@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Nyra.Entities;
@@ -8,16 +7,16 @@ namespace Nyra.Tests;
 
 public sealed class JsonEdge
 {
-    private static T Throws<T>(Action action)
+    private static void Throws<T>(Action action)
         where T : Exception
     {
         try
         {
             action();
         }
-        catch (T exception)
+        catch (T)
         {
-            return exception;
+            return;
         }
         throw new InvalidOperationException($"the expected {typeof(T).Name} never came");
     }
@@ -34,15 +33,15 @@ public sealed class JsonEdge
     public async Task RoundedRefuses()
     {
         var options = new JsonSerializerOptions();
-        var longString = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":"abc","LN":null,"I":0}""", options)
         );
 
-        var longToken = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":true,"LN":null,"I":0}""", options)
         );
 
-        var intString = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":0,"LN":null,"I":"abc"}""", options)
         );
 
@@ -84,10 +83,8 @@ public sealed class JsonEdge
 
         using var stream = new MemoryStream();
         using var writer = new Utf8JsonWriter(stream);
-        var write = Throws<JsonException>(() => converter.Write(writer, float.NaN, options));
+        Throws<JsonException>(() => converter.Write(writer, float.NaN, options));
     }
-
-    private sealed class PlainSegment : ReadOnlySequenceSegment<byte> { }
 
     [Test]
     public async Task ChainHash()
@@ -206,7 +203,7 @@ public sealed class JsonEdge
     {
         var options = new JsonSerializerOptions();
 
-        var objectToken = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<StringOrNumberProbe>("""{"X":{}}""", options)
         );
 
@@ -232,11 +229,11 @@ public sealed class JsonEdge
         await Assert.That(intBoundaries?.L).IsEqualTo(long.MaxValue);
         await Assert.That(intBoundaries?.I).IsEqualTo(3);
 
-        var intOverflow = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":-9.3e18,"LN":null,"I":0}""", options)
         );
 
-        var floatRefusesText = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Serialize(new FiniteProbe(float.PositiveInfinity), options)
         );
     }
@@ -266,7 +263,7 @@ public sealed class JsonEdge
         await Assert.That(roundedFromString?.L).IsEqualTo(10);
         await Assert.That(roundedFromString!.I).IsEqualTo(3);
 
-        var intBadToken = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":0,"LN":null,"I":{}}""", options)
         );
 

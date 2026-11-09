@@ -57,7 +57,7 @@ public sealed class QuerySurface
         server.On(
             "GET",
             "/v4/loadtracks",
-            call => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
+            _ => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
         );
 
     [Test]
@@ -128,7 +128,7 @@ public sealed class QuerySurface
             server.On(
                 "GET",
                 "/v4/loadtracks",
-                call => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
+                _ => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
             );
             var urlResult = await node.LoadTracksAsync("https://example.com/audio.mp3?t=15")
                 .ConfigureAwait(false);
@@ -146,7 +146,7 @@ public sealed class QuerySurface
                 bareStack.Server.On(
                     "GET",
                     "/v4/loadtracks",
-                    call => new FakeRestResponse(
+                    _ => new FakeRestResponse(
                         200,
                         $$"""{"loadType":"track","data":{{TrackJson}}}"""
                     )
@@ -184,7 +184,7 @@ public sealed class QuerySurface
             server.On(
                 "POST",
                 "/v4/decodetracks",
-                call => new FakeRestResponse(200, $"[{TrackJson},{TrackJson}]")
+                _ => new FakeRestResponse(200, $"[{TrackJson},{TrackJson}]")
             );
             var decoded = await node.Tracks.DecodeManyAsync(["one", "two"]).ConfigureAwait(false);
             await Assert.That(decoded.Count).IsEqualTo(2);
@@ -254,14 +254,13 @@ public sealed class QuerySurface
                 .That(await freed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
                 .Contains("1.2.3.4");
             await Assert.That(await freed.Task.ConfigureAwait(false)).DoesNotContain("/1");
-            var freedAll = false;
             server.On(
                 "POST",
                 "/v4/routeplanner/free/all",
                 _ => new FakeRestResponse(204, string.Empty)
             );
             await node.RoutePlanner.FreeAllAddressesAsync().ConfigureAwait(false);
-            freedAll = server.RestCalls.Any(c =>
+            var freedAll = server.RestCalls.Any(c =>
                 c is { Method: "POST", Path: "/v4/routeplanner/free/all" }
             );
             await Assert.That(freedAll).IsTrue();

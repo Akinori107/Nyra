@@ -140,7 +140,7 @@ public sealed class ClientEntryPoint
         }
 
         foreach (
-            var (intents, expectLog) in new[]
+            var (intents, _) in new[]
             {
                 (DiscordIntents.Guilds | DiscordIntents.GuildVoiceStates, false),
                 (DiscordIntents.GuildVoiceStates, true),

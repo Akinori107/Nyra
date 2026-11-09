@@ -65,7 +65,7 @@ public sealed class PositionPath
     [Test]
     public async Task AnchorAndRegression()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(pausedEcho: false)
+        var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false)
             .ConfigureAwait(false);
         await conn.PlayAsync(Track()).ConfigureAwait(false);
         await Assert.That(conn.CurrentTrack).IsNotNull();
@@ -114,7 +114,7 @@ public sealed class PositionPath
     [Test]
     public async Task PauseFreezeAndSeek()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(pausedEcho: false)
+        var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false)
             .ConfigureAwait(false);
         await conn.PlayAsync(Track()).ConfigureAwait(false);
         await Assert.That(conn.CurrentTrack).IsNotNull();
@@ -152,7 +152,7 @@ public sealed class PositionPath
     [Test]
     public async Task PaceFold()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(
+        var (_, _, server, conn, extension) = await ConnectAsync(
                 pausedEcho: false,
                 filtersEcho: """{"timescale":{"speed":2}}"""
             )
@@ -193,7 +193,7 @@ public sealed class PositionPath
     [Test]
     public async Task EndOfTrackClamp()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(pausedEcho: false)
+        var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false)
             .ConfigureAwait(false);
         await conn.PlayAsync(Track()).ConfigureAwait(false);
 
@@ -238,7 +238,7 @@ public sealed class PositionPath
         int toSeconds
     )
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(pausedEcho: false)
+        var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false)
             .ConfigureAwait(false);
         server.On(
             "PATCH",
@@ -273,7 +273,7 @@ public sealed class PositionPath
     [Test]
     public async Task PlayIdentifierAnchorsAtTheStartPosition()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(
+        var (_, _, server, conn, extension) = await ConnectAsync(
                 pausedEcho: false,
                 lavalink: new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" }
             )

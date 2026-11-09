@@ -373,7 +373,7 @@ public sealed class LifecycleEdge
 
             await stack.Server.DropConnectionAsync(1000, "orphan test drop").ConfigureAwait(false);
             var resumedAgain = new TaskCompletionSource<bool>();
-            stack.Node.Connected += (_, args) =>
+            stack.Node.Connected += (_, _) =>
             {
                 resumedAgain.TrySetResult(true);
                 return Task.CompletedTask;
@@ -789,8 +789,7 @@ public sealed class LifecycleEdge
             await Assert.That(extension).IsNotNull();
             await Assert.That(extension!.IsDisposed).IsFalse();
             await Assert.That(logger.Warnings).IsGreaterThanOrEqualTo(1);
-            if (extension is not null)
-                await extension.DisposeAsync().ConfigureAwait(false);
+            await extension.DisposeAsync().ConfigureAwait(false);
         }
         finally
         {
