@@ -130,8 +130,8 @@ public sealed class ConnectionLifecycle
             using (Assert.Multiple())
             {
                 await Assert.That(refreshed).IsNotNull();
-                await Assert.That(refreshed!.Volume).IsEqualTo(80);
-                await Assert.That(refreshed!.IsPaused).IsTrue();
+                await Assert.That(refreshed.Volume).IsEqualTo(80);
+                await Assert.That(refreshed.IsPaused).IsTrue();
             }
 
             server.On(

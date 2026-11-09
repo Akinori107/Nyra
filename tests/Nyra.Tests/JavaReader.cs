@@ -63,7 +63,7 @@ public sealed class JavaReader
         var checked7 = flag.ReadBoolean();
         var checked8 = flag.ReadBoolean();
 
-        var minus = new JavaBinaryReader([(byte)0xFF, (byte)0xFF]);
+        var minus = new JavaBinaryReader([0xFF, 0xFF]);
         var checked9 = (short)minus.ReadUInt16();
         await Assert.That(checked1).IsEqualTo(0x2A);
         await Assert.That(checked2).IsTrue();

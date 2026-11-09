@@ -72,7 +72,7 @@ public sealed class NodeIntegration
             await Assert.That(headers.TryGetValue("User-Id", out var user)).IsTrue();
             await Assert.That(user).IsEqualTo(FakeBridge.UserId.ToString());
             await Assert.That(headers.TryGetValue("Client-Name", out var label)).IsTrue();
-            await Assert.That(label).IsEqualTo(Nyra.Internal.ClientHeaders.UserAgent);
+            await Assert.That(label).IsEqualTo(Internal.ClientHeaders.UserAgent);
 
             var statsReported = new TaskCompletionSource();
             extension.NodeStatsUpdated += (_, _) =>
@@ -128,11 +128,11 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(info).IsNotNull();
-                await Assert.That(info!.Version).IsNotNull();
-                await Assert.That(info!.Version!.Semver).IsEqualTo("4.2.0");
-                await Assert.That(info!.Git).IsNotNull();
-                await Assert.That(info!.Git!.Branch).IsEqualTo("main");
-                await Assert.That(info!.IsNodeLink).IsFalse();
+                await Assert.That(info.Version).IsNotNull();
+                await Assert.That(info.Version.Semver).IsEqualTo("4.2.0");
+                await Assert.That(info.Git).IsNotNull();
+                await Assert.That(info.Git.Branch).IsEqualTo("main");
+                await Assert.That(info.IsNodeLink).IsFalse();
             }
 
             server.On(
@@ -147,8 +147,8 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(stats).IsNotNull();
-                await Assert.That(stats!.Players).IsEqualTo(9);
-                await Assert.That(stats!.DetailedStats).IsNotNull();
+                await Assert.That(stats.Players).IsEqualTo(9);
+                await Assert.That(stats.DetailedStats).IsNotNull();
             }
 
             await Assert
@@ -183,7 +183,7 @@ public sealed class NodeIntegration
             );
             var planner = await node.RoutePlanner.GetStatusAsync().ConfigureAwait(false);
             await Assert.That(planner).IsNotNull();
-            await Assert.That(planner!.Class).IsEqualTo(RoutePlannerClass.Rotating);
+            await Assert.That(planner.Class).IsEqualTo(RoutePlannerClass.Rotating);
 
             var freed = new TaskCompletionSource<string?>();
             server.On(
@@ -209,8 +209,8 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(config).IsNotNull();
-                await Assert.That(config!.IsConfigured).IsTrue();
-                await Assert.That(config!.RefreshToken).IsEqualTo("***");
+                await Assert.That(config.IsConfigured).IsTrue();
+                await Assert.That(config.RefreshToken).IsEqualTo("***");
             }
 
             server.On(
@@ -222,7 +222,7 @@ public sealed class NodeIntegration
                 .YouTube.UpdateConfigAsync(refreshToken: "new-token")
                 .ConfigureAwait(false);
             await Assert.That(update).IsNotNull();
-            await Assert.That(update!.WorkersUpdated).IsEqualTo(2);
+            await Assert.That(update.WorkersUpdated).IsEqualTo(2);
 
             server.On(
                 "POST",
@@ -236,8 +236,8 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(token).IsNotNull();
-                await Assert.That(token!.AccessToken).IsEqualTo("tok");
-                await Assert.That(token!.ExpiresInSeconds).IsEqualTo(3600);
+                await Assert.That(token.AccessToken).IsEqualTo("tok");
+                await Assert.That(token.ExpiresInSeconds).IsEqualTo(3600);
             }
 
             server.On(
@@ -253,8 +253,8 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(session).IsNotNull();
-                await Assert.That(session!.Resuming).IsTrue();
-                await Assert.That(session!.Timeout).IsEqualTo(120);
+                await Assert.That(session.Resuming).IsTrue();
+                await Assert.That(session.Timeout).IsEqualTo(120);
             }
 
             var connStatus = new TaskCompletionSource<string?>();
@@ -269,7 +269,7 @@ public sealed class NodeIntegration
             );
             var connection = await node.GetConnectionStatusAsync().ConfigureAwait(false);
             await Assert.That(connection).IsNotNull();
-            await Assert.That(connection!.Status).IsEqualTo(ConnectionQuality.Good);
+            await Assert.That(connection.Status).IsEqualTo(ConnectionQuality.Good);
         }
     }
 
@@ -292,8 +292,8 @@ public sealed class NodeIntegration
             );
             var groups = await node.Groups.ListAsync().ConfigureAwait(false);
             await Assert.That(groups).IsNotNull();
-            await Assert.That(groups!.Count).IsEqualTo(1);
-            await Assert.That(groups![0] is { Id: "late-night", GuildIds.Count: 2 }).IsTrue();
+            await Assert.That(groups.Count).IsEqualTo(1);
+            await Assert.That(groups[0] is { Id: "late-night", GuildIds.Count: 2 }).IsTrue();
 
             server.On(
                 "POST",
@@ -302,7 +302,7 @@ public sealed class NodeIntegration
             );
             var created = await node.Groups.CreateAsync("new", [123]).ConfigureAwait(false);
             await Assert.That(created).IsNotNull();
-            await Assert.That(created!.Id).IsEqualTo("new");
+            await Assert.That(created.Id).IsEqualTo("new");
 
             server.On(
                 "PATCH",
@@ -324,8 +324,8 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(updated).IsNotNull();
-                await Assert.That(updated!.Id).IsEqualTo("late-night");
-                await Assert.That(updated!.Errors.Count).IsEqualTo(0);
+                await Assert.That(updated.Id).IsEqualTo("late-night");
+                await Assert.That(updated.Errors.Count).IsEqualTo(0);
             }
 
             var played = await node
@@ -337,8 +337,8 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(played).IsNotNull();
-                await Assert.That(played!.Players).IsNotNull();
-                await Assert.That(played!.Players!.Count).IsEqualTo(1);
+                await Assert.That(played.Players).IsNotNull();
+                await Assert.That(played.Players.Count).IsEqualTo(1);
             }
 
             var deleted = new TaskCompletionSource<string?>();
@@ -380,9 +380,9 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(lyrics).IsNotNull();
-                await Assert.That(lyrics!.LoadType).IsEqualTo(LyricsLoadType.Lyrics);
-                await Assert.That(lyrics!.Data).IsNotNull();
-                await Assert.That(lyrics!.Data!.Synced).IsTrue();
+                await Assert.That(lyrics.LoadType).IsEqualTo(LyricsLoadType.Lyrics);
+                await Assert.That(lyrics.Data).IsNotNull();
+                await Assert.That(lyrics.Data!.Synced).IsTrue();
             }
 
             server.On(
@@ -392,8 +392,8 @@ public sealed class NodeIntegration
             );
             var chapters = await node.Lyrics.LoadChaptersAsync(track).ConfigureAwait(false);
             await Assert.That(chapters).IsNotNull();
-            await Assert.That(chapters!.Count).IsEqualTo(1);
-            await Assert.That(chapters![0].Title).IsEqualTo("Intro");
+            await Assert.That(chapters.Count).IsEqualTo(1);
+            await Assert.That(chapters[0].Title).IsEqualTo("Intro");
 
             server.On(
                 "GET",
@@ -407,9 +407,9 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(meaning).IsNotNull();
-                await Assert.That(meaning!.LoadType).IsEqualTo(MeaningLoadType.Meaning);
-                await Assert.That(meaning!.Data).IsNotNull();
-                await Assert.That(meaning!.Data!.Title).IsEqualTo("About");
+                await Assert.That(meaning.LoadType).IsEqualTo(MeaningLoadType.Meaning);
+                await Assert.That(meaning.Data).IsNotNull();
+                await Assert.That(meaning.Data!.Title).IsEqualTo("About");
             }
         }
     }
@@ -443,7 +443,7 @@ public sealed class NodeIntegration
             bridge.FireVoiceServer(777, "tok", "127.0.0.1");
             var conn = await connect.ConfigureAwait(false);
             await Assert.That(conn).IsNotNull();
-            await Assert.That(conn!.GuildId).IsEqualTo(777);
+            await Assert.That(conn.GuildId).IsEqualTo(777);
 
             var body = await playerPatch
                 .Task.WaitAsync(TimeSpan.FromSeconds(5))
@@ -543,10 +543,8 @@ public sealed class NodeIntegration
     private static string? LastPlayerBody(FakeNodeServer server)
     {
         foreach (var call in server.RestCalls.Reverse())
-        {
             if (call is { Method: "PATCH", Path: "/v4/sessions/fake-session/players/777" })
                 return call.Body;
-        }
         return null;
     }
 
@@ -676,7 +674,7 @@ public sealed class NodeIntegration
                 )
                 .ConfigureAwait(false);
             await Assert.That(setSponsor).IsNotNull();
-            await Assert.That(setSponsor!.Enabled).IsTrue();
+            await Assert.That(setSponsor.Enabled).IsTrue();
 
             await Assert
                 .That(async () =>
@@ -762,8 +760,8 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(layer).IsNotNull();
-                await Assert.That(layer!.Id).IsEqualTo("layer-1");
-                await Assert.That(layer!.Volume).IsEqualTo(0.5f);
+                await Assert.That(layer.Id).IsEqualTo("layer-1");
+                await Assert.That(layer.Volume).IsEqualTo(0.5f);
             }
 
             server.On(
@@ -776,7 +774,7 @@ public sealed class NodeIntegration
             );
             var layers = await conn.Mix.GetLayersAsync().ConfigureAwait(false);
             await Assert.That(layers).IsNotNull();
-            await Assert.That(layers!.Count).IsEqualTo(1);
+            await Assert.That(layers.Count).IsEqualTo(1);
 
             server.On(
                 "PATCH",
@@ -799,8 +797,8 @@ public sealed class NodeIntegration
             );
             var players = await node.ListPlayersAsync().ConfigureAwait(false);
             await Assert.That(players).IsNotNull();
-            await Assert.That(players!.Count).IsEqualTo(1);
-            await Assert.That(players![0].GuildId).IsEqualTo(777);
+            await Assert.That(players.Count).IsEqualTo(1);
+            await Assert.That(players[0].GuildId).IsEqualTo(777);
 
             server.On(
                 "GET",
@@ -814,8 +812,8 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(streamUrl).IsNotNull();
-                await Assert.That(streamUrl!.Url).IsEqualTo("https://stream/1");
-                await Assert.That(streamUrl!.Protocol).IsEqualTo("https");
+                await Assert.That(streamUrl.Url).IsEqualTo("https://stream/1");
+                await Assert.That(streamUrl.Protocol).IsEqualTo("https");
             }
         }
     }
@@ -1478,35 +1476,35 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(conn.Filters.Applied).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Karaoke).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Karaoke!.Level).IsEqualTo(0.75f);
-                await Assert.That(conn.Filters.Applied!.Timescale).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Timescale!.Speed).IsEqualTo(1.25f);
+                await Assert.That(conn.Filters.Applied.Karaoke).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Karaoke!.Level).IsEqualTo(0.75f);
+                await Assert.That(conn.Filters.Applied.Timescale).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Timescale!.Speed).IsEqualTo(1.25f);
                 await Assert.That(conn.Filters.Applied).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Chorus).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Chorus!.Rate).IsEqualTo(1.5f);
-                await Assert.That(conn.Filters.Applied!.Compressor).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Compressor!.Ratio).IsEqualTo(6f);
-                await Assert.That(conn.Filters.Applied!.Flanger).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Flanger!.Depth).IsEqualTo(0.8f);
-                await Assert.That(conn.Filters.Applied!.Phaser).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Phaser!.Rate).IsEqualTo(2f);
-                await Assert.That(conn.Filters.Applied!.Phonograph).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Phonograph!.Crackle).IsEqualTo(0.3f);
-                await Assert.That(conn.Filters.Applied!.Spatial).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Spatial!.X).IsEqualTo(0.5f);
-                await Assert.That(conn.Filters.Applied!.Echo).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Echo!.DelayMilliseconds).IsEqualTo(300);
-                await Assert.That(conn.Filters.Applied!.Reverb).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Reverb!.RoomSize).IsEqualTo(0.7f);
-                await Assert.That(conn.Filters.Applied!.HighPass).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.HighPass!.Smoothing).IsEqualTo(5);
+                await Assert.That(conn.Filters.Applied.Chorus).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Chorus!.Rate).IsEqualTo(1.5f);
+                await Assert.That(conn.Filters.Applied.Compressor).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Compressor!.Ratio).IsEqualTo(6f);
+                await Assert.That(conn.Filters.Applied.Flanger).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Flanger!.Depth).IsEqualTo(0.8f);
+                await Assert.That(conn.Filters.Applied.Phaser).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Phaser!.Rate).IsEqualTo(2f);
+                await Assert.That(conn.Filters.Applied.Phonograph).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Phonograph!.Crackle).IsEqualTo(0.3f);
+                await Assert.That(conn.Filters.Applied.Spatial).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Spatial!.X).IsEqualTo(0.5f);
+                await Assert.That(conn.Filters.Applied.Echo).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Echo!.DelayMilliseconds).IsEqualTo(300);
+                await Assert.That(conn.Filters.Applied.Reverb).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Reverb!.RoomSize).IsEqualTo(0.7f);
+                await Assert.That(conn.Filters.Applied.HighPass).IsNotNull();
+                await Assert.That(conn.Filters.Applied.HighPass!.Smoothing).IsEqualTo(5);
                 await Assert.That(conn.Filters.Applied).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Equalizer).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Equalizer!.Count).IsEqualTo(1);
-                await Assert.That(conn.Filters.Applied!.EqualizerTransition).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Equalizer).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Equalizer!.Count).IsEqualTo(1);
+                await Assert.That(conn.Filters.Applied.EqualizerTransition).IsNotNull();
                 await Assert
-                    .That(conn.Filters.Applied!.EqualizerTransition!.DurationMilliseconds)
+                    .That(conn.Filters.Applied.EqualizerTransition!.DurationMilliseconds)
                     .IsEqualTo(400);
                 await Assert.That(conn.CurrentTrack).IsNull();
                 await Assert.That(conn.Volume).IsEqualTo(250);
@@ -1525,9 +1523,9 @@ public sealed class NodeIntegration
             using (Assert.Multiple())
             {
                 await Assert.That(conn.Filters.Applied).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Chorus).IsNull();
-                await Assert.That(conn.Filters.Applied!.Karaoke).IsNotNull();
-                await Assert.That(conn.Filters.Applied!.Karaoke!.Level).IsEqualTo(0.5f);
+                await Assert.That(conn.Filters.Applied.Chorus).IsNull();
+                await Assert.That(conn.Filters.Applied.Karaoke).IsNotNull();
+                await Assert.That(conn.Filters.Applied.Karaoke!.Level).IsEqualTo(0.5f);
             }
         }
     }
@@ -1554,8 +1552,8 @@ public sealed class NodeIntegration
             };
             var encoded = await node.Tracks.EncodeManyAsync([info]).ConfigureAwait(false);
             await Assert.That(encoded).IsNotNull();
-            await Assert.That(encoded!.Count).IsEqualTo(1);
-            await Assert.That(encoded![0]).IsEqualTo("QXRsZWFzdA==");
+            await Assert.That(encoded.Count).IsEqualTo(1);
+            await Assert.That(encoded[0]).IsEqualTo("QXRsZWFzdA==");
             var encodeCall = server.RestCalls.FirstOrDefault(c => c.Path == "/v4/encodedtracks");
             await Assert
                 .That(
@@ -1583,8 +1581,8 @@ public sealed class NodeIntegration
         using (Assert.Multiple())
         {
             await Assert.That(secure).IsNotNull();
-            await Assert.That(secure!.IsSecure).IsTrue();
-            await Assert.That(secure!.ToWebSocketUri().Scheme).IsEqualTo("wss");
+            await Assert.That(secure.IsSecure).IsTrue();
+            await Assert.That(secure.ToWebSocketUri().Scheme).IsEqualTo("wss");
             await Assert.That(secure.ToRestUri().Scheme).IsEqualTo("https");
         }
 
@@ -2015,13 +2013,13 @@ public sealed class NodeIntegration
         using (Assert.Multiple())
         {
             await Assert.That(v1Track.Info).IsNotNull();
-            await Assert.That(v1Track.Info!.Title).IsEqualTo("ATWA");
-            await Assert.That(v1Track.Info!.Author).IsEqualTo("SoAD");
-            await Assert.That(v1Track.Info!.LengthMilliseconds).IsEqualTo(176000);
-            await Assert.That(v1Track.Info!.Identifier).IsEqualTo("ph8qt3dhvwo");
-            await Assert.That(v1Track.Info!.IsSeekable).IsTrue();
-            await Assert.That(v1Track.Info!.Uri).IsNull();
-            await Assert.That(v1Track.Info!.SourceName).IsEqualTo("youtube");
+            await Assert.That(v1Track.Info.Title).IsEqualTo("ATWA");
+            await Assert.That(v1Track.Info.Author).IsEqualTo("SoAD");
+            await Assert.That(v1Track.Info.LengthMilliseconds).IsEqualTo(176000);
+            await Assert.That(v1Track.Info.Identifier).IsEqualTo("ph8qt3dhvwo");
+            await Assert.That(v1Track.Info.IsSeekable).IsTrue();
+            await Assert.That(v1Track.Info.Uri).IsNull();
+            await Assert.That(v1Track.Info.SourceName).IsEqualTo("youtube");
         }
 
         var v2 = EncodeTrackMessage(
@@ -2044,9 +2042,9 @@ public sealed class NodeIntegration
         using (Assert.Multiple())
         {
             await Assert.That(v2Track.Info).IsNotNull();
-            await Assert.That(v2Track.Info!.IsStream).IsTrue();
-            await Assert.That(v2Track.Info!.IsSeekable).IsFalse();
-            await Assert.That(v2Track.Info!.Uri).IsEqualTo("https://example.com/live");
+            await Assert.That(v2Track.Info.IsStream).IsTrue();
+            await Assert.That(v2Track.Info.IsSeekable).IsFalse();
+            await Assert.That(v2Track.Info.Uri).IsEqualTo("https://example.com/live");
         }
 
         var v3 = EncodeTrackMessage(
@@ -2069,9 +2067,9 @@ public sealed class NodeIntegration
         using (Assert.Multiple())
         {
             await Assert.That(v3Track.Info).IsNotNull();
-            await Assert.That(v3Track.Info!.ArtworkUrl).IsEqualTo("https://art");
-            await Assert.That(v3Track.Info!.Isrc).IsEqualTo("AAA000000001");
-            await Assert.That(v3Track.Info!.PositionMilliseconds).IsEqualTo(1234);
+            await Assert.That(v3Track.Info.ArtworkUrl).IsEqualTo("https://art");
+            await Assert.That(v3Track.Info.Isrc).IsEqualTo("AAA000000001");
+            await Assert.That(v3Track.Info.PositionMilliseconds).IsEqualTo(1234);
         }
 
         var legacy = EncodeTrackMessage(
@@ -2095,8 +2093,8 @@ public sealed class NodeIntegration
         using (Assert.Multiple())
         {
             await Assert.That(legacyTrack.Info).IsNotNull();
-            await Assert.That(legacyTrack.Info!.Title).IsEqualTo("Old");
-            await Assert.That(legacyTrack.Info!.PositionMilliseconds).IsEqualTo(7);
+            await Assert.That(legacyTrack.Info.Title).IsEqualTo("Old");
+            await Assert.That(legacyTrack.Info.PositionMilliseconds).IsEqualTo(7);
         }
 
         await Assert
@@ -2268,7 +2266,7 @@ public sealed class NodeIntegration
 
             var second = await node.ConnectAsync(777, 555).ConfigureAwait(false);
             await Assert.That(second).IsNotNull();
-            await Assert.That(second!.GuildId).IsEqualTo(777);
+            await Assert.That(second.GuildId).IsEqualTo(777);
             await Assert.That(ReferenceEquals(first, second)).IsTrue();
 
             var live = new TaskCompletionSource<bool>();

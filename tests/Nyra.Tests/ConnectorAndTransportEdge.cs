@@ -178,7 +178,7 @@ public sealed class ConnectorAndTransportEdge
                 )
                 .Throws<RestException>();
             await Assert.That(truncated!.StatusCode).IsEqualTo(404);
-            await Assert.That(truncated!.ResponseBody).IsEqualTo(string.Empty);
+            await Assert.That(truncated.ResponseBody).IsEqualTo(string.Empty);
         }
     }
 
@@ -411,7 +411,7 @@ public sealed class ConnectorAndTransportEdge
         var extension = new NyraExtension(bridge);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
         await Assert
-            .That(async () => await ((IAsyncDisposable)bridge).DisposeAsync().ConfigureAwait(false))
+            .That(async () => await bridge.DisposeAsync().ConfigureAwait(false))
             .Throws<InvalidOperationException>()
             .WithMessageContaining("exploded");
         await Assert

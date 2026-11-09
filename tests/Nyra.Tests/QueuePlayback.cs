@@ -324,9 +324,7 @@ public sealed class QueuePlayback
     {
         var rig = await StartAsync().ConfigureAwait(false);
         await using (rig.ConfigureAwait(false))
-        {
             await Assert.That(() => rig.Queue.MaxLength = 0).Throws<ArgumentOutOfRangeException>();
-        }
     }
 
     [Test]

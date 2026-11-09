@@ -277,8 +277,8 @@ public sealed class NodeSurface
             using (Assert.Multiple())
             {
                 await Assert.That(fractional).IsNotNull();
-                await Assert.That(fractional!.Resuming).IsTrue();
-                await Assert.That(fractional!.Timeout).IsEqualTo(90);
+                await Assert.That(fractional.Resuming).IsTrue();
+                await Assert.That(fractional.Timeout).IsEqualTo(90);
             }
             await Assert.That(lastSessionBody?.Contains("\"timeout\":1")).IsTrue();
             await Assert
@@ -293,8 +293,8 @@ public sealed class NodeSurface
             using (Assert.Multiple())
             {
                 await Assert.That(session).IsNotNull();
-                await Assert.That(session!.Resuming).IsTrue();
-                await Assert.That(session!.Timeout).IsEqualTo(90);
+                await Assert.That(session.Resuming).IsTrue();
+                await Assert.That(session.Timeout).IsEqualTo(90);
             }
             await Assert.That(lastSessionBody?.Contains("\"timeout\":90")).IsTrue();
         }

@@ -162,15 +162,15 @@ public sealed class DiscordNetBridgeTests
     {
         using var socket = new DiscordSocketClient();
         SetCurrentUser(socket, 42);
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(socket);
+        using var bridge = new DiscordNet.DiscordNetBridge(socket);
         var info = await bridge.WaitForReadyAsync().ConfigureAwait(false);
         await Assert.That(info.CurrentUserId).IsEqualTo(42);
 
         using var carrier = new DiscordSocketClient();
         SetCurrentUser(carrier, 7);
         using var sharded = new DiscordShardedClient();
-        Reflect.Field(sharded, "_shards", new DiscordSocketClient[] { carrier });
-        using var shardedBridge = new Nyra.DiscordNet.DiscordNetBridge(sharded);
+        Reflect.Field(sharded, "_shards", new[] { carrier });
+        using var shardedBridge = new DiscordNet.DiscordNetBridge(sharded);
         var shardedInfo = await shardedBridge.WaitForReadyAsync().ConfigureAwait(false);
         await Assert.That(shardedInfo.CurrentUserId).IsEqualTo(7);
     }
@@ -180,7 +180,7 @@ public sealed class DiscordNetBridgeTests
     {
         using var client = NewIntentClient();
         SetCurrentUser(client, 42);
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         var guild = NewGuild(client, 777);
         InjectGuild(client, guild);
         var channels =
@@ -205,7 +205,7 @@ public sealed class DiscordNetBridgeTests
     {
         using var client = NewIntentClient();
         SetCurrentUser(client, 42);
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         var guild = NewGuild(client, 777);
         InjectGuild(client, guild);
         var voice = NewVoiceChannel(client, 555, guild);
@@ -228,7 +228,7 @@ public sealed class DiscordNetBridgeTests
     {
         using var client = NewIntentClient();
         SetCurrentUser(client, 42);
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         var guild = NewGuild(client, 777);
         InjectGuild(client, guild);
         var voice = NewVoiceChannel(client, 555, guild);
@@ -248,7 +248,7 @@ public sealed class DiscordNetBridgeTests
     {
         using var client = NewIntentClient();
         SetCurrentUser(client, 42);
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         var guild = NewGuild(client, 777);
         InjectGuild(client, guild);
         var voice = NewVoiceChannel(client, 555, guild);
@@ -283,9 +283,9 @@ public sealed class DiscordNetBridgeTests
         using var carrier = new DiscordSocketClient();
         SetCurrentUser(carrier, 42);
         using var sharded = new DiscordShardedClient();
-        Reflect.Field(sharded, "_shards", new DiscordSocketClient[] { carrier });
+        Reflect.Field(sharded, "_shards", new[] { carrier });
         Reflect.Field(sharded, "_totalShards", 1);
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(sharded);
+        using var bridge = new DiscordNet.DiscordNetBridge(sharded);
 
         await Assert
             .That(async () => await bridge.SendVoiceUpdateAsync(777, null).ConfigureAwait(false))
@@ -323,12 +323,12 @@ public sealed class DiscordNetBridgeTests
     public async Task MidSendCancellation()
     {
         using var client = new DiscordSocketClient();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         var channels =
             (ConcurrentDictionary<ulong, IAudioChannel>)
                 Reflect.FieldValue(bridge, "_audioChannels")!;
         var hang = DispatchProxy.Create<IAudioChannel, HangingChannelProxy>();
-        ((HangingChannelProxy)(object)hang)._hang = new TaskCompletionSource();
+        ((HangingChannelProxy)hang)._hang = new TaskCompletionSource();
         channels[888] = hang;
 
         using var cancelled = new CancellationTokenSource(150);
@@ -342,11 +342,9 @@ public sealed class DiscordNetBridgeTests
             .Throws<OperationCanceledException>();
         await Assert.That(channels.ContainsKey(888)).IsFalse();
 
-        ((HangingChannelProxy)(object)hang)._hang.SetException(
-            new InvalidOperationException("late fault")
-        );
+        ((HangingChannelProxy)hang)._hang.SetException(new InvalidOperationException("late fault"));
         await Task.Delay(50).ConfigureAwait(false);
-        await Assert.That(((HangingChannelProxy)(object)hang)._hang.Task.IsFaulted).IsTrue();
+        await Assert.That(((HangingChannelProxy)hang)._hang.Task.IsFaulted).IsTrue();
     }
 
     [Test]
@@ -354,7 +352,7 @@ public sealed class DiscordNetBridgeTests
     {
         using var client = new DiscordSocketClient();
         var sink = new List<(LogLevel, string)>();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client, new CapturingLogger(sink));
+        using var bridge = new DiscordNet.DiscordNetBridge(client, new CapturingLogger(sink));
         SetCurrentUser(client, 42);
 
         Reflect.Invoke(bridge, "OnClientReady");
@@ -374,7 +372,7 @@ public sealed class DiscordNetBridgeTests
     {
         using var client = new DiscordSocketClient();
         SetCurrentUser(client, 42);
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         var states = 0;
         bridge.VoiceStateUpdated += (_, _) => states++;
 
@@ -417,7 +415,7 @@ public sealed class DiscordNetBridgeTests
     {
         using var client = new DiscordSocketClient();
         var logger = new ThrowingLogger();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client, logger);
+        using var bridge = new DiscordNet.DiscordNetBridge(client, logger);
 
         await Assert
             .That(() =>
@@ -436,7 +434,7 @@ public sealed class DiscordNetBridgeTests
     public async Task RecordedChannelLeave()
     {
         using var client = new DiscordSocketClient();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         var channels =
             (ConcurrentDictionary<ulong, IAudioChannel>)
                 Reflect.FieldValue(bridge, "_audioChannels")!;
@@ -466,7 +464,7 @@ public sealed class DiscordNetBridgeTests
     public async Task ShardedLookup()
     {
         using var sharded = new DiscordShardedClient();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(sharded);
+        using var bridge = new DiscordNet.DiscordNetBridge(sharded);
 
         await Assert
             .That(async () => await bridge.SendVoiceUpdateAsync(123, 456).ConfigureAwait(false))
@@ -478,7 +476,7 @@ public sealed class DiscordNetBridgeTests
     {
         using var client = new DiscordSocketClient();
         var sink = new List<(LogLevel, string)>();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client, new CapturingLogger(sink));
+        using var bridge = new DiscordNet.DiscordNetBridge(client, new CapturingLogger(sink));
 
         Reflect.Invoke(bridge, "PublishUserId", 42UL);
         var settled = bridge.WaitForReadyAsync().Wait(1000);
@@ -494,7 +492,7 @@ public sealed class DiscordNetBridgeTests
     public async Task RemovalSweep()
     {
         using var client = new DiscordSocketClient();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         var fence = (GuildRemovalFence)Reflect.FieldValue(bridge, "_removalFence")!;
         var ticks = (ConcurrentDictionary<ulong, long>)Reflect.FieldValue(fence, "_ticks")!;
         var now = Environment.TickCount64;
@@ -517,7 +515,7 @@ public sealed class DiscordNetBridgeTests
     {
         using var client = new DiscordSocketClient();
         var sink = new List<(LogLevel, string)>();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client, new CapturingLogger(sink));
+        using var bridge = new DiscordNet.DiscordNetBridge(client, new CapturingLogger(sink));
 
         Reflect.Invoke(bridge, "OnClientLog", new LogMessage(severity, "Gateway", "hello", null));
         await Assert.That(sink.Select(entry => entry.Item1)).IsEquivalentTo([expected]);
@@ -528,7 +526,7 @@ public sealed class DiscordNetBridgeTests
     public async Task VoiceServerShapes()
     {
         using var client = new DiscordSocketClient();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         var raised = 0;
         bridge.VoiceServerUpdated += (_, _) => raised++;
 
@@ -559,8 +557,8 @@ public sealed class DiscordNetBridgeTests
         var removed = 0;
         ulong removedGuild = 0;
         var states = 0;
-        Nyra.Abstractions.DiscordVoiceState? carried = null;
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        DiscordVoiceState? carried = null;
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         bridge.GuildRemoved += (_, args) =>
         {
             removed++;

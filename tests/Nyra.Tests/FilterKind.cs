@@ -195,14 +195,12 @@ public sealed class FilterKind
                 new TesseractFilter { RotationHz = double.NaN },
             };
             foreach (var filter in cases)
-            {
                 await Assert
                     .That(async () =>
                     {
                         await conn.Filters.AddAsync(filter).ConfigureAwait(false);
                     })
                     .Throws<ArgumentOutOfRangeException>();
-            }
         }
     }
 
@@ -249,14 +247,12 @@ public sealed class FilterKind
             await Assert.That(body).Contains("\"volume\":2.5");
 
             foreach (var bad in new[] { -1f, 6f, float.NaN })
-            {
                 await Assert
                     .That(async () =>
                     {
                         await lavaConn.Filters.SetVolumeFilterAsync(bad).ConfigureAwait(false);
                     })
                     .Throws<ArgumentOutOfRangeException>();
-            }
         }
     }
 

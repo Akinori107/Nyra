@@ -100,9 +100,7 @@ public sealed class NightlyAdapter
             Reflect.Set(args, "Guild", guildObj);
         }
         else
-        {
             Reflect.Set(args, "Guild", (DspGuild?)null);
-        }
 
         Reflect.Set(args, "Endpoint", endpoint);
         Reflect.Set(args, "VoiceToken", token);
@@ -406,7 +404,7 @@ public sealed class NightlyAdapter
         var nullNode = false;
         try
         {
-            _ = Nyra.DSharpPlus.Nightly.NodeExtensions.ConnectAsync(null!, null!);
+            _ = NodeExtensions.ConnectAsync(null!, null!);
         }
         catch (ArgumentNullException argumentNull) when (argumentNull.ParamName == "node")
         {
@@ -417,11 +415,8 @@ public sealed class NightlyAdapter
         var nullChannel = false;
         try
         {
-            _ = Nyra.DSharpPlus.Nightly.NodeExtensions.ConnectAsync(
-                new Nyra.Node(
-                    new Nyra.Endpoint("127.0.0.1", 1, "x"),
-                    new Nyra.NodeOptions { Name = "guards" }
-                ),
+            _ = NodeExtensions.ConnectAsync(
+                new Node(new Endpoint("127.0.0.1", 1, "x"), new NodeOptions { Name = "guards" }),
                 null!
             );
         }
@@ -437,11 +432,8 @@ public sealed class NightlyAdapter
         var rejectedType = false;
         try
         {
-            _ = Nyra.DSharpPlus.Nightly.NodeExtensions.ConnectAsync(
-                new Nyra.Node(
-                    new Nyra.Endpoint("127.0.0.1", 1, "x"),
-                    new Nyra.NodeOptions { Name = "guards" }
-                ),
+            _ = NodeExtensions.ConnectAsync(
+                new Node(new Endpoint("127.0.0.1", 1, "x"), new NodeOptions { Name = "guards" }),
                 wrongShape
             );
         }
@@ -456,11 +448,8 @@ public sealed class NightlyAdapter
         var rejectedGuild = false;
         try
         {
-            _ = Nyra.DSharpPlus.Nightly.NodeExtensions.ConnectAsync(
-                new Nyra.Node(
-                    new Nyra.Endpoint("127.0.0.1", 1, "x"),
-                    new Nyra.NodeOptions { Name = "guards" }
-                ),
+            _ = NodeExtensions.ConnectAsync(
+                new Node(new Endpoint("127.0.0.1", 1, "x"), new NodeOptions { Name = "guards" }),
                 wrongShape
             );
         }
@@ -475,11 +464,11 @@ public sealed class NightlyAdapter
         await Assert
             .That(() =>
             {
-                _ = Nyra
-                    .DSharpPlus.Nightly.NodeExtensions.ConnectAsync(
-                        new Nyra.Node(
-                            new Nyra.Endpoint("127.0.0.1", 1, "x"),
-                            new Nyra.NodeOptions { Name = "guards" }
+                _ = NodeExtensions
+                    .ConnectAsync(
+                        new Node(
+                            new Endpoint("127.0.0.1", 1, "x"),
+                            new NodeOptions { Name = "guards" }
                         ),
                         wrongShape
                     )
@@ -490,7 +479,7 @@ public sealed class NightlyAdapter
         var nullLookup = false;
         try
         {
-            Nyra.DSharpPlus.Nightly.DiscordClientBuilderExtensions.GetNyra(null!);
+            DiscordClientBuilderExtensions.GetNyra(null!);
         }
         catch (ArgumentNullException argumentNull) when (argumentNull.ParamName == "client")
         {
@@ -502,7 +491,7 @@ public sealed class NightlyAdapter
         var nullSharded = false;
         try
         {
-            _ = Nyra.DSharpPlus.Nightly.DiscordClientBuilderExtensions.GetNyraAsync(null!);
+            _ = DiscordClientBuilderExtensions.GetNyraAsync(null!);
         }
         catch (ArgumentNullException argumentNull) when (argumentNull.ParamName == "client")
         {
@@ -512,21 +501,20 @@ public sealed class NightlyAdapter
 
         guardsClient.GetNyraAsync().Wait(1000);
         var registered = false;
-        var extensionsField =
-            typeof(Nyra.DSharpPlus.Nightly.DiscordClientBuilderExtensions).GetField(
-                "Extensions",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
-            );
+        var extensionsField = typeof(DiscordClientBuilderExtensions).GetField(
+            "Extensions",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+        );
         if (
             extensionsField?.GetValue(null)
             is System.Runtime.CompilerServices.ConditionalWeakTable<
                 DiscordClient,
-                Nyra.NyraExtension
+                NyraExtension
             > registry
         )
         {
             using var extensionBridge = new NightlyBridge();
-            registry.Add(guardsClient, new Nyra.NyraExtension(extensionBridge));
+            registry.Add(guardsClient, new NyraExtension(extensionBridge));
             var map = guardsClient.GetNyraAsync();
             map.Wait(1000);
             registered = map.Result.Count == 1 && map.Result[0] is { IsDisposed: false };

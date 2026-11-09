@@ -90,12 +90,11 @@ public sealed class EntityAndExceptionSurface
         await Assert.That(blankPassword).IsNotNull();
     }
 
-    private static readonly WireEnumConverter<LoadTypeWire, Nyra.Entities.LoadType> LoadTypeConv =
-        new();
+    private static readonly WireEnumConverter<LoadTypeWire, LoadType> LoadTypeConv = new();
 
     private static readonly WireEnumConverter<
         LyricsLoadTypeWire,
-        Nyra.Entities.LyricsLoadType
+        LyricsLoadType
     > LyricsLoadTypeConv = new();
 
     [Test]
@@ -105,28 +104,28 @@ public sealed class EntityAndExceptionSurface
         rawReader.Read();
         var objectToken = LoadTypeConv.Read(
             ref rawReader,
-            typeof(Nyra.Entities.LoadType),
+            typeof(LoadType),
             new JsonSerializerOptions()
         );
-        await Assert.That(objectToken).IsEqualTo(Nyra.Entities.LoadType.Unknown);
+        await Assert.That(objectToken).IsEqualTo(LoadType.Unknown);
         var unknownReader = new Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes("\"bogus\""));
         unknownReader.Read();
         var unknownString = LoadTypeConv.Read(
             ref unknownReader,
-            typeof(Nyra.Entities.LoadType),
+            typeof(LoadType),
             new JsonSerializerOptions()
         );
-        await Assert.That(unknownString).IsEqualTo(Nyra.Entities.LoadType.Unknown);
+        await Assert.That(unknownString).IsEqualTo(LoadType.Unknown);
         var unknownSearchReader = new Utf8JsonReader(
             System.Text.Encoding.UTF8.GetBytes("\"bogus\"")
         );
         unknownSearchReader.Read();
         var unknownSearch = LyricsLoadTypeConv.Read(
             ref unknownSearchReader,
-            typeof(Nyra.Entities.LyricsLoadType),
+            typeof(LyricsLoadType),
             new JsonSerializerOptions()
         );
-        await Assert.That(unknownSearch).IsEqualTo(Nyra.Entities.LyricsLoadType.Unknown);
+        await Assert.That(unknownSearch).IsEqualTo(LyricsLoadType.Unknown);
     }
 
     [Test]
@@ -214,14 +213,11 @@ public sealed class EntityAndExceptionSurface
             """{"loadType":"error","data":{"message":"x","severity":"fault","cause":"y","exception":{"message":"boom","severity":"fault","cause":"upstream"}}}"""
         );
         await Assert
-            .That(
-                errorLoad is LoadResult.LoadFailed { LoadType: var lt }
-                    && lt == Nyra.Entities.LoadType.Error
-            )
+            .That(errorLoad is LoadResult.LoadFailed { LoadType: var lt } && lt == LoadType.Error)
             .IsTrue();
 
         Throws<JsonException>(() =>
-            System.Text.Json.JsonSerializer.Serialize(errorLoad, NyraJson.OptionsFor(false))
+            JsonSerializer.Serialize(errorLoad, NyraJson.OptionsFor(false))
         );
     }
 }

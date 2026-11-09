@@ -62,9 +62,7 @@ public sealed class NodeEventEdge
         {
             bool lockedCheck;
             lock (loggerSink)
-            {
                 lockedCheck = !loggerSink.Any(l => l.Contains("resuming"));
-            }
             await Assert.That(lockedCheck).IsTrue();
         }
 

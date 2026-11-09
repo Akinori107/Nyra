@@ -22,7 +22,7 @@ public sealed class ClientEntryPoint
             await Assert.That(ReferenceEquals(client.UseNyra(), first)).IsTrue();
             await Assert.That(ReferenceEquals(client.GetNyra(), first)).IsTrue();
 
-            first!.Dispose();
+            first.Dispose();
             await Assert.That(client.GetNyra()).IsNull();
             var second = client.UseNyra();
             await Assert.That(second).IsNotNull();
@@ -35,23 +35,23 @@ public sealed class ClientEntryPoint
                 await Assert.That(ReferenceEquals(otherExtension, second)).IsFalse();
                 await Assert.That(other.GetNyra()).IsSameReferenceAs(otherExtension);
                 await Assert.That(client.GetNyra()).IsSameReferenceAs(second);
-                otherExtension!.Dispose();
+                otherExtension.Dispose();
             }
 
-            second!.Dispose();
+            second.Dispose();
         }
 
         await Assert.That(new DiscordSocketClient().GetNyra()).IsNull();
         await Assert
             .That(() =>
             {
-                Nyra.DiscordNet.DiscordSocketClientExtensions.UseNyra((DiscordSocketClient)null!);
+                DiscordSocketClientExtensions.UseNyra((DiscordSocketClient)null!);
             })
             .Throws<ArgumentNullException>();
         await Assert
             .That(() =>
             {
-                Nyra.DiscordNet.DiscordSocketClientExtensions.GetNyra((DiscordSocketClient)null!);
+                DiscordSocketClientExtensions.GetNyra((DiscordSocketClient)null!);
             })
             .Throws<ArgumentNullException>();
 
@@ -61,24 +61,24 @@ public sealed class ClientEntryPoint
             await Assert.That(shardedFirst).IsNotNull();
             await Assert.That(ReferenceEquals(sharded.UseNyra(), shardedFirst)).IsTrue();
             await Assert.That(ReferenceEquals(sharded.GetNyra(), shardedFirst)).IsTrue();
-            shardedFirst!.Dispose();
+            shardedFirst.Dispose();
             await Assert.That(sharded.GetNyra()).IsNull();
             var shardedSecond = sharded.UseNyra();
             await Assert.That(shardedSecond).IsNotNull();
             await Assert.That(ReferenceEquals(shardedSecond, shardedFirst)).IsFalse();
-            shardedSecond!.Dispose();
+            shardedSecond.Dispose();
         }
 
         await Assert
             .That(() =>
             {
-                Nyra.DiscordNet.DiscordSocketClientExtensions.UseNyra((DnetSharded)null!);
+                DiscordSocketClientExtensions.UseNyra((DnetSharded)null!);
             })
             .Throws<ArgumentNullException>();
         await Assert
             .That(() =>
             {
-                Nyra.DiscordNet.DiscordSocketClientExtensions.GetNyra((DnetSharded)null!);
+                DiscordSocketClientExtensions.GetNyra((DnetSharded)null!);
             })
             .Throws<ArgumentNullException>();
     }
@@ -95,7 +95,7 @@ public sealed class ClientEntryPoint
 
             await Assert.That(ReferenceEquals(client.UseNyra(shardCount: 4), first)).IsTrue();
 
-            first!.Dispose();
+            first.Dispose();
             await Assert.That(client.GetNyra()).IsNull();
             var second = client.UseNyra();
             await Assert.That(second).IsNotNull();
@@ -111,7 +111,7 @@ public sealed class ClientEntryPoint
             await Assert
                 .That(() =>
                 {
-                    Nyra.DSharpPlus.DiscordClientExtensions.UseNyra(null!);
+                    DiscordClientExtensions.UseNyra(null!);
                 })
                 .Throws<ArgumentNullException>();
         }
@@ -120,7 +120,7 @@ public sealed class ClientEntryPoint
         {
             var extension = client.UseNyra();
             await Assert.That(extension).IsNotNull();
-            extension!.Dispose();
+            extension.Dispose();
         }
 
         var intentsLogger = new RecordingLogger();
@@ -136,7 +136,7 @@ public sealed class ClientEntryPoint
         )
         {
             var extension = client.UseNyra();
-            extension!.Dispose();
+            extension.Dispose();
         }
 
         foreach (
@@ -158,7 +158,7 @@ public sealed class ClientEntryPoint
                 }
             );
             var extension = client.UseNyra();
-            extension!.Dispose();
+            extension.Dispose();
         }
 
         using (
@@ -174,7 +174,7 @@ public sealed class ClientEntryPoint
         {
             var extension = client.UseNyra();
             await Assert.That(extension).IsNotNull();
-            extension!.Dispose();
+            extension.Dispose();
         }
 
         using (
@@ -189,19 +189,16 @@ public sealed class ClientEntryPoint
         {
             var first = client.UseNyra(shardCount: 2);
             await Assert.That(ReferenceEquals(client.UseNyra(shardCount: 4), first)).IsTrue();
-            first!.Dispose();
+            first.Dispose();
         }
     }
 
     private static void SeedShards(global::DSharpPlus.DiscordShardedClient client, int count)
     {
-        var shards = new System.Collections.Concurrent.ConcurrentDictionary<
-            int,
-            global::DSharpPlus.DiscordClient
-        >();
+        var shards = new System.Collections.Concurrent.ConcurrentDictionary<int, DiscordClient>();
         for (var i = 0; i < count; i++)
         {
-            var shard = new global::DSharpPlus.DiscordClient(
+            var shard = new DiscordClient(
                 new DiscordConfiguration
                 {
                     Token = "offline",
@@ -272,17 +269,17 @@ public sealed class ClientEntryPoint
         await Assert.That(first).IsNotNull();
         await Assert.That(ReferenceEquals(gateway.UseNyra(), first)).IsTrue();
         await Assert.That(ReferenceEquals(gateway.GetNyra(), first)).IsTrue();
-        first!.Dispose();
+        first.Dispose();
         await Assert.That(gateway.GetNyra()).IsNull();
         var second = gateway.UseNyra();
         await Assert.That(second).IsNotNull();
         await Assert.That(ReferenceEquals(second, first)).IsFalse();
-        second!.Dispose();
+        second.Dispose();
 
         await Assert
             .That(() =>
             {
-                Nyra.NetCord.GatewayClientExtensions.UseNyra((GatewayClient)null!);
+                GatewayClientExtensions.UseNyra((GatewayClient)null!);
             })
             .Throws<ArgumentNullException>();
 
@@ -291,7 +288,7 @@ public sealed class ClientEntryPoint
         await Assert.That(shardedFirst).IsNotNull();
         await Assert.That(ReferenceEquals(sharded.UseNyra(), shardedFirst)).IsTrue();
         await Assert.That(ReferenceEquals(sharded.GetNyra(), shardedFirst)).IsTrue();
-        shardedFirst!.Dispose();
+        shardedFirst.Dispose();
         await Assert.That(sharded.GetNyra()).IsNull();
 
         await Task.CompletedTask.ConfigureAwait(false);
@@ -306,35 +303,35 @@ public sealed class ClientEntryPoint
         public void Dispose() { }
     }
 
-    private sealed class RecordingLogger : Microsoft.Extensions.Logging.ILogger
+    private sealed class RecordingLogger : ILogger
     {
         public List<string> Messages { get; } = [];
 
         public void Log<TState>(
-            Microsoft.Extensions.Logging.LogLevel logLevel,
-            Microsoft.Extensions.Logging.EventId eventId,
+            LogLevel logLevel,
+            EventId eventId,
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter
         ) => Messages.Add(formatter(state, exception));
 
-        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public bool IsEnabled(LogLevel logLevel) => true;
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
     }
 
-    private sealed class ThrowingLogger : Microsoft.Extensions.Logging.ILogger
+    private sealed class ThrowingLogger : ILogger
     {
         public void Log<TState>(
-            Microsoft.Extensions.Logging.LogLevel logLevel,
-            Microsoft.Extensions.Logging.EventId eventId,
+            LogLevel logLevel,
+            EventId eventId,
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter
         ) => throw new InvalidOperationException("the logger itself is broken");
 
-        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => false;
+        public bool IsEnabled(LogLevel logLevel) => false;
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;

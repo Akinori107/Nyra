@@ -182,7 +182,7 @@ public sealed class PlayPath
             var exception = await PlayThrowsAsync(() => conn.PlayAsync(Track()))
                 .ConfigureAwait(false);
             await Assert.That(exception).IsNotNull();
-            await Assert.That(exception!.StatusCode).IsEqualTo(200);
+            await Assert.That(exception.StatusCode).IsEqualTo(200);
             await Assert.That(conn.CurrentTrack).IsNull();
         }
     }
@@ -211,7 +211,7 @@ public sealed class PlayPath
             var missed = await PlayThrowsAsync(() => conn.PlayIdentifierAsync("ytsearch:atwa"))
                 .ConfigureAwait(false);
             await Assert.That(missed).IsNotNull();
-            await Assert.That(missed!.StatusCode).IsEqualTo(200);
+            await Assert.That(missed.StatusCode).IsEqualTo(200);
             await Assert.That(conn.CurrentTrack).IsNotNull();
             await Assert.That(conn.CurrentTrack!.Info.Title).IsEqualTo("Other");
         }

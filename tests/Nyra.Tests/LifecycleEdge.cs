@@ -58,7 +58,7 @@ public sealed class LifecycleEdge
             var nulls = await Assert
                 .That(() =>
                 {
-                    _ = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(null!, channel);
+                    _ = DSharpPlus.NodeExtensions.ConnectAsync(null!, channel);
                 })
                 .Throws<ArgumentNullException>();
             await Assert.That(nulls!.ParamName).IsEqualTo("node");
@@ -66,7 +66,7 @@ public sealed class LifecycleEdge
             var noChannel = await Assert
                 .That(() =>
                 {
-                    _ = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, null!);
+                    _ = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, null!);
                 })
                 .Throws<ArgumentNullException>();
             await Assert.That(noChannel!.ParamName).IsEqualTo("channel");
@@ -74,7 +74,7 @@ public sealed class LifecycleEdge
             await Assert
                 .That(() =>
                 {
-                    _ = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
+                    _ = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
                 })
                 .Throws<ArgumentException>();
 
@@ -83,7 +83,7 @@ public sealed class LifecycleEdge
             await Assert
                 .That(() =>
                 {
-                    _ = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
+                    _ = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
                 })
                 .Throws<ArgumentException>();
 
@@ -97,7 +97,7 @@ public sealed class LifecycleEdge
                     """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
                 )
             );
-            var join = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
+            var join = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
             await Task.Delay(100).ConfigureAwait(false);
             stack.Bridge.FireVoiceState(777, 555, "vsess");
             stack.Bridge.FireVoiceServer(777, "tok", "127.0.0.1");
@@ -140,7 +140,7 @@ public sealed class LifecycleEdge
                 )
                 .Throws<RestException>();
             await Assert.That(throttled!.StatusCode).IsEqualTo(429);
-            await Assert.That(throttled!.RetryAfter).IsEqualTo(TimeSpan.FromSeconds(250));
+            await Assert.That(throttled.RetryAfter).IsEqualTo(TimeSpan.FromSeconds(250));
         }
         finally
         {
@@ -297,7 +297,7 @@ public sealed class LifecycleEdge
         );
         extension.AddNode(node);
         var order = new List<string>();
-        var lateStats = new TaskCompletionSource<Nyra.EventArgs.NodeStatsEventArgs>(
+        var lateStats = new TaskCompletionSource<EventArgs.NodeStatsEventArgs>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         node.Ready += (_, _) =>
@@ -551,7 +551,7 @@ public sealed class LifecycleEdge
                 .ConfigureAwait(false);
             stack.Server.On("PATCH", PlayerPath, _ => new FakeRestResponse(200, divergentEcho));
             await connection
-                .Filters.AddAsync(new Nyra.Entities.Filters.TimescaleFilter { Speed = 1.5 })
+                .Filters.AddAsync(new Entities.Filters.TimescaleFilter { Speed = 1.5 })
                 .ConfigureAwait(false);
             await Assert.That(Patches(stack.Server)).IsEqualTo(1);
 
@@ -580,7 +580,7 @@ public sealed class LifecycleEdge
                     _ => new FakeRestResponse(200, divergentEcho)
                 );
                 await guild
-                    .Filters.AddAsync(new Nyra.Entities.Filters.TimescaleFilter { Speed = 1.5 })
+                    .Filters.AddAsync(new Entities.Filters.TimescaleFilter { Speed = 1.5 })
                     .ConfigureAwait(false);
                 second.Server.On(
                     "PATCH",
@@ -757,7 +757,7 @@ public sealed class LifecycleEdge
     {
         var token = new BotToken("MTIz.ab.cd");
         var shard = new GatewayClient(token);
-        var registryField = typeof(Nyra.NetCord.GatewayClientExtensions).GetField(
+        var registryField = typeof(NetCord.GatewayClientExtensions).GetField(
             "Extensions",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
         );
@@ -779,15 +779,15 @@ public sealed class LifecycleEdge
                     "State",
                     System.Reflection.BindingFlags.NonPublic
                 ) ?? throw new MissingMemberException("ShardedGatewayClient.State");
-            var state = System.Activator.CreateInstance(stateType)!;
+            var state = Activator.CreateInstance(stateType)!;
             stateType.GetProperty("Clients")!.SetValue(state, new[] { shard });
             var sharded = new ShardedGatewayClient(token);
             Reflect.Field(sharded, "_state", state);
 
             var logger = new RecordingLogger();
-            var extension = Nyra.NetCord.GatewayClientExtensions.UseNyra(sharded, logger);
+            var extension = NetCord.GatewayClientExtensions.UseNyra(sharded, logger);
             await Assert.That(extension).IsNotNull();
-            await Assert.That(extension!.IsDisposed).IsFalse();
+            await Assert.That(extension.IsDisposed).IsFalse();
             await Assert.That(logger.Warnings).IsGreaterThanOrEqualTo(1);
             await extension.DisposeAsync().ConfigureAwait(false);
         }
@@ -801,11 +801,11 @@ public sealed class LifecycleEdge
     public async Task DspRemove()
     {
         await Assert
-            .That(() => Nyra.DSharpPlus.DiscordClientExtensions.RemoveNyra(null!))
+            .That(() => DSharpPlus.DiscordClientExtensions.RemoveNyra(null!))
             .Throws<ArgumentNullException>()
             .WithParameterName("client");
 
-        var registryField = typeof(Nyra.DSharpPlus.DiscordClientExtensions).GetField(
+        var registryField = typeof(DSharpPlus.DiscordClientExtensions).GetField(
             "Extensions",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
         );
@@ -822,7 +822,7 @@ public sealed class LifecycleEdge
             var dspClient = Reflect.New<DspClient>();
             registry!.Remove(dspClient);
             registry.Add(dspClient, stack.Extension);
-            Nyra.DSharpPlus.DiscordClientExtensions.RemoveNyra(dspClient);
+            DSharpPlus.DiscordClientExtensions.RemoveNyra(dspClient);
             await Assert.That(stack.Extension.IsDisposed).IsTrue();
         }
         finally

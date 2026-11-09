@@ -34,9 +34,7 @@ public sealed class NodeGuard
             tooOld = exception;
         }
         using (Assert.Multiple())
-        {
             await Assert.That(tooOld).IsNotNull();
-        }
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
     }

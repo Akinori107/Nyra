@@ -97,14 +97,12 @@ public sealed class GuildFeature
                 [new SponsorBlockSegment { Start = 10, End = 5 }],
             };
             foreach (var list in segments)
-            {
                 await Assert
                     .That(async () =>
                     {
                         await conn.SponsorBlock.SetSegmentsAsync(list).ConfigureAwait(false);
                     })
                     .Throws<ArgumentException>();
-            }
 
             stack.Server.On(
                 "POST",
@@ -142,14 +140,12 @@ public sealed class GuildFeature
                 () => conn.Mix.StartAsync(track, 1.5f),
             };
             foreach (var call in guards)
-            {
                 await Assert
                     .That(async () =>
                     {
                         await call().ConfigureAwait(false);
                     })
                     .Throws<ArgumentException>();
-            }
 
             stack.Server.On(
                 "POST",
@@ -161,7 +157,7 @@ public sealed class GuildFeature
             );
             var layer = await conn.Mix.StartAsync(track, 0.5f).ConfigureAwait(false);
             await Assert.That(layer).IsNotNull();
-            await Assert.That(layer!.Id).IsEqualTo("layer-1");
+            await Assert.That(layer.Id).IsEqualTo("layer-1");
 
             stack.Server.On(
                 "GET",

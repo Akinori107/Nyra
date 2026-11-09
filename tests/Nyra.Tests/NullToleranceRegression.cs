@@ -24,8 +24,8 @@ public sealed class NullToleranceRegression
         {
             await Assert.That(segment).IsNotNull();
             await Assert.That(segment!.Votes).IsEqualTo(0);
-            await Assert.That(segment!.Locked).IsFalse();
-            await Assert.That(segment!.VideoDuration).IsEqualTo(0);
+            await Assert.That(segment.Locked).IsFalse();
+            await Assert.That(segment.VideoDuration).IsEqualTo(0);
         }
 
         var fractional = Parse<SponsorBlockSegment>(
@@ -39,7 +39,7 @@ public sealed class NullToleranceRegression
         {
             await Assert.That(fractional).IsNotNull();
             await Assert.That(fractional!.Votes).IsEqualTo(3);
-            await Assert.That(fractional!.VideoDuration).IsEqualTo(1500);
+            await Assert.That(fractional.VideoDuration).IsEqualTo(1500);
         }
     }
 
@@ -60,7 +60,7 @@ public sealed class NullToleranceRegression
         {
             await Assert.That(lyrics).IsNotNull();
             await Assert.That(lyrics!.Time).IsEqualTo(12001);
-            await Assert.That(lyrics!.Duration).IsEqualTo(900);
+            await Assert.That(lyrics.Duration).IsEqualTo(900);
         }
 
         var lava = Parse<LavaLyricsLine>(
@@ -83,8 +83,8 @@ public sealed class NullToleranceRegression
         var audio = track?.GetYouTubeAudioTracks();
         await Assert.That(audio).IsNotNull();
         await Assert.That(audio!.Count).IsEqualTo(2);
-        await Assert.That(audio![0] is { IsDefault: false, IsAutoDubbed: false }).IsTrue();
-        await Assert.That(audio![1] is { IsDefault: true }).IsTrue();
+        await Assert.That(audio[0] is { IsDefault: false, IsAutoDubbed: false }).IsTrue();
+        await Assert.That(audio[1] is { IsDefault: true }).IsTrue();
     }
 
     [Test]

@@ -115,10 +115,8 @@ internal sealed class RecordingList<T> : IEnumerable<T>
     {
         var snapshot = Snapshot();
         for (var i = snapshot.Length - 1; i >= 0; i--)
-        {
             if (match(snapshot[i]))
                 return i;
-        }
         return -1;
     }
 
@@ -265,9 +263,9 @@ internal sealed class FakeNodeServer : IDisposable
 
     public FakeNodeServer()
     {
-        _listener = new TcpListener(System.Net.IPAddress.Loopback, 0);
+        _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start(16);
-        Port = ((System.Net.IPEndPoint)_listener.LocalEndpoint).Port;
+        Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = Task.Run(AcceptLoopAsync);
     }
 
@@ -488,7 +486,6 @@ internal sealed class FakeNodeServer : IDisposable
     {
         var limit = length - 3;
         for (var i = 0; i < limit; i++)
-        {
             if (
                 buffer[i] == 13
                 && buffer[i + 1] == 10
@@ -496,7 +493,6 @@ internal sealed class FakeNodeServer : IDisposable
                 && buffer[i + 3] == 10
             )
                 return i;
-        }
         return -1;
     }
 
@@ -935,11 +931,9 @@ internal static class NodeHarness
             ?? throw new MissingMemberException("WebSocketClient.State");
         var state = Activator.CreateInstance(stateType)!;
         if (ready)
-        {
             stateType
                 .GetMethod("IndicateReady", BindingFlags.Public | BindingFlags.Instance)!
                 .Invoke(state, new object?[] { null });
-        }
         return state;
     }
 }

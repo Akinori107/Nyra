@@ -58,7 +58,7 @@ public sealed class RemovalRace
             {
                 await connect.ConfigureAwait(false);
             }
-            catch (Nyra.Exceptions.VoiceHandshakeException) { }
+            catch (Exceptions.VoiceHandshakeException) { }
             await Assert
                 .That(server.RestCalls.Any(c => c is { Method: "PATCH", Path: PlayerPath }))
                 .IsFalse();

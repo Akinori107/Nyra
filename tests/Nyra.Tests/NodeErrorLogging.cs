@@ -253,15 +253,15 @@ public sealed class NodeErrorLogging
             where TState : notnull => null;
     }
 
-    private sealed class BreakingBridge : Nyra.Abstractions.IDiscordBridge, IDisposable
+    private sealed class BreakingBridge : Abstractions.IDiscordBridge, IDisposable
     {
-        public event EventHandler<Nyra.Abstractions.VoiceServerUpdatedEventArgs>? VoiceServerUpdated
+        public event EventHandler<Abstractions.VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
             add { }
             remove { }
         }
 
-        public event EventHandler<Nyra.Abstractions.VoiceStateUpdatedEventArgs>? VoiceStateUpdated
+        public event EventHandler<Abstractions.VoiceStateUpdatedEventArgs>? VoiceStateUpdated
         {
             add { }
             remove { }
@@ -277,9 +277,9 @@ public sealed class NodeErrorLogging
             CancellationToken cancellationToken = default
         ) => Task.CompletedTask;
 
-        public Task<Nyra.Abstractions.ClientInformation> WaitForReadyAsync(
+        public Task<Abstractions.ClientInformation> WaitForReadyAsync(
             CancellationToken cancellationToken = default
-        ) => Task.FromResult(new Nyra.Abstractions.ClientInformation(FakeBridge.UserId));
+        ) => Task.FromResult(new Abstractions.ClientInformation(FakeBridge.UserId));
 
         public void Dispose() => throw new InvalidOperationException("the bridge broke on dispose");
     }

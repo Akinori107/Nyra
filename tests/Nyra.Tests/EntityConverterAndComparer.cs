@@ -230,9 +230,9 @@ public sealed class EntityConverterAndComparer
         {
             await Assert.That(nodeInfo).IsNotNull();
             await Assert.That(nodeInfo!.Filters.Count).IsEqualTo(0);
-            await Assert.That(nodeInfo!.SourceManagers.Count).IsEqualTo(0);
-            await Assert.That(nodeInfo!.Version).IsNotNull();
-            await Assert.That(nodeInfo!.Version!.PreReleaseIdentifiers.Count).IsEqualTo(0);
+            await Assert.That(nodeInfo.SourceManagers.Count).IsEqualTo(0);
+            await Assert.That(nodeInfo.Version).IsNotNull();
+            await Assert.That(nodeInfo.Version.PreReleaseIdentifiers.Count).IsEqualTo(0);
         }
 
         var lines = Parse<SubscribedLyrics>("""{"lines":null}""");
@@ -257,7 +257,7 @@ public sealed class EntityConverterAndComparer
         {
             await Assert.That(sponsor).IsNotNull();
             await Assert.That(sponsor!.ActionTypes.Count).IsEqualTo(0);
-            await Assert.That(sponsor!.Segments.Count).IsEqualTo(0);
+            await Assert.That(sponsor.Segments.Count).IsEqualTo(0);
         }
     }
 
@@ -280,7 +280,7 @@ public sealed class EntityConverterAndComparer
         var tracks = audio?.GetYouTubeAudioTracks();
         await Assert.That(tracks).IsNotNull();
         await Assert.That(tracks!.Count).IsEqualTo(1);
-        await Assert.That(tracks![0].Id).IsEqualTo("a1");
+        await Assert.That(tracks[0].Id).IsEqualTo("a1");
     }
 
     [Test]
@@ -317,34 +317,34 @@ public sealed class EntityConverterAndComparer
         await Assert
             .That(() =>
             {
-                Nyra.Internal.FilterValidation.ValidateFilterBounds(
+                Internal.FilterValidation.ValidateFilterBounds(
                     new FilterChain { Timescale = new TimescaleFilter { Speed = 0.0 } },
                     false
                 );
             })
-            .Throws<System.ArgumentOutOfRangeException>();
+            .Throws<ArgumentOutOfRangeException>();
 
         await Assert
             .That(() =>
             {
-                Nyra.Internal.FilterValidation.ValidateFilterBounds(
+                Internal.FilterValidation.ValidateFilterBounds(
                     new FilterChain { Timescale = new TimescaleFilter { Speed = -1.0 } },
                     false
                 );
             })
-            .Throws<System.ArgumentOutOfRangeException>();
+            .Throws<ArgumentOutOfRangeException>();
 
         await Assert
             .That(() =>
             {
-                Nyra.Internal.FilterValidation.ValidateFilterBounds(
+                Internal.FilterValidation.ValidateFilterBounds(
                     new FilterChain { Timescale = new TimescaleFilter { Speed = double.NaN } },
                     false
                 );
             })
-            .Throws<System.ArgumentOutOfRangeException>();
+            .Throws<ArgumentOutOfRangeException>();
 
-        Nyra.Internal.FilterValidation.ValidateFilterBounds(
+        Internal.FilterValidation.ValidateFilterBounds(
             new FilterChain { Timescale = new TimescaleFilter { Speed = 1.5 } },
             false
         );

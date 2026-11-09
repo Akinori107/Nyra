@@ -63,7 +63,7 @@ public sealed class BoundaryToleranceRegression
         {
             await Assert.That(poisoned).IsNotNull();
             await Assert.That(poisoned!.Enabled).IsFalse();
-            await Assert.That(poisoned!.SkipMarginMilliseconds).IsEqualTo(0);
+            await Assert.That(poisoned.SkipMarginMilliseconds).IsEqualTo(0);
         }
         var fromStringMargin = JsonSerializer.Deserialize<SponsorBlockState>(
             """{"enabled":true,"skipMarginMs":"2500"}""",

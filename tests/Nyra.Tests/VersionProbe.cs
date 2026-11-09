@@ -74,12 +74,8 @@ public sealed class VersionProbe
     {
         var stack = await StartAsync("x.9.fork").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
-        {
-            using (Assert.Multiple())
-            {
-                await Assert.That(stack.Node.IsReady).IsTrue();
-            }
-        }
+        using (Assert.Multiple())
+            await Assert.That(stack.Node.IsReady).IsTrue();
     }
 
     [Test]
@@ -87,8 +83,6 @@ public sealed class VersionProbe
     {
         var stack = await StartAsync("a1b2c3d").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
-        {
             await Assert.That(stack.Node.IsReady).IsTrue();
-        }
     }
 }

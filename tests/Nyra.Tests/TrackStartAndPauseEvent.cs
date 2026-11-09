@@ -85,8 +85,8 @@ public sealed class TrackStartAndPauseEvent
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
         var node = new Node(
-            new Nyra.Endpoint("127.0.0.1", server.Port, server.Password),
-            new Nyra.NodeOptions
+            new Endpoint("127.0.0.1", server.Port, server.Password),
+            new NodeOptions
             {
                 Name = "track-start",
                 Resuming = true,

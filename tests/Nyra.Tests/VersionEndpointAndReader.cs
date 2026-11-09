@@ -18,7 +18,7 @@ public sealed class VersionEndpointAndReader
         {
             await Assert.That(NodeVersion.TryParse("not-a-version", out _)).IsFalse();
             await Assert.That(NodeVersion.TryParse(string.Empty, out _)).IsFalse();
-            await Assert.That(NodeVersion.TryParse((string?)null, out _)).IsFalse();
+            await Assert.That(NodeVersion.TryParse(null, out _)).IsFalse();
         }
     }
 

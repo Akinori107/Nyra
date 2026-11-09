@@ -259,10 +259,8 @@ public sealed class VoiceCloseAndForwarder
 
         var dropped = 0;
         for (var i = 0; i < 700; i++)
-        {
             if (!pump.TryDispatch(() => Task.CompletedTask, droppable: true))
                 dropped++;
-        }
 
         park.TrySetResult();
         await Assert.That(dropped).IsGreaterThan(0);
@@ -306,7 +304,7 @@ public sealed class VoiceCloseAndForwarder
         var stack = await StartAsync("nc-overload").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            var channel = new global::NetCord.VoiceGuildChannel(
+            var channel = new VoiceGuildChannel(
                 new global::NetCord.JsonModels.JsonChannel { Id = 77 },
                 777,
                 null!
@@ -340,7 +338,7 @@ public sealed class VoiceCloseAndForwarder
         var shardedExtension = sharded.UseNyra(new HostileLogger());
 
         await Assert.That(shardedExtension).IsNotNull();
-        await Assert.That(shardedExtension!.IsDisposed).IsFalse();
+        await Assert.That(shardedExtension.IsDisposed).IsFalse();
 
         shardedExtension?.Dispose();
         shardOwn?.Dispose();

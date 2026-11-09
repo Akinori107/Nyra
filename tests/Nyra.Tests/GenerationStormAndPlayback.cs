@@ -121,7 +121,6 @@ public sealed class GenerationStormAndPlayback
             }
         );
         if (multiGuild)
-        {
             for (var guild = 0; guild < 12; guild++)
             {
                 var guildId = 900_000UL + (ulong)guild;
@@ -136,13 +135,12 @@ public sealed class GenerationStormAndPlayback
                     _ => new FakeRestResponse(200, PlayerJson(null))
                 );
             }
-        }
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge, time);
         var node = new Node(
-            new Nyra.Endpoint("127.0.0.1", server.Port, server.Password),
-            new Nyra.NodeOptions
+            new Endpoint("127.0.0.1", server.Port, server.Password),
+            new NodeOptions
             {
                 Name = "storm",
                 TimeProvider = time ?? TimeProvider.System,
@@ -825,7 +823,7 @@ public sealed class GenerationStormAndPlayback
 
     private sealed class AsyncThrowerBridge : IDiscordBridge, IAsyncDisposable
     {
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public ILogger? Logger { get; set; }
 
         public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
@@ -859,7 +857,7 @@ public sealed class GenerationStormAndPlayback
 
     private sealed class PlainBridge : IDiscordBridge
     {
-        public Microsoft.Extensions.Logging.ILogger? Logger => null;
+        public ILogger? Logger => null;
 
         public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
@@ -926,7 +924,7 @@ public sealed class GenerationStormAndPlayback
 
     private sealed class LoudBridge : IDiscordBridge, IDisposable
     {
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public ILogger? Logger { get; set; }
 
         public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {

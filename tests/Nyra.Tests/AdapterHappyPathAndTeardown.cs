@@ -60,7 +60,7 @@ public sealed class AdapterHappyPathAndTeardown
         };
     }
 
-    private sealed class FakeDspSocket : global::DSharpPlus.Net.WebSocket.IWebSocketClient
+    private sealed class FakeDspSocket : IWebSocketClient
     {
         public readonly List<string> Sent = [];
 
@@ -122,7 +122,7 @@ public sealed class AdapterHappyPathAndTeardown
         );
         var socket = new FakeDspSocket();
         Reflect.Field(client, "_webSocketClient", socket);
-        using var bridge = new Nyra.DSharpPlus.DSharpPlusBridge(client);
+        using var bridge = new DSharpPlus.DSharpPlusBridge(client);
         await bridge
             .SendVoiceUpdateAsync(77, 555, false, false, CancellationToken.None)
             .ConfigureAwait(false);
@@ -190,13 +190,11 @@ public sealed class AdapterHappyPathAndTeardown
                 .GetType()
                 .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
         )
-        {
             if (field.FieldType == interfaceType)
             {
                 field.SetValue(target, value);
                 return;
             }
-        }
         throw new MissingFieldException(
             $"no field of type {interfaceType.Name} on {target.GetType().Name}"
         );
@@ -260,9 +258,9 @@ public sealed class AdapterHappyPathAndTeardown
         Reflect.Field(client, "_state", state);
         stateType
             .GetMethod("IndicateReady", BindingFlags.Public | BindingFlags.Instance)!
-            .Invoke(state, new object?[] { fakeConnectionState });
+            .Invoke(state, [fakeConnectionState]);
 
-        using var bridge = new Nyra.NetCord.GatewayBridge(client, _ => { }, _ => { }, _ => { });
+        using var bridge = new NetCord.GatewayBridge(client, _ => { }, _ => { }, _ => { });
         await bridge
             .SendVoiceUpdateAsync(5, 77, false, false, CancellationToken.None)
             .ConfigureAwait(false);
@@ -277,7 +275,7 @@ public sealed class AdapterHappyPathAndTeardown
         response.Headers.RetryAfter = new RetryConditionHeaderValue(
             DateTimeOffset.UtcNow - TimeSpan.FromHours(1)
         );
-        var read = Nyra.Internal.RestClient.ReadRetryAfter(response);
+        var read = Internal.RestClient.ReadRetryAfter(response);
         await Assert.That(read).IsNull();
     }
 
@@ -327,7 +325,7 @@ public sealed class AdapterHappyPathAndTeardown
                         .Node.Rest.Info.GetServerInfoAsync(CancellationToken.None)
                         .ConfigureAwait(false)
                 )
-                .Throws<Nyra.Exceptions.IncompatibleServerException>();
+                .Throws<Exceptions.IncompatibleServerException>();
             await Assert.That(rejected!.InnerException).IsTypeOf<System.Text.Json.JsonException>();
         }
     }
@@ -353,7 +351,7 @@ public sealed class AdapterHappyPathAndTeardown
 
             await Assert
                 .That(async () => await conn.PauseAsync().ConfigureAwait(false))
-                .Throws<Nyra.Exceptions.NodeUnreachableException>();
+                .Throws<Exceptions.NodeUnreachableException>();
             await Assert
                 .That(server.RestCalls.Any(c => c is { Method: "GET", Path: PlayerPath }))
                 .IsTrue();

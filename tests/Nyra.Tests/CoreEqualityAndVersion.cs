@@ -138,14 +138,14 @@ public sealed class CoreEqualityAndVersion
         {
             await Assert.That(details).IsNotNull();
             await Assert.That(details!.IpBlock).IsNotNull();
-            await Assert.That(details!.IpBlock!.Type).IsEqualTo(IpBlockType.Inet4);
-            await Assert.That(details!.IpBlock!.Size).IsEqualTo("256");
-            await Assert.That(details!.Strategy).IsEqualTo("RotateOnBan");
-            await Assert.That(details!.RotateIndex).IsEqualTo("2");
-            await Assert.That(details!.CurrentAddress).IsEqualTo("1.2.3.4");
+            await Assert.That(details.IpBlock!.Type).IsEqualTo(IpBlockType.Inet4);
+            await Assert.That(details.IpBlock!.Size).IsEqualTo("256");
+            await Assert.That(details.Strategy).IsEqualTo("RotateOnBan");
+            await Assert.That(details.RotateIndex).IsEqualTo("2");
+            await Assert.That(details.CurrentAddress).IsEqualTo("1.2.3.4");
         }
         await Assert
-            .That(details!.FailingAddresses is [{ Address: "/1.2.3.4", FailingTime: "then" }])
+            .That(details.FailingAddresses is [{ Address: "/1.2.3.4", FailingTime: "then" }])
             .IsTrue();
         await Assert
             .That(details?.FailingAddresses?[0].FailingTimestamp)
@@ -174,7 +174,7 @@ public sealed class CoreEqualityAndVersion
             await Assert.That(status.Details).IsNotEqualTo(quotedStatus!.Details);
             await Assert
                 .That(status.Details!.GetHashCode())
-                .IsEqualTo(again!.Details!.GetHashCode());
+                .IsEqualTo(again.Details!.GetHashCode());
         }
 
         await Assert

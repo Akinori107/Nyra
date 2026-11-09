@@ -159,7 +159,6 @@ public sealed class QuerySurface
                 var lavaServer = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
                 var lavaStack = await StartAsync(lavaServer).ConfigureAwait(false);
                 await using (lavaStack.ConfigureAwait(false))
-                {
                     await Assert
                         .That(async () =>
                         {
@@ -168,7 +167,6 @@ public sealed class QuerySurface
                                 .ConfigureAwait(false);
                         })
                         .Throws<NotSupportedException>();
-                }
             }
         }
     }
@@ -383,7 +381,7 @@ public sealed class QuerySurface
                 .Groups.UpdateAsync("grp", new GroupUpdate { Volume = 150, Paused = true })
                 .ConfigureAwait(false);
             await Assert.That(result).IsNotNull();
-            await Assert.That(result!.Id).IsEqualTo("grp");
+            await Assert.That(result.Id).IsEqualTo("grp");
             var updateCall = server.RestCalls.Last(c =>
                 c is { Method: "PATCH", Path: "/v4/sessions/fake-session/groups/grp" }
             );
@@ -416,8 +414,8 @@ public sealed class QuerySurface
             using (Assert.Multiple())
             {
                 await Assert.That(meaning).IsNotNull();
-                await Assert.That(meaning!.LoadType).IsEqualTo(MeaningLoadType.Meaning);
-                await Assert.That(meaning!.Data).IsNotNull();
+                await Assert.That(meaning.LoadType).IsEqualTo(MeaningLoadType.Meaning);
+                await Assert.That(meaning.Data).IsNotNull();
             }
             var call = server.RestCalls.Last(c => c.Path == "/v4/meaning");
             await Assert.That(call.Query?.Contains("lang=en")).IsTrue();
@@ -504,7 +502,7 @@ public sealed class QuerySurface
                 {
                     await node.Lyrics.LoadMeaningAsync(track, "en").ConfigureAwait(false);
                 })
-                .Throws<Nyra.Exceptions.RestException>();
+                .Throws<Exceptions.RestException>();
         }
     }
 }

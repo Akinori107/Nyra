@@ -12,17 +12,10 @@ public sealed class ReadyWatchdogAndSuppression
         var bridge = new FakeBridge { Logger = new DiscordNetBridgeTests.CapturingLogger(sink) };
         bridge.GoReady();
         var node = new Node(
-            new Nyra.Endpoint("127.0.0.1", 1, "pass"),
-            new Nyra.NodeOptions { Name = "watchdog-errors" }
+            new Endpoint("127.0.0.1", 1, "pass"),
+            new NodeOptions { Name = "watchdog-errors" }
         );
-        Reflect.Invoke(
-            node,
-            "AttachClient",
-            (IDiscordBridge)bridge,
-            new ClientInformation(5UL),
-            null,
-            0
-        );
+        Reflect.Invoke(node, "AttachClient", bridge, new ClientInformation(5UL), null, 0);
         var boom = new InvalidOperationException("watchdog: same fault");
         await Assert
             .That(() =>

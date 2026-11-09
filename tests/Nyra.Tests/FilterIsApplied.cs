@@ -64,11 +64,9 @@ public sealed class FilterIsApplied
     {
         var (stack, conn) = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
-        {
             await Assert
                 .That(conn.Filters.IsApplied(new TremoloFilter { Frequency = 8, Depth = 0.5f }))
                 .IsFalse();
-        }
     }
 
     [Test]

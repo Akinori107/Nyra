@@ -117,8 +117,8 @@ public sealed class RestEdge
             using (Assert.Multiple())
             {
                 await Assert.That(plainInfo).IsNotNull();
-                await Assert.That(plainInfo!.IsNodeLink).IsFalse();
-                await Assert.That(plainInfo!.RawVersion).IsEqualTo("");
+                await Assert.That(plainInfo.IsNodeLink).IsFalse();
+                await Assert.That(plainInfo.RawVersion).IsEqualTo("");
             }
 
             stack.Server.InfoBody = """{"version":{"semver":123}}""";
@@ -157,10 +157,10 @@ public sealed class RestEdge
             using (Assert.Multiple())
             {
                 await Assert.That(full).IsNotNull();
-                await Assert.That(full!.IsNodeLink).IsTrue();
-                await Assert.That(full!.RawVersion).IsEqualTo("3.10.0");
-                await Assert.That(full!.EnabledFilters).IsNull();
-                await Assert.That(full!.Plugins).Contains("lavasrc-plugin");
+                await Assert.That(full.IsNodeLink).IsTrue();
+                await Assert.That(full.RawVersion).IsEqualTo("3.10.0");
+                await Assert.That(full.EnabledFilters).IsNull();
+                await Assert.That(full.Plugins).Contains("lavasrc-plugin");
             }
         }
     }
@@ -175,8 +175,8 @@ public sealed class RestEdge
             var node = stack.Node;
             await Assert.That(node.IsReady).IsTrue();
 
-            var guards = new Func<Task>[]
-            {
+            Func<Task>[] guards =
+            [
                 () => node.Rest.Lyrics.SubscribeAsync(777, false, default),
                 () => node.Rest.Lyrics.UnsubscribeAsync(777, default),
                 () => node.Rest.SponsorBlock.GetAsync(777, default),
@@ -187,16 +187,14 @@ public sealed class RestEdge
                 () => node.Rest.Groups.GetAsync("g1", default),
                 () => node.Rest.Players.GetAsync(777, default),
                 () => node.Rest.Session.UpdateAsync(true, 60, default),
-            };
+            ];
             foreach (var call in guards)
-            {
                 await Assert
                     .That(async () =>
                     {
                         await call().ConfigureAwait(false);
                     })
                     .Throws<InvalidOperationException>();
-            }
         }
     }
 
@@ -324,7 +322,7 @@ public sealed class RestEdge
                 .Lyrics.LoadAsync(track, skipTrackSource: true)
                 .ConfigureAwait(false);
             await Assert.That(miss).IsNotNull();
-            await Assert.That(miss!.LoadType).IsEqualTo(LyricsLoadType.Empty);
+            await Assert.That(miss.LoadType).IsEqualTo(LyricsLoadType.Empty);
             var missCall = lavaServer.RestCalls.Last(c => c.Path == "/v4/lyrics");
             await Assert.That(missCall.Query?.Contains("skipTrackSource=true")).IsTrue();
 
@@ -403,7 +401,6 @@ public sealed class RestEdge
     {
         var oldStack = await StartAsync().ConfigureAwait(false);
         await using (oldStack.ConfigureAwait(false))
-        {
             await Assert
                 .That(async () =>
                 {
@@ -412,7 +409,6 @@ public sealed class RestEdge
                         .ConfigureAwait(false);
                 })
                 .Throws<NotSupportedException>();
-        }
 
         var stack = await StartAsync(new FakeNodeServer { Semver = "3.10.0" })
             .ConfigureAwait(false);
@@ -435,8 +431,8 @@ public sealed class RestEdge
             using (Assert.Multiple())
             {
                 await Assert.That(streamUrl).IsNotNull();
-                await Assert.That(streamUrl!.Url).IsEqualTo("https://cdn/x");
-                await Assert.That(streamUrl!.Protocol).IsEqualTo("http");
+                await Assert.That(streamUrl.Url).IsEqualTo("https://cdn/x");
+                await Assert.That(streamUrl.Protocol).IsEqualTo("http");
             }
             await Assert
                 .That(
@@ -722,14 +718,12 @@ public sealed class RestEdge
                 (" ", null),
             };
             foreach (var (token, visitor) in guards)
-            {
                 await Assert
                     .That(async () =>
                     {
                         await node.YouTube.UpdateConfigAsync(token, visitor).ConfigureAwait(false);
                     })
                     .Throws<ArgumentException>();
-            }
 
             var patched = new TaskCompletionSource<string?>();
             server.On(
@@ -748,8 +742,8 @@ public sealed class RestEdge
             using (Assert.Multiple())
             {
                 await Assert.That(update).IsNotNull();
-                await Assert.That(update!.Message).IsEqualTo("applied");
-                await Assert.That(update!.WorkersUpdated).IsEqualTo(3);
+                await Assert.That(update.Message).IsEqualTo("applied");
+                await Assert.That(update.WorkersUpdated).IsEqualTo(3);
             }
             var patchBody = await patched
                 .Task.WaitAsync(TimeSpan.FromSeconds(5))
@@ -775,8 +769,8 @@ public sealed class RestEdge
             using (Assert.Multiple())
             {
                 await Assert.That(withUnknown).IsNotNull();
-                await Assert.That(withUnknown!.IsNodeLink).IsTrue();
-                await Assert.That(withUnknown!.RawVersion).IsEqualTo("3.10.0");
+                await Assert.That(withUnknown.IsNodeLink).IsTrue();
+                await Assert.That(withUnknown.RawVersion).IsEqualTo("3.10.0");
             }
 
             stack.Server.InfoBody = """{"version":{"semver":"3.10.0"}}{"junk":1}""";

@@ -237,7 +237,7 @@ public sealed class PayloadDeserialization
         {
             await Assert.That(bare!.Encoded).IsEqualTo(string.Empty);
             await Assert.That(bare.Info).IsNotNull();
-            await Assert.That(bare.ToString()).IsEqualTo(bare.Info!.ToString());
+            await Assert.That(bare.ToString()).IsEqualTo(bare.Info.ToString());
         }
     }
 

@@ -327,7 +327,7 @@ public sealed class EntityAndOptionsSurface
         var audio = withTracks?.GetYouTubeAudioTracks();
         await Assert.That(audio).IsNotNull();
         await Assert.That(audio!.Count).IsEqualTo(1);
-        await Assert.That(audio![0].Id).IsEqualTo("v1");
+        await Assert.That(audio[0].Id).IsEqualTo("v1");
 
         var idless = Parse<Track>(
             """{"encoded":"QXRsZWFzdA==","info":{"identifier":"i","author":"A","title":"T","length":1000,"isStream":false,"isSeekable":true,"position":0},"pluginInfo":{"audioTracks":"[{\"name\":\"n\"}]"}}"""
@@ -335,7 +335,7 @@ public sealed class EntityAndOptionsSurface
         var kept = idless?.GetYouTubeAudioTracks();
         await Assert.That(kept).IsNotNull();
         await Assert.That(kept!.Count).IsEqualTo(1);
-        await Assert.That(kept![0].Id).IsEqualTo(string.Empty);
+        await Assert.That(kept[0].Id).IsEqualTo(string.Empty);
 
         var allDropped = Parse<Track>(
             """{"encoded":"QXRsZWFzdA==","info":{"identifier":"i","author":"A","title":"T","length":1000,"isStream":false,"isSeekable":true,"position":0},"pluginInfo":{"audioTracks":"[{\"id\":null}]"}}"""

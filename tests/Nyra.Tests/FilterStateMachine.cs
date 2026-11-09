@@ -433,14 +433,12 @@ public sealed class FilterStateMachine
                 new() { LowPass = new LowPassFilter { Smoothing = 1 } },
             };
             foreach (var chain in cases)
-            {
                 await Assert
                     .That(async () =>
                     {
                         await conn.Filters.ApplyAsync(chain).ConfigureAwait(false);
                     })
                     .Throws<NotSupportedException>();
-            }
 
             using (Assert.Multiple())
             {
@@ -551,14 +549,12 @@ public sealed class FilterStateMachine
                 new() { Rotation = new RotationFilter { RotationHz = double.NaN } },
             };
             foreach (var chain in cases)
-            {
                 await Assert
                     .That(async () =>
                     {
                         await conn.Filters.ApplyAsync(chain).ConfigureAwait(false);
                     })
                     .Throws<ArgumentOutOfRangeException>();
-            }
 
             await Assert
                 .That(async () =>

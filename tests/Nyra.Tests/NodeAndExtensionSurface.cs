@@ -8,8 +8,8 @@ public sealed class NodeAndExtensionSurface
     public async Task NodeGetter()
     {
         var stranger = new Node(
-            new Nyra.Endpoint("127.0.0.1", 1, "pass"),
-            new Nyra.NodeOptions { Name = "surface-stranger" }
+            new Endpoint("127.0.0.1", 1, "pass"),
+            new NodeOptions { Name = "surface-stranger" }
         );
         await Assert.That(stranger.IsNodeLink).IsFalse();
         await Assert.That(stranger.Version).IsNull();
@@ -19,8 +19,8 @@ public sealed class NodeAndExtensionSurface
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
         var lavaNode = new Node(
-            new Nyra.Endpoint("127.0.0.1", lavalink.Port, lavalink.Password),
-            new Nyra.NodeOptions { Name = "surface-lava" }
+            new Endpoint("127.0.0.1", lavalink.Port, lavalink.Password),
+            new NodeOptions { Name = "surface-lava" }
         );
         extension.AddNode(lavaNode);
         await lavaNode.EnsureServerInfoAsync(default, forceProbe: true).ConfigureAwait(false);
@@ -29,8 +29,8 @@ public sealed class NodeAndExtensionSurface
 
         using var nodelink = new FakeNodeServer();
         var linkNode = new Node(
-            new Nyra.Endpoint("127.0.0.1", nodelink.Port, nodelink.Password),
-            new Nyra.NodeOptions { Name = "surface-link" }
+            new Endpoint("127.0.0.1", nodelink.Port, nodelink.Password),
+            new NodeOptions { Name = "surface-link" }
         );
         extension.AddNode(linkNode);
         await linkNode.EnsureServerInfoAsync(default, forceProbe: true).ConfigureAwait(false);
@@ -119,8 +119,8 @@ public sealed class NodeAndExtensionSurface
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
         var node = new Node(
-            new Nyra.Endpoint("127.0.0.1", server.Port, server.Password),
-            new Nyra.NodeOptions
+            new Endpoint("127.0.0.1", server.Port, server.Password),
+            new NodeOptions
             {
                 Name = "surface-best",
                 Resuming = true,
