@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Nyra.Exceptions;
@@ -123,7 +124,7 @@ public sealed class ErrorThrottleAndWebSocket
         var headers = new Dictionary<string, string>
         {
             ["Authorization"] = server.Password,
-            ["User-Id"] = FakeBridge.UserId.ToString(),
+            ["User-Id"] = FakeBridge.UserId.ToString(CultureInfo.InvariantCulture),
             ["Client-Name"] = "websocket-surface/1",
         };
         await client

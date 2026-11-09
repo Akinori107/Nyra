@@ -199,16 +199,13 @@ public sealed class ResumePath
     {
         var faulting = new NyraExtension(new FaultingAsyncBridge());
         await Assert
-            .That(() =>
-            {
-                faulting.Dispose();
-            })
+            .That(faulting.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("the async bridge broke");
 
         var slow = new NyraExtension(new SlowAsyncBridge());
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        await Assert.That(() => slow.Dispose()).ThrowsNothing();
+        await Assert.That(slow.Dispose).ThrowsNothing();
         await Assert.That(watch.Elapsed).IsLessThan(TimeSpan.FromSeconds(6));
     }
 

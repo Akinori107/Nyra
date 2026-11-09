@@ -278,7 +278,7 @@ internal sealed class GuildRegistry
             _ = connection.CompleteEventPumpAsync();
     }
 
-    private readonly Dictionary<ulong, (SemaphoreSlim Semaphore, int RefCount)> _guildGates = new();
+    private readonly Dictionary<ulong, (SemaphoreSlim Semaphore, int RefCount)> _guildGates = [];
     private readonly Lock _guildGatesLock = new();
 
     private SemaphoreSlim AcquireGate(ulong guildId)

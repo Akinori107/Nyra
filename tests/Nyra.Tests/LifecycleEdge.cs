@@ -205,7 +205,7 @@ public sealed class LifecycleEdge
         extension2.AddNode(node2);
         await extension2.ConnectAllNodesAsync().ConfigureAwait(false);
         await Assert
-            .That(() => extension2.Dispose())
+            .That(extension2.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("sync dispose boom");
         server2.Dispose();

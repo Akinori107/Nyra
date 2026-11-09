@@ -151,7 +151,7 @@ public sealed class JsonEdge
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
-        Node NodeFor(FakeNodeServer server, string name) =>
+        static Node NodeFor(FakeNodeServer server, string name) =>
             new(
                 new Endpoint("127.0.0.1", server.Port, server.Password),
                 new NodeOptions

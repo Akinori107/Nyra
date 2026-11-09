@@ -61,9 +61,9 @@ public sealed class EntityAndExceptionSurface
         var host = new Endpoint("example.com", 3000, "pass");
         await Assert.That(host.Host).IsEqualTo("example.com");
 
-        Throws<ArgumentException>(() => new Endpoint("a b", 1, "p"));
-        Throws<ArgumentException>(() => new Endpoint("http://x", 1, "p"));
-        Throws<ArgumentException>(() => new Endpoint("host:1", 1, "p"));
+        Throws<ArgumentException>(() => _ = new Endpoint("a b", 1, "p"));
+        Throws<ArgumentException>(() => _ = new Endpoint("http://x", 1, "p"));
+        Throws<ArgumentException>(() => _ = new Endpoint("host:1", 1, "p"));
         using (Assert.Multiple())
         {
             await Assert
@@ -77,16 +77,18 @@ public sealed class EntityAndExceptionSurface
                 .IsEqualTo("[fe80::1%zone]");
             await Assert.That(new Endpoint("[[::1]]", 1, "p").Host).IsEqualTo("[[::1]]");
         }
-        var lowPort = Throws<ArgumentOutOfRangeException>(() => new Endpoint("127.0.0.1", 0, "p"));
+        var lowPort = Throws<ArgumentOutOfRangeException>(() =>
+            _ = new Endpoint("127.0.0.1", 0, "p")
+        );
         await Assert.That(lowPort).IsNotNull();
         var highPort = Throws<ArgumentOutOfRangeException>(() =>
-            new Endpoint("127.0.0.1", 65536, "p")
+            _ = new Endpoint("127.0.0.1", 65536, "p")
         );
         await Assert.That(highPort).IsNotNull();
         await Assert.That(new Endpoint("127.0.0.1", 1, "ção").Password).IsEqualTo("ção");
-        var blankHost = Throws<ArgumentException>(() => new Endpoint("  ", 1, "p"));
+        var blankHost = Throws<ArgumentException>(() => _ = new Endpoint("  ", 1, "p"));
         await Assert.That(blankHost).IsNotNull();
-        var blankPassword = Throws<ArgumentException>(() => new Endpoint("127.0.0.1", 1, " "));
+        var blankPassword = Throws<ArgumentException>(() => _ = new Endpoint("127.0.0.1", 1, " "));
         await Assert.That(blankPassword).IsNotNull();
     }
 

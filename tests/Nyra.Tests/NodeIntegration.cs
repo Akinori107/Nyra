@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
@@ -70,7 +71,9 @@ public sealed class NodeIntegration
             await Assert.That(headers.TryGetValue("Authorization", out var auth)).IsTrue();
             await Assert.That(auth).IsEqualTo("youshallnotpass");
             await Assert.That(headers.TryGetValue("User-Id", out var user)).IsTrue();
-            await Assert.That(user).IsEqualTo(FakeBridge.UserId.ToString());
+            await Assert
+                .That(user)
+                .IsEqualTo(FakeBridge.UserId.ToString(CultureInfo.InvariantCulture));
             await Assert.That(headers.TryGetValue("Client-Name", out var label)).IsTrue();
             await Assert.That(label).IsEqualTo(Internal.ClientHeaders.UserAgent);
 
@@ -105,7 +108,7 @@ public sealed class NodeIntegration
             );
             var loaded = await node.LoadTracksAsync("ytsearch:atwa").ConfigureAwait(false);
             await Assert
-                .That(loaded is LoadResult.TrackLoaded { Track: { Encoded: "QXRsZWFzdA==" } })
+                .That(loaded is LoadResult.TrackLoaded { Track.Encoded: "QXRsZWFzdA==" })
                 .IsTrue();
             var loadCall = server.RestCalls.FirstOrDefault(c => c.Path == "/v4/loadtracks");
             await Assert
@@ -155,7 +158,7 @@ public sealed class NodeIntegration
                 .That(
                     (await node.GetVersionAsync().ConfigureAwait(false))
                         ?.ToString()
-                        .StartsWith("3.9")
+                        .StartsWith("3.9", StringComparison.Ordinal)
                 )
                 .IsTrue();
 
@@ -459,10 +462,9 @@ public sealed class NodeIntegration
             await conn.PlayAsync(track, new PlayOptions { StartPosition = TimeSpan.FromSeconds(1) })
                 .ConfigureAwait(false);
             var playBody = server
-                .RestCalls.Where(c =>
+                .RestCalls.Last(c =>
                     c is { Method: "PATCH", Path: "/v4/sessions/fake-session/players/777" }
                 )
-                .Last()
                 .Body;
             await Assert.That(playBody).IsNotNull();
             await Assert.That(playBody).Contains("\"track\":{\"encoded\":\"QXRsZWFzdA==\"}");
@@ -483,28 +485,25 @@ public sealed class NodeIntegration
 
             await conn.SetVolumeAsync(250).ConfigureAwait(false);
             var volumeBody = server
-                .RestCalls.Where(c =>
+                .RestCalls.Last(c =>
                     c is { Method: "PATCH", Path: "/v4/sessions/fake-session/players/777" }
                 )
-                .Last()
                 .Body;
             await Assert.That(volumeBody).IsEqualTo("""{"volume":250}""");
 
             await conn.PauseAsync().ConfigureAwait(false);
             var pauseBody = server
-                .RestCalls.Where(c =>
+                .RestCalls.Last(c =>
                     c is { Method: "PATCH", Path: "/v4/sessions/fake-session/players/777" }
                 )
-                .Last()
                 .Body;
             await Assert.That(pauseBody).IsEqualTo("""{"paused":true}""");
 
             await conn.SeekAsync(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
             var seekBody = server
-                .RestCalls.Where(c =>
+                .RestCalls.Last(c =>
                     c is { Method: "PATCH", Path: "/v4/sessions/fake-session/players/777" }
                 )
-                .Last()
                 .Body;
             await Assert.That(seekBody).IsEqualTo("""{"position":30000}""");
 
@@ -527,10 +526,9 @@ public sealed class NodeIntegration
 
             await conn.StopAsync().ConfigureAwait(false);
             var stopBody = server
-                .RestCalls.Where(c =>
+                .RestCalls.Last(c =>
                     c is { Method: "PATCH", Path: "/v4/sessions/fake-session/players/777" }
                 )
-                .Last()
                 .Body;
             await Assert.That(stopBody).IsNotNull();
             await Assert.That(stopBody).Contains("\"track\":{\"encoded\":null}");
@@ -699,11 +697,7 @@ public sealed class NodeIntegration
                 {
                     _ = await conn
                         .SponsorBlock.SetAsync(
-                            new SponsorBlockSettings
-                            {
-                                Categories =
-                                    (IReadOnlyList<string>)new List<string?> { "sponsor", null },
-                            }
+                            new SponsorBlockSettings { Categories = ["sponsor", null!] }
                         )
                         .ConfigureAwait(false);
                 })
@@ -714,11 +708,7 @@ public sealed class NodeIntegration
                 {
                     _ = await conn
                         .SponsorBlock.SetAsync(
-                            new SponsorBlockSettings
-                            {
-                                ActionTypes =
-                                    (IReadOnlyList<string>)new List<string?> { "skip", null },
-                            }
+                            new SponsorBlockSettings { ActionTypes = ["skip", null!] }
                         )
                         .ConfigureAwait(false);
                 })

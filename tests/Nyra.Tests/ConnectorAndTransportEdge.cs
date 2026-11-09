@@ -246,7 +246,7 @@ public sealed class ConnectorAndTransportEdge
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
 
-        public RecordingList<string> Messages { get; } = new();
+        public RecordingList<string> Messages { get; } = [];
 
         public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
 

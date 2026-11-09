@@ -25,7 +25,7 @@ internal sealed class GatewayBridge : GatewayBridgeBase
         client.Disconnect += HandleDisconnectAsync;
 
         if (client.Status is WebSocketStatus.Ready)
-            MarkReady(client.Id);
+            SetReady(client.Id);
     }
 
     protected override void Unsubscribe()

@@ -12,7 +12,6 @@ namespace Nyra.NetCord;
 public sealed class NetCordBridge : IDiscordBridge, IGuildRemovalSource, IDisposable
 {
     private readonly GatewayBridgeBase _client;
-    private readonly ILogger? _logger;
 
     /// <summary>
     /// Raised when Discord allocates or re-targets the voice server of a guild, with this bridge as the
@@ -34,7 +33,7 @@ public sealed class NetCordBridge : IDiscordBridge, IGuildRemovalSource, IDispos
     public NetCordBridge(GatewayClient client, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(client);
-        _logger = logger;
+        Logger = logger;
         _client = new GatewayBridge(
             client,
             RaiseVoiceServerUpdated,
@@ -49,7 +48,7 @@ public sealed class NetCordBridge : IDiscordBridge, IGuildRemovalSource, IDispos
     public NetCordBridge(ShardedGatewayClient client, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(client);
-        _logger = logger;
+        Logger = logger;
         _client = new ShardedGatewayBridge(
             client,
             RaiseVoiceServerUpdated,
@@ -59,16 +58,16 @@ public sealed class NetCordBridge : IDiscordBridge, IGuildRemovalSource, IDispos
     }
 
     private void RaiseVoiceServerUpdated(VoiceServerUpdatedEventArgs eventArgs) =>
-        BridgeEvent.RaiseIsolated(VoiceServerUpdated, this, eventArgs, _logger);
+        BridgeEvent.RaiseIsolated(VoiceServerUpdated, this, eventArgs, Logger);
 
     private void RaiseVoiceStateUpdated(VoiceStateUpdatedEventArgs eventArgs) =>
-        BridgeEvent.RaiseIsolated(VoiceStateUpdated, this, eventArgs, _logger);
+        BridgeEvent.RaiseIsolated(VoiceStateUpdated, this, eventArgs, Logger);
 
     private void RaiseGuildRemoved(GuildRemovedEventArgs eventArgs) =>
-        BridgeEvent.RaiseIsolated(GuildRemoved, this, eventArgs, _logger);
+        BridgeEvent.RaiseIsolated(GuildRemoved, this, eventArgs, Logger);
 
     /// <inheritdoc />
-    public ILogger? Logger => _logger;
+    public ILogger? Logger { get; }
 
     /// <inheritdoc />
     public Task SendVoiceUpdateAsync(

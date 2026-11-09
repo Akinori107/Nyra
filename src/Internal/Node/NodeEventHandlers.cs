@@ -180,7 +180,7 @@ internal sealed class NodeEventHandlers
 
         if (!effectiveResumed && !_node.Connections.IsEmpty)
             await GuardAllAsync(
-                    _node.Connections.Values.ToArray(),
+                    [.. _node.Connections.Values],
                     connection =>
                         discordTracked
                             ? connection.Teardown.HandleSessionLostAsync()

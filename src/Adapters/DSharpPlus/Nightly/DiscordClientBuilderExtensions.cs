@@ -12,8 +12,8 @@ public static class DiscordClientBuilderExtensions
     private static readonly ConditionalWeakTable<
         DiscordClientBuilder,
         NyraExtension
-    > BuilderExtensions = new();
-    private static readonly ConditionalWeakTable<DiscordClient, NyraExtension> Extensions = new();
+    > BuilderExtensions = [];
+    private static readonly ConditionalWeakTable<DiscordClient, NyraExtension> Extensions = [];
 
     /// <summary>Enables Nyra on a DSharpPlus client being built.</summary>
     /// <remarks>

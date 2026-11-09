@@ -32,7 +32,7 @@ internal static class Reflect
         var setter = info.GetSetMethod(true);
         if (setter is not null)
         {
-            setter.Invoke(target, new object?[] { value });
+            setter.Invoke(target, [value]);
             return;
         }
 

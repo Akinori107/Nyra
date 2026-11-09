@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
@@ -345,7 +346,7 @@ public sealed class Extension
         var seen = new TaskCompletionSource<string>();
         extension.NodeStatsUpdated += (_, args) =>
         {
-            seen.TrySetResult(args.Stats.PlayingPlayers.ToString());
+            seen.TrySetResult(args.Stats.PlayingPlayers.ToString(CultureInfo.InvariantCulture));
             return Task.CompletedTask;
         };
         await heavyServer
@@ -487,10 +488,7 @@ public sealed class Extension
         var throwing = new ThrowingSyncBridge();
         var throwingExtension = new NyraExtension(throwing);
         await Assert
-            .That(() =>
-            {
-                throwingExtension.Dispose();
-            })
+            .That(throwingExtension.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("the bridge broke on dispose");
         await Assert.That(throwing.Threw).IsTrue();
@@ -594,7 +592,7 @@ public sealed class Extension
         var bridge = new ThrowingSyncBridge { Logger = new ThrowingLogger() };
         var extension = new NyraExtension(bridge);
         await Assert
-            .That(() => extension.Dispose())
+            .That(extension.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("the bridge broke on dispose");
         await Assert.That(extension.IsDisposed).IsTrue();

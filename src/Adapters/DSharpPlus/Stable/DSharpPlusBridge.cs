@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using DSharpPlus;
 using DSharpPlus.EventArgs;
 using DSharpPlus.Net.Abstractions;
@@ -17,8 +18,6 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     private readonly TaskCompletionSource<ClientInformation> _ready = new(
         TaskCreationOptions.RunContinuationsAsynchronously
     );
-    private readonly int? _shardCount;
-
     private readonly ConcurrentDictionary<DiscordClient, byte> _gatewaySocketsUp = new();
 
     /// <summary>Raised when Discord allocates or re-targets the voice server of a guild.</summary>
@@ -46,7 +45,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
         ArgumentNullException.ThrowIfNull(client);
 
         _client = client;
-        _shardCount = shardCount;
+        ShardCountHint = shardCount;
         Logger = client.Logger;
 
         client.VoiceStateUpdated += OnVoiceStateUpdated;
@@ -92,7 +91,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     /// <inheritdoc />
     public ILogger? Logger { get; }
 
-    internal int? ShardCountHint => _shardCount;
+    internal int? ShardCountHint { get; }
 
     /// <inheritdoc />
     public async Task SendVoiceUpdateAsync(
@@ -107,8 +106,8 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
 
         var payload = new Dictionary<string, object?>
         {
-            ["guild_id"] = guildId.ToString(),
-            ["channel_id"] = channelId?.ToString(),
+            ["guild_id"] = guildId.ToString(CultureInfo.InvariantCulture),
+            ["channel_id"] = channelId?.ToString(CultureInfo.InvariantCulture),
             ["self_mute"] = selfMute,
             ["self_deaf"] = selfDeaf,
         };
@@ -178,7 +177,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
         if (_client is DiscordClient client)
         {
             if (
-                _shardCount is { } total
+                ShardCountHint is { } total
                 && total > 1
                 && GuildShard.IdFor(guildId, total) != client.ShardId
             )

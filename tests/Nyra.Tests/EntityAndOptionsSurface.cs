@@ -26,7 +26,7 @@ public sealed class EntityAndOptionsSurface
         throw new InvalidOperationException($"the expected {typeof(T).Name} never came");
     }
 
-    private static readonly string TrackBody =
+    private const string TrackBody =
         """{"encoded":"QXRsZWFzdA==","info":{"identifier":"i","author":"A","title":"T","length":1000,"isStream":false,"isSeekable":true,"position":0}}""";
 
     [Test]
@@ -39,10 +39,10 @@ public sealed class EntityAndOptionsSurface
     [Test]
     public async Task VersionCompare()
     {
-        NodeVersion.TryParse("2.0.0", out var two);
-        NodeVersion.TryParse("1.9.9", out var older);
-        NodeVersion.TryParse("2.1.0", out var newerMinor);
-        NodeVersion.TryParse("2.0.1", out var newerPatch);
+        _ = NodeVersion.TryParse("2.0.0", out var two);
+        _ = NodeVersion.TryParse("1.9.9", out var older);
+        _ = NodeVersion.TryParse("2.1.0", out var newerMinor);
+        _ = NodeVersion.TryParse("2.0.1", out var newerPatch);
         using (Assert.Multiple())
         {
             await Assert.That(two.CompareTo(older)).IsGreaterThan(0);
@@ -231,17 +231,17 @@ public sealed class EntityAndOptionsSurface
 
         var settingsA = new SponsorBlockSettings
         {
-            Categories = new List<string> { "sponsor" },
+            Categories = ["sponsor"],
             SkipMarginMilliseconds = 100,
         };
         var settingsB = new SponsorBlockSettings
         {
-            Categories = new List<string> { "sponsor" },
+            Categories = ["sponsor"],
             SkipMarginMilliseconds = 100,
         };
         var settingsC = new SponsorBlockSettings
         {
-            Categories = new List<string> { "selfpromo" },
+            Categories = ["selfpromo"],
             SkipMarginMilliseconds = 100,
         };
         using (Assert.Multiple())

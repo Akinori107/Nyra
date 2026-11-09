@@ -215,9 +215,7 @@ public sealed class Entity
             .IsTrue();
 
         var lavaBare = new LavaLyricsLyrics("genius", null, null, []);
-        await Assert
-            .That(lavaBare.ToResult().Data is { Synced: false, Lines: { Count: 0 } })
-            .IsTrue();
+        await Assert.That(lavaBare.ToResult().Data is { Synced: false, Lines.Count: 0 }).IsTrue();
 
         var lavaNone = new LavaLyricsLyrics("genius", null, null, null);
         await Assert.That(lavaNone.ToResult().Data is { Synced: false, Lines: null }).IsTrue();
@@ -361,7 +359,7 @@ public sealed class Entity
             isNodeLink: false
         );
         await Assert
-            .That(lava is { UptimeDuration: { TotalMilliseconds: 9001 }, Cpu: { NodeLoad: 0.25 } })
+            .That(lava is { UptimeDuration.TotalMilliseconds: 9001, Cpu.NodeLoad: 0.25 })
             .IsTrue();
     }
 
@@ -514,7 +512,7 @@ public sealed class Entity
             $$$$"""{"loadType":"track","data":{{{{trackJson}}}}}"""
         );
         await Assert
-            .That(trackLoad is LoadResult.TrackLoaded { Track: { Encoded: "QXRsZWFzdA==" } })
+            .That(trackLoad is LoadResult.TrackLoaded { Track.Encoded: "QXRsZWFzdA==" })
             .IsTrue();
 
         var episode = Parse<LoadResult>($$$$"""{"loadType":"episode","data":{{{{trackJson}}}}}""");
@@ -583,7 +581,7 @@ public sealed class Entity
             """{"loadType":"error","exception":{"message":"provider down"}}"""
         );
         await Assert
-            .That(nodeLinkError is LoadResult.LoadFailed { Error: { Message: "provider down" } })
+            .That(nodeLinkError is LoadResult.LoadFailed { Error.Message: "provider down" })
             .IsTrue();
 
         var unknown = Parse<LoadResult>("""{"loadType":"holo","data":{}}""");
@@ -592,7 +590,7 @@ public sealed class Entity
                 unknown
                     is LoadResult.LoadFailed
                     {
-                        Error: { Message: "The server reported an unknown load type 'holo'." },
+                        Error.Message: "The server reported an unknown load type 'holo'.",
                     }
             )
             .IsTrue();
@@ -603,8 +601,7 @@ public sealed class Entity
                 notString
                     is LoadResult.LoadFailed
                     {
-                        Error:
-                        { Message: "The server reported an unknown load type 'not a string'." },
+                        Error.Message: "The server reported an unknown load type 'not a string'.",
                     }
             )
             .IsTrue();
@@ -615,7 +612,7 @@ public sealed class Entity
                 missing
                     is LoadResult.LoadFailed
                     {
-                        Error: { Message: "The server reported an unknown load type 'missing'." },
+                        Error.Message: "The server reported an unknown load type 'missing'.",
                     }
             )
             .IsTrue();
@@ -850,8 +847,7 @@ public sealed class Entity
         );
         await Assert
             .That(
-                sought
-                    is { GuildId: 123, PositionMilliseconds: 30000, Position: { TotalSeconds: 30 } }
+                sought is { GuildId: 123, PositionMilliseconds: 30000, Position.TotalSeconds: 30 }
             )
             .IsTrue();
 

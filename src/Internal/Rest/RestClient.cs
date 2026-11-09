@@ -30,17 +30,12 @@ internal sealed class RestClient
     {
         Timeout = Timeout.InfiniteTimeSpan,
     };
-
-    private readonly Node _node;
-
-    private readonly Uri _baseUri;
-
     private static readonly MediaTypeHeaderValue JsonContentType = new("application/json");
 
     public RestClient(Node node)
     {
-        _node = node;
-        _baseUri = node.Endpoint.ToRestUri();
+        Node = node;
+        BaseUri = node.Endpoint.ToRestUri();
         Info = new InfoRest(this);
         Players = new PlayersRest(this);
         Tracks = new TracksRest(this);
@@ -52,9 +47,9 @@ internal sealed class RestClient
         YouTube = new YouTubeRest(this);
     }
 
-    internal Node Node => _node;
+    internal Node Node { get; }
 
-    internal Uri BaseUri => _baseUri;
+    internal Uri BaseUri { get; }
 
     internal InfoRest Info { get; }
 
@@ -85,7 +80,7 @@ internal sealed class RestClient
     {
         get
         {
-            var info = _node.ServerInfo;
+            var info = Node.ServerInfo;
             var isNodeLink = info?.IsNodeLink ?? false;
             if (isNodeLink || info?.EnabledFilters is not { } filters)
                 return NyraJson.OptionsFor(isNodeLink);
@@ -130,7 +125,7 @@ internal sealed class RestClient
         return body.Contains("session", StringComparison.OrdinalIgnoreCase);
     }
 
-    internal T? Deserialize<T>(byte[] json, string path, JsonSerializerOptions options)
+    internal static T? Deserialize<T>(byte[] json, string path, JsonSerializerOptions options)
     {
         try
         {
@@ -148,7 +143,7 @@ internal sealed class RestClient
         }
     }
 
-    internal T DeserializeOrThrow<T>(
+    internal static T DeserializeOrThrow<T>(
         byte[] json,
         string path,
         string what,
@@ -161,7 +156,7 @@ internal sealed class RestClient
             $"The server returned an empty {what}."
         );
 
-    internal IReadOnlyList<T> DeserializeList<T>(
+    internal static IReadOnlyList<T> DeserializeList<T>(
         byte[] json,
         string path,
         JsonSerializerOptions options
@@ -180,10 +175,10 @@ internal sealed class RestClient
     }
 
     private string RequireSessionId() =>
-        _node.SessionId is { Length: > 0 } sessionId
+        Node.SessionId is { Length: > 0 } sessionId
             ? sessionId
             : throw new InvalidOperationException(
-                $"Node '{_node.Name}' has no usable session id: the node is not ready yet, or the ready's id was dropped as header-hostile."
+                $"Node '{Node.Name}' has no usable session id: the node is not ready yet, or the ready's id was dropped as header-hostile."
             );
 
     internal string SessionPath(string route, params object[] arguments) =>
@@ -228,7 +223,7 @@ internal sealed class RestClient
         {
             var reply = await SendCoreAsync(method, path, jsonBody, cancellationToken)
                 .ConfigureAwait(false);
-            _node.NoteRestSuccess();
+            Node.NoteRestSuccess();
             return reply;
         }
         catch (Exception exception)
@@ -238,7 +233,7 @@ internal sealed class RestClient
                         or RestException { StatusCode: 429 or >= 500 }
             )
         {
-            _node.NoteRestFailure();
+            Node.NoteRestFailure();
             throw;
         }
     }
@@ -261,7 +256,7 @@ internal sealed class RestClient
         try
         {
             HttpResponseMessage reply;
-            using (var headerCts = new TimeoutLink(_node.Time, RequestTimeout, cancellationToken))
+            using (var headerCts = new TimeoutLink(Node.Time, RequestTimeout, cancellationToken))
                 reply = await Http.SendAsync(
                         request,
                         HttpCompletionOption.ResponseHeadersRead,
@@ -270,7 +265,7 @@ internal sealed class RestClient
                     .ConfigureAwait(false);
             using var response = reply;
 
-            using var bodyCts = new TimeoutLink(_node.Time, RequestTimeout, cancellationToken);
+            using var bodyCts = new TimeoutLink(Node.Time, RequestTimeout, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -300,7 +295,7 @@ internal sealed class RestClient
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new TimeoutException(
-                $"The node '{_node.Name}' at {_node.Endpoint} did not answer the request in time, the client's own bound fired and the caller's token is intact."
+                $"The node '{Node.Name}' at {Node.Endpoint} did not answer the request in time, the client's own bound fired and the caller's token is intact."
             );
         }
         catch (OperationCanceledException exception)
@@ -311,14 +306,14 @@ internal sealed class RestClient
         catch (HttpRequestException exception)
         {
             throw new NodeUnreachableException(
-                $"The node '{_node.Name}' at {_node.Endpoint} is not reachable: {exception.Message}",
+                $"The node '{Node.Name}' at {Node.Endpoint} is not reachable: {exception.Message}",
                 exception
             );
         }
         catch (IOException exception)
         {
             throw new NodeUnreachableException(
-                $"The node '{_node.Name}' at {_node.Endpoint} is not reachable: {exception.Message}",
+                $"The node '{Node.Name}' at {Node.Endpoint} is not reachable: {exception.Message}",
                 exception
             );
         }
@@ -384,8 +379,8 @@ internal sealed class RestClient
 
     internal HttpRequestMessage CreateRequest(HttpMethod method, string path, string accept)
     {
-        var request = new HttpRequestMessage(method, new Uri(_baseUri, path));
-        request.Headers.TryAddWithoutValidation("Authorization", _node.Endpoint.Password);
+        var request = new HttpRequestMessage(method, new Uri(BaseUri, path));
+        request.Headers.TryAddWithoutValidation("Authorization", Node.Endpoint.Password);
         request.Headers.TryAddWithoutValidation("User-Agent", ClientHeaders.UserAgent);
         request.Headers.TryAddWithoutValidation("Accept", accept);
         return request;

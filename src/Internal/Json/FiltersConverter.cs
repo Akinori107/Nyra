@@ -478,7 +478,7 @@ internal sealed class FiltersConverter(
         [property: JsonPropertyName("gain")] float? Gain
     );
 
-    private static IReadOnlyList<EqualizerBand>? ReadBands(
+    private static List<EqualizerBand>? ReadBands(
         ref Utf8JsonReader reader,
         JsonSerializerOptions options
     )

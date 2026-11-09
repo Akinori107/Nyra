@@ -315,7 +315,7 @@ public sealed class VoiceHandshake
 
         public Microsoft.Extensions.Logging.ILogger? Logger => null;
 
-        public RecordingList<(ulong GuildId, ulong? ChannelId)> VoiceSends { get; } = new();
+        public RecordingList<(ulong GuildId, ulong? ChannelId)> VoiceSends { get; } = [];
 
         public void GoReady() => _ready.TrySetResult(new ClientInformation(FakeBridge.UserId));
 

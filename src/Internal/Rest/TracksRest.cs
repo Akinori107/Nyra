@@ -55,7 +55,7 @@ internal sealed class TracksRest
         var json = await _rest
             .SendAsync(HttpMethod.Post, Routes.DecodeTracks, body, cancellationToken)
             .ConfigureAwait(false);
-        return _rest.DeserializeList<Track>(json, Routes.DecodeTracks, options);
+        return RestClient.DeserializeList<Track>(json, Routes.DecodeTracks, options);
     }
 
     public async Task<string> EncodeAsync(
@@ -68,7 +68,7 @@ internal sealed class TracksRest
         var json = await _rest
             .SendAsync(HttpMethod.Post, Routes.EncodedTracks, body, cancellationToken)
             .ConfigureAwait(false);
-        var encoded = _rest.DeserializeList<string>(json, Routes.EncodedTracks, options);
+        var encoded = RestClient.DeserializeList<string>(json, Routes.EncodedTracks, options);
         return encoded is { Count: > 0 }
             ? encoded[0]
             : throw new RestException(
@@ -88,7 +88,7 @@ internal sealed class TracksRest
         var json = await _rest
             .SendAsync(HttpMethod.Post, Routes.EncodedTracks, body, cancellationToken)
             .ConfigureAwait(false);
-        return _rest.DeserializeList<string>(json, Routes.EncodedTracks, options);
+        return RestClient.DeserializeList<string>(json, Routes.EncodedTracks, options);
     }
 
     public async Task<TrackStreamUrl> GetStreamUrlAsync(

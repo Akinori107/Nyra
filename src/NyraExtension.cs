@@ -11,7 +11,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 {
     private readonly Lock _lock = new();
     private readonly List<Node> _nodes = [];
-    private readonly Dictionary<ulong, Node> _guildClaims = new();
+    private readonly Dictionary<ulong, Node> _guildClaims = [];
     private readonly EventPump _events;
 
     private static readonly TimeSpan GatewayReadyTimeout = TimeSpan.FromSeconds(60);
@@ -51,7 +51,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         get
         {
             lock (_lock)
-                return _nodes.ToArray();
+                return [.. _nodes];
         }
     }
 

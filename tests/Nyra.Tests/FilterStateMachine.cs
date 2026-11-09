@@ -226,7 +226,7 @@ public sealed class FilterStateMachine
             await conn.Filters.ApplyAsync(Desired()).ConfigureAwait(false);
             await Assert.That(conn.Filters.Applied.Tremolo?.Frequency).IsEqualTo(5);
 
-            Player CapturePlayer(string filtersJson) =>
+            static Player CapturePlayer(string filtersJson) =>
                 JsonSerializer.Deserialize<Player>(
                     "{\"guildId\":\"777\",\"filters\":" + filtersJson + "}",
                     NyraJson.SerializerOptions

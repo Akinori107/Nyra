@@ -5,7 +5,7 @@ using Nyra.EventArgs;
 
 namespace Nyra.Internal;
 
-internal sealed class NodeEventDispatcher
+internal sealed class NodeEventDispatcher(Node node)
 {
     private const int OpReady = 1;
     private const int OpStats = 2;
@@ -37,13 +37,6 @@ internal sealed class NodeEventDispatcher
     private const int EventEternalBoxJump = 23;
     private const int EventConnectionStatus = 24;
     private const int EventWorkerFailed = 25;
-
-    private readonly Node _node;
-
-    public NodeEventDispatcher(Node node)
-    {
-        _node = node;
-    }
 
     public void Dispatch(ReadOnlySpan<byte> data, int connectionEpoch)
     {
@@ -84,9 +77,7 @@ internal sealed class NodeEventDispatcher
             {
                 var args = Deserialize<NodeReadyEventArgs>(ref payload);
                 if (args is not null)
-                    _ = _node.GuardAsync(
-                        _node.EventHandlers.HandleReadyAsync(args, connectionEpoch)
-                    );
+                    _ = node.GuardAsync(node.EventHandlers.HandleReadyAsync(args, connectionEpoch));
                 break;
             }
 
@@ -94,7 +85,7 @@ internal sealed class NodeEventDispatcher
             {
                 var stats = Deserialize<Stats>(ref payload);
                 if (stats is not null)
-                    _node.EventHandlers.HandleStats(stats);
+                    node.EventHandlers.HandleStats(stats);
                 break;
             }
 
@@ -111,15 +102,15 @@ internal sealed class NodeEventDispatcher
                 break;
 
             default:
-                if (_node.Logger?.IsEnabled(LogLevel.Debug) == true)
+                if (node.Logger?.IsEnabled(LogLevel.Debug) == true)
                 {
                     var operationName = ReadMemberText(payload, "op"u8);
-                    _node.Logger.LogDebug(
+                    node.Logger.LogDebug(
                         LogEvents.Node,
                         operationName is null
                             ? "Node {NodeName} sent a frame without an op member, ignored."
                             : "Node {NodeName} sent an unknown operation '{Operation}'.",
-                        _node.Name,
+                        node.Name,
                         operationName ?? "<missing>"
                     );
                 }
@@ -175,9 +166,9 @@ internal sealed class NodeEventDispatcher
             {
                 var args = Deserialize<WorkerFailedEventArgs>(ref payload);
                 if (args is not null)
-                    _ = _node.GuardAsync(
-                        _node.EventHandlers.HandleWorkerFailedAsync(
-                            _node.EventHandlers.SnapshotWorkerFailed(args),
+                    _ = node.GuardAsync(
+                        node.EventHandlers.HandleWorkerFailedAsync(
+                            node.EventHandlers.SnapshotWorkerFailed(args),
                             args
                         )
                     );
@@ -254,7 +245,7 @@ internal sealed class NodeEventDispatcher
             {
                 var args = Deserialize<FiltersChangedEventArgs>(
                     ref payload,
-                    NyraJson.OptionsFor(_node.IsNodeLink)
+                    NyraJson.OptionsFor(node.IsNodeLink)
                 );
                 if (args is not null)
                     Route(args.GuildId, "FiltersChangedEvent")?.HandleFiltersChanged(args);
@@ -281,7 +272,7 @@ internal sealed class NodeEventDispatcher
             {
                 var args = Deserialize<PlayerCreatedEventArgs>(
                     ref payload,
-                    NyraJson.OptionsFor(_node.IsNodeLink)
+                    NyraJson.OptionsFor(node.IsNodeLink)
                 );
                 if (args is not null)
                     Route(args.GuildId, "PlayerCreatedEvent")?.HandlePlayerCreated(args);
@@ -340,20 +331,20 @@ internal sealed class NodeEventDispatcher
             {
                 var status = Deserialize<ConnectionStatus>(ref payload);
                 if (status is not null)
-                    _node.EventHandlers.HandleConnectionStatus(status);
+                    node.EventHandlers.HandleConnectionStatus(status);
                 break;
             }
 
             default:
-                if (_node.Logger?.IsEnabled(LogLevel.Debug) == true)
+                if (node.Logger?.IsEnabled(LogLevel.Debug) == true)
                 {
                     var eventTypeName = ReadMemberText(payload, "type"u8);
-                    _node.Logger.LogDebug(
+                    node.Logger.LogDebug(
                         LogEvents.Node,
                         eventTypeName is null
                             ? "Node {NodeName} sent an event without a type member, ignored."
                             : "Node {NodeName} sent an unknown event type '{EventType}'.",
-                        _node.Name,
+                        node.Name,
                         eventTypeName ?? "<missing>"
                     );
                 }
@@ -474,12 +465,12 @@ internal sealed class NodeEventDispatcher
 
     private GuildConnection? Route(ulong guildId, string eventName)
     {
-        var connection = _node.GetConnection(guildId);
-        if (connection is null && _node.Logger?.IsEnabled(LogLevel.Debug) == true)
-            _node.Logger.LogDebug(
+        var connection = node.GetConnection(guildId);
+        if (connection is null && node.Logger?.IsEnabled(LogLevel.Debug) == true)
+            node.Logger.LogDebug(
                 LogEvents.Node,
                 "Node {NodeName} sent {EventName} for guild {GuildId} with no connection to route it to, the event was dropped.",
-                _node.Name,
+                node.Name,
                 eventName,
                 guildId
             );

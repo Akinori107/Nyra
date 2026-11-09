@@ -11,11 +11,7 @@ namespace Nyra.Exceptions;
 /// same cause instead.
 /// </para>
 /// </remarks>
-public sealed class VoiceHandshakeException : NyraException
-{
-    /// <summary>Creates the exception.</summary>
-    /// <param name="message">The message that describes the error.</param>
-    /// <param name="innerException">The exception that caused this one, null when there is none.</param>
-    public VoiceHandshakeException(string message, Exception? innerException = null)
-        : base(message, innerException) { }
-}
+/// <param name="message">The message that describes the error.</param>
+/// <param name="innerException">The exception that caused this one, null when there is none.</param>
+public sealed class VoiceHandshakeException(string message, Exception? innerException = null)
+    : NyraException(message, innerException) { }

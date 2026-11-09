@@ -18,30 +18,14 @@ namespace Nyra;
 /// </remarks>
 public sealed class Node : IAsyncDisposable, IDisposable
 {
-    private readonly NodeOptions _options;
-    private readonly NodeConnection _connection;
-    private readonly VoiceHandshakeCoordinator _voiceHandshake;
-    private readonly RestClient _rest;
     private readonly NodeQueries _queries;
     private readonly NodeServerInfo _serverInfo;
     private readonly NodeConnector _connector;
-    private readonly NodeGroups _groups;
-    private readonly NodeTracks _tracks;
-    private readonly NodeLyrics _lyrics;
-    private readonly NodeYouTube _youTube;
-    private readonly NodeRoutePlanner _routePlanner;
-    private readonly GuildRegistry _registry;
     private readonly EventPump _events;
-
-    private readonly NodeEventHandlers _eventHandlers;
-    private readonly NodeBridgeWiring _wiring;
-    private bool _stopped = true;
-
     private static readonly TimeSpan TimeoutLimit = TimeSpan.FromDays(40);
 
     private int _stopEpoch;
     private volatile bool _disposed;
-    private readonly Lock _eventsLock = new();
 
     /// <summary>Creates a node for an endpoint.</summary>
     /// <param name="endpoint">The endpoint of the server.</param>
@@ -50,87 +34,95 @@ public sealed class Node : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(endpoint);
         Endpoint = endpoint;
-        _options = options ?? new NodeOptions();
+        Options = options ?? new NodeOptions();
         ResetSessionSettings();
-        ArgumentException.ThrowIfNullOrWhiteSpace(_options.Name);
-        ArgumentNullException.ThrowIfNull(_options.TimeProvider, nameof(NodeOptions.TimeProvider));
+        ArgumentException.ThrowIfNullOrWhiteSpace(Options.Name);
+        ArgumentNullException.ThrowIfNull(Options.TimeProvider, nameof(NodeOptions.TimeProvider));
 
-        if (_options.ReconnectDelay <= TimeSpan.Zero)
+        if (Options.ReconnectDelay <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 "NodeOptions.ReconnectDelay must be positive."
             );
-        if (_options.MaxReconnectDelay < _options.ReconnectDelay)
+        if (Options.MaxReconnectDelay < Options.ReconnectDelay)
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 "NodeOptions.MaxReconnectDelay must not be smaller than ReconnectDelay."
             );
-        ThrowIfOverLimit(_options.MaxReconnectDelay, nameof(NodeOptions.MaxReconnectDelay));
+        ThrowIfOverLimit(Options.MaxReconnectDelay, nameof(NodeOptions.MaxReconnectDelay));
         if (
-            _options.ResumeTimeout < TimeSpan.Zero
-            || _options.ResumeTimeout.TotalSeconds > int.MaxValue
+            Options.ResumeTimeout < TimeSpan.Zero
+            || Options.ResumeTimeout.TotalSeconds > int.MaxValue
         )
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 "NodeOptions.ResumeTimeout must be zero or a positive number of seconds."
             );
         if (
-            _options.RescueTimeout != Timeout.InfiniteTimeSpan
-            && _options.RescueTimeout <= TimeSpan.Zero
+            Options.RescueTimeout != Timeout.InfiniteTimeSpan
+            && Options.RescueTimeout <= TimeSpan.Zero
         )
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 "NodeOptions.RescueTimeout must be positive, or Timeout.InfiniteTimeSpan for no limit."
             );
         ThrowIfNotPositive(
-            _options.VoiceHandshakeTimeout,
+            Options.VoiceHandshakeTimeout,
             nameof(NodeOptions.VoiceHandshakeTimeout)
         );
-        ThrowIfOverLimit(_options.VoiceHandshakeTimeout, nameof(NodeOptions.VoiceHandshakeTimeout));
-        ThrowIfNotPositive(_options.ReadyTimeout, nameof(NodeOptions.ReadyTimeout));
-        ThrowIfOverLimit(_options.ReadyTimeout, nameof(NodeOptions.ReadyTimeout));
+        ThrowIfOverLimit(Options.VoiceHandshakeTimeout, nameof(NodeOptions.VoiceHandshakeTimeout));
+        ThrowIfNotPositive(Options.ReadyTimeout, nameof(NodeOptions.ReadyTimeout));
+        ThrowIfOverLimit(Options.ReadyTimeout, nameof(NodeOptions.ReadyTimeout));
 
-        _events = new EventPump($"node {_options.Name}", null, LogEvents.Node);
+        _events = new EventPump($"node {Options.Name}", null, LogEvents.Node);
         _eventError = OnEventErrorAsync;
 
-        _rest = new RestClient(this);
+        Rest = new RestClient(this);
         var dispatcher = new NodeEventDispatcher(this);
-        _connection = new NodeConnection(
+        Connection = new NodeConnection(
             this,
             dispatcher,
             cancellationToken => EnsureServerInfoAsync(cancellationToken, forceProbe: true)
         );
-        _voiceHandshake = new VoiceHandshakeCoordinator(
-            _options.VoiceHandshakeTimeout,
-            _options.TimeProvider
+        VoiceHandshake = new VoiceHandshakeCoordinator(
+            Options.VoiceHandshakeTimeout,
+            Options.TimeProvider
         );
         _queries = new NodeQueries(this);
         _serverInfo = new NodeServerInfo(this);
         _connector = new NodeConnector(this);
-        _groups = new NodeGroups(this);
-        _tracks = new NodeTracks(this);
-        _lyrics = new NodeLyrics(this);
-        _youTube = new NodeYouTube(this);
-        _routePlanner = new NodeRoutePlanner(this);
-        _registry = new GuildRegistry(this);
-        _eventHandlers = new NodeEventHandlers(this);
-        _wiring = new NodeBridgeWiring(this);
+        Groups = new NodeGroups(this);
+        Tracks = new NodeTracks(this);
+        Lyrics = new NodeLyrics(this);
+        YouTube = new NodeYouTube(this);
+        RoutePlanner = new NodeRoutePlanner(this);
+        Registry = new GuildRegistry(this);
+        EventHandlers = new NodeEventHandlers(this);
+        Wiring = new NodeBridgeWiring(this);
     }
 
-    private static void ThrowIfNotPositive(TimeSpan value, string option)
+    private static void ThrowIfNotPositive(
+        TimeSpan value,
+        string option,
+        string paramName = "options"
+    )
     {
         if (value <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(
-                "options",
+                paramName,
                 $"NodeOptions.{option} must be positive."
             );
     }
 
-    private static void ThrowIfOverLimit(TimeSpan value, string option)
+    private static void ThrowIfOverLimit(
+        TimeSpan value,
+        string option,
+        string paramName = "options"
+    )
     {
         if (value > TimeoutLimit)
             throw new ArgumentOutOfRangeException(
-                "options",
+                paramName,
                 $"NodeOptions.{option} must not exceed {TimeoutLimit.TotalDays:N0} days."
             );
     }
@@ -139,7 +131,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     public Endpoint Endpoint { get; }
 
     /// <summary>The node's display name, used in logs and error messages, must not be blank.</summary>
-    public string Name => _options.Name;
+    public string Name => Options.Name;
 
     /// <summary>
     /// Detected at connect, true when the server is NodeLink, false when it is Lavalink or no detection is
@@ -173,9 +165,9 @@ public sealed class Node : IAsyncDisposable, IDisposable
         return ServerInfo?.HasPlugin(name) ?? false;
     }
 
-    internal NodeOptions Options => _options;
+    internal NodeOptions Options { get; }
 
-    internal TimeProvider Time => _options.TimeProvider;
+    internal TimeProvider Time => Options.TimeProvider;
 
     /// <summary>The node session id of the current connection, null before the node first became ready.</summary>
     /// <remarks>
@@ -183,32 +175,26 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// </remarks>
     public string? SessionId
     {
-        get => Volatile.Read(ref _sessionId);
-        internal set => Volatile.Write(ref _sessionId, value);
+        get => Volatile.Read(ref field);
+        internal set => Volatile.Write(ref field, value);
     }
-
-    private string? _sessionId;
 
     internal bool ResumingEnabled
     {
-        get => Volatile.Read(ref _resumingEnabled);
-        private set => Volatile.Write(ref _resumingEnabled, value);
+        get => Volatile.Read(ref field);
+        private set => Volatile.Write(ref field, value);
     }
-
-    private bool _resumingEnabled;
 
     internal int ResumeTimeoutSeconds
     {
-        get => Volatile.Read(ref _resumeTimeoutSeconds);
-        private set => Volatile.Write(ref _resumeTimeoutSeconds, value);
+        get => Volatile.Read(ref field);
+        private set => Volatile.Write(ref field, value);
     }
-
-    private int _resumeTimeoutSeconds;
 
     internal void ResetSessionSettings()
     {
-        ResumingEnabled = _options.Resuming;
-        ResumeTimeoutSeconds = (int)_options.ResumeTimeout.TotalSeconds;
+        ResumingEnabled = Options.Resuming;
+        ResumeTimeoutSeconds = (int)Options.ResumeTimeout.TotalSeconds;
     }
 
     private const long RestFailureMemoryMilliseconds = 30_000;
@@ -232,27 +218,23 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <summary>
     /// Whether the websocket to the server is open, wait for <see cref="IsReady"/> before issuing requests.
     /// </summary>
-    public bool IsConnected => _connection.IsConnected;
+    public bool IsConnected => Connection.IsConnected;
 
     /// <summary>Whether the node received the ready operation and can serve requests.</summary>
     public bool IsReady
     {
-        get => Volatile.Read(ref _isReady);
-        internal set => Volatile.Write(ref _isReady, value);
+        get => Volatile.Read(ref field);
+        internal set => Volatile.Write(ref field, value);
     }
-
-    private bool _isReady;
 
     /// <summary>
     /// The last statistics reported by the server, or null before the first <c>stats</c> operation.
     /// </summary>
     public Stats? Stats
     {
-        get => Volatile.Read(ref _stats);
-        internal set => Volatile.Write(ref _stats, value);
+        get => Volatile.Read(ref field);
+        internal set => Volatile.Write(ref field, value);
     }
-
-    private Stats? _stats;
 
     /// <summary>Last reported outbound connection status, or null before the first event.</summary>
     /// <remarks>
@@ -261,11 +243,9 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// </remarks>
     public ConnectionStatus? ConnectionStatus
     {
-        get => Volatile.Read(ref _connectionStatus);
-        internal set => Volatile.Write(ref _connectionStatus, value);
+        get => Volatile.Read(ref field);
+        internal set => Volatile.Write(ref field, value);
     }
-
-    private ConnectionStatus? _connectionStatus;
 
     internal IDiscordBridge? Client { get; private set; }
 
@@ -275,24 +255,24 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     internal ulong CurrentUserId => (ulong)Interlocked.Read(ref _currentUserId);
 
-    internal RestClient Rest => _rest;
+    internal RestClient Rest { get; }
 
-    internal NodeConnection Connection => _connection;
+    internal NodeConnection Connection { get; }
 
     /// <summary>The player groups of the node, NodeLink only.</summary>
-    public NodeGroups Groups => _groups;
+    public NodeGroups Groups { get; }
 
     /// <summary>Decoding, encoding and streaming of the tracks of the node.</summary>
-    public NodeTracks Tracks => _tracks;
+    public NodeTracks Tracks { get; }
 
     /// <summary>Lyrics, chapters and meanings of the tracks of the node.</summary>
-    public NodeLyrics Lyrics => _lyrics;
+    public NodeLyrics Lyrics { get; }
 
     /// <summary>The YouTube source configuration of the node.</summary>
-    public NodeYouTube YouTube => _youTube;
+    public NodeYouTube YouTube { get; }
 
     /// <summary>The IP route planner of the node.</summary>
-    public NodeRoutePlanner RoutePlanner => _routePlanner;
+    public NodeRoutePlanner RoutePlanner { get; }
 
     internal ServerInfo? ServerInfo => _serverInfo.Current;
 
@@ -312,11 +292,11 @@ public sealed class Node : IAsyncDisposable, IDisposable
     internal TaskCompletionSource<bool>? TakeConnectCompletion(int? maxOwnerGeneration = null) =>
         _connector.TakeCompletion(maxOwnerGeneration);
 
-    internal NodeBridgeWiring Wiring => _wiring;
+    internal NodeBridgeWiring Wiring { get; }
 
-    internal NodeEventHandlers EventHandlers => _eventHandlers;
+    internal NodeEventHandlers EventHandlers { get; }
 
-    internal GuildRegistry Registry => _registry;
+    internal GuildRegistry Registry { get; }
 
     internal int StopEpoch => Volatile.Read(ref _stopEpoch);
 
@@ -327,11 +307,11 @@ public sealed class Node : IAsyncDisposable, IDisposable
         int stopEpoch
     )
     {
-        lock (_eventsLock)
+        lock (EventsLock)
         {
             ThrowIfInterruptedWhileConnecting(expectedExtension, stopEpoch);
 
-            if (_wiring.WiredClient is not null && !ReferenceEquals(_wiring.WiredClient, client))
+            if (Wiring.WiredClient is not null && !ReferenceEquals(Wiring.WiredClient, client))
                 throw new InvalidOperationException(
                     $"The node '{Name}' is already attached to another Discord client."
                 );
@@ -345,20 +325,20 @@ public sealed class Node : IAsyncDisposable, IDisposable
             Interlocked.Exchange(ref _currentUserId, (long)clientInformation.CurrentUserId);
             _events.Logger = client.Logger;
 
-            _stopped = false;
-            _wiring.Wire(client);
+            Stopped = false;
+            Wiring.Wire(client);
         }
     }
 
-    internal Lock EventsLock => _eventsLock;
+    internal Lock EventsLock { get; } = new();
 
-    internal bool Stopped => _stopped;
+    internal bool Stopped { get; private set; } = true;
 
     internal bool Disposed => _disposed;
 
-    internal VoiceHandshakeCoordinator VoiceHandshake => _voiceHandshake;
+    internal VoiceHandshakeCoordinator VoiceHandshake { get; }
 
-    internal ConcurrentDictionary<ulong, GuildConnection> Connections => _registry.Connections;
+    internal ConcurrentDictionary<ulong, GuildConnection> Connections => Registry.Connections;
 
     internal ILogger? Logger => Client?.Logger;
 
@@ -423,7 +403,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         var pendingConnect = StopAndUnwireDiscordEvents();
         try
         {
-            await _connection.StopAsync(cancellationToken).ConfigureAwait(false);
+            await Connection.StopAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -443,8 +423,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         try
         {
-            await _registry.DisconnectGuildsAsync(deadline.Token).ConfigureAwait(false);
-            await _connection.StopAsync().ConfigureAwait(false);
+            await Registry.DisconnectGuildsAsync(deadline.Token).ConfigureAwait(false);
+            await Connection.StopAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -464,7 +444,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         var pendingConnect = ClaimStoppedDiscordEvents();
         try
         {
-            _registry.DisconnectGuilds();
+            Registry.DisconnectGuilds();
         }
         finally
         {
@@ -520,13 +500,13 @@ public sealed class Node : IAsyncDisposable, IDisposable
     {
         ArgumentOutOfRangeException.ThrowIfZero(guildId);
         ArgumentOutOfRangeException.ThrowIfZero(channelId);
-        return _registry.ConnectAsync(guildId, channelId, cancellationToken);
+        return Registry.ConnectAsync(guildId, channelId, cancellationToken);
     }
 
     /// <summary>The guild connection playing on this node, or null when the guild is not connected here.</summary>
     /// <param name="guildId">The guild to get the connection of.</param>
     /// <returns>The guild's connection, null when it is not connected here.</returns>
-    public GuildConnection? GetConnection(ulong guildId) => _registry.GetConnection(guildId);
+    public GuildConnection? GetConnection(ulong guildId) => Registry.GetConnection(guildId);
 
     /// <summary>
     /// Loads tracks for a query, direct http(s) and <c>ftts</c> URLs are sent as-is, plain terms resolve per
@@ -651,7 +631,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         CancellationToken cancellationToken
     )
     {
-        var session = await _rest
+        var session = await Rest
             .Session.UpdateAsync(resuming, timeoutSeconds, cancellationToken)
             .ConfigureAwait(false);
         ResumingEnabled = resuming;
@@ -659,7 +639,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         return session;
     }
 
-    internal void HandleError(Exception exception) => _eventHandlers.HandleError(exception);
+    internal void HandleError(Exception exception) => EventHandlers.HandleError(exception);
 
     internal async Task GuardAsync(Task operation)
     {
@@ -715,24 +695,24 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     private TaskCompletionSource<bool>? StopAndUnwireDiscordEvents()
     {
-        lock (_eventsLock)
+        lock (EventsLock)
         {
             var pendingConnect = ClaimStoppedDiscordEvents();
-            _wiring.Unwire();
+            Wiring.Unwire();
             return pendingConnect;
         }
     }
 
     private TaskCompletionSource<bool>? ClaimStoppedDiscordEvents()
     {
-        lock (_eventsLock)
+        lock (EventsLock)
         {
-            _stopped = true;
+            Stopped = true;
             _stopEpoch++;
             IsReady = false;
             _serverInfo.Invalidate();
 
-            _eventHandlers.OnStopped();
+            EventHandlers.OnStopped();
 
             return TakeConnectCompletion();
         }
@@ -740,20 +720,20 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     private void ReleaseAfterDispose(TaskCompletionSource<bool>? pendingConnect)
     {
-        lock (_eventsLock)
+        lock (EventsLock)
         {
-            _wiring.Unwire();
+            Wiring.Unwire();
             NyraMetrics.Forget(this);
         }
 
         pendingConnect?.TrySetResult(false);
-        _connection.Dispose();
+        Connection.Dispose();
         _connector.CancelGate();
     }
 
     private void MarkDisposed()
     {
-        lock (_eventsLock)
+        lock (EventsLock)
             _disposed = true;
     }
 

@@ -318,7 +318,7 @@ public sealed class NodeGroups
             {
                 Players = new GroupMembership
                 {
-                    Add = guildIds as IReadOnlyList<ulong> ?? guildIds.ToArray(),
+                    Add = guildIds as IReadOnlyList<ulong> ?? [.. guildIds],
                 },
             },
             cancellationToken
@@ -353,7 +353,7 @@ public sealed class NodeGroups
             {
                 Players = new GroupMembership
                 {
-                    Remove = guildIds as IReadOnlyList<ulong> ?? guildIds.ToArray(),
+                    Remove = guildIds as IReadOnlyList<ulong> ?? [.. guildIds],
                 },
             },
             cancellationToken

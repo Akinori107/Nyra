@@ -8,8 +8,7 @@ namespace Nyra.DiscordNet;
 public static class DiscordSocketClientExtensions
 {
     private static readonly Lock UseNyraGate = new();
-    private static readonly ConditionalWeakTable<BaseSocketClient, NyraExtension> Extensions =
-        new();
+    private static readonly ConditionalWeakTable<BaseSocketClient, NyraExtension> Extensions = [];
 
     /// <summary>Enables Nyra on the client.</summary>
     /// <remarks>

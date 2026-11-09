@@ -21,7 +21,7 @@ public sealed class VoiceCloseAndForwarder
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
 
-        public RecordingList<string> Messages { get; } = new();
+        public RecordingList<string> Messages { get; } = [];
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -346,19 +346,15 @@ public sealed class VoiceCloseAndForwarder
         shard?.Dispose();
     }
 
-    private sealed class ProbeBridge : GatewayBridgeBase
+    private sealed class ProbeBridge(GatewayClient client)
+        : GatewayBridgeBase(_ => { }, _ => { }, _ => { })
     {
-        private readonly GatewayClient _client;
-
-        public ProbeBridge(GatewayClient client)
-            : base(_ => { }, _ => { }, _ => { }) => _client = client;
-
-        public RecordingList<ulong> ResolvedGuilds { get; } = new();
+        public RecordingList<ulong> ResolvedGuilds { get; } = [];
 
         protected override GatewayClient GetClient(ulong guildId)
         {
             ResolvedGuilds.Add(guildId);
-            return _client;
+            return client;
         }
 
         protected override void Unsubscribe() { }

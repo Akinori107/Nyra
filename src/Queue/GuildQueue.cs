@@ -25,10 +25,8 @@ namespace Nyra.Queue;
 /// </remarks>
 public sealed class GuildQueue
 {
-    private static readonly ConditionalWeakTable<GuildConnection, GuildQueue> Queues = new();
+    private static readonly ConditionalWeakTable<GuildConnection, GuildQueue> Queues = [];
     private static readonly Lock RegistryLock = new();
-
-    private readonly GuildConnection _connection;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly NextTrackPreloader _preloader;
     private readonly Func<Exception, System.EventArgs?, Task> _handlerError;
@@ -43,7 +41,7 @@ public sealed class GuildQueue
 
     private GuildQueue(GuildConnection connection)
     {
-        _connection = connection;
+        Connection = connection;
         _preloader = new NextTrackPreloader(this);
         _handlerError = OnHandlerErrorAsync;
         connection.TrackStarted += OnTrackStartedAsync;
@@ -81,7 +79,7 @@ public sealed class GuildQueue
     public event AsyncEventHandler<QueueTrackFailedEventArgs>? TrackFailed;
 
     /// <summary>Gets the connection this queue plays on.</summary>
-    public GuildConnection Connection => _connection;
+    public GuildConnection Connection { get; }
 
     internal QueueState State => _state;
 
@@ -126,7 +124,7 @@ public sealed class GuildQueue
         var wait = TimeSpan.Zero;
         if (state.Current is { Info.IsStream: false } current)
         {
-            var left = current.Info.Length - (_connection.Position ?? TimeSpan.Zero);
+            var left = current.Info.Length - (Connection.Position ?? TimeSpan.Zero);
             if (left > TimeSpan.Zero)
                 wait = left;
         }
@@ -262,7 +260,7 @@ public sealed class GuildQueue
         {
             EnsureAttached();
 
-            var idle = _connection.CurrentTrack is null;
+            var idle = Connection.CurrentTrack is null;
             if (_state.Upcoming.Length + copies.Count - (idle ? 1 : 0) > _maxLength)
                 throw new InvalidOperationException(
                     $"The queue holds at most {_maxLength} upcoming tracks."
@@ -279,7 +277,7 @@ public sealed class GuildQueue
                 {
                     try
                     {
-                        await _connection
+                        await Connection
                             .PlayAsync(play, cancellationToken: cancellationToken)
                             .ConfigureAwait(false);
                     }
@@ -386,7 +384,7 @@ public sealed class GuildQueue
             EnsureAttached();
 
             Reset(QueueState.Empty with { History = _state.History }, notes);
-            await _connection.StopAsync(cancellationToken).ConfigureAwait(false);
+            await Connection.StopAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -412,7 +410,7 @@ public sealed class GuildQueue
             if (play is null)
                 return null;
 
-            await _connection
+            await Connection
                 .PlayAsync(play, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             Commit(after, notes);
@@ -516,7 +514,7 @@ public sealed class GuildQueue
         state.Current is { } current
         && (
             ended is null
-                ? _connection.CurrentTrack is null
+                ? Connection.CurrentTrack is null
                 : GuildConnection.IsSameTrack(current, ended)
         );
 
@@ -541,7 +539,7 @@ public sealed class GuildQueue
 
             var before = _state;
             var ours = Matches(before, ended);
-            if (!ours && (_connection.CurrentTrack is not null || before.Upcoming.IsEmpty))
+            if (!ours && (Connection.CurrentTrack is not null || before.Upcoming.IsEmpty))
                 return;
 
             var (after, play) = ours ? before.Advance(failed, Policy) : before.Start(Policy);
@@ -558,7 +556,7 @@ public sealed class GuildQueue
             {
                 try
                 {
-                    await _connection.PlayAsync(play).ConfigureAwait(false);
+                    await Connection.PlayAsync(play).ConfigureAwait(false);
                 }
                 catch (Exception exception)
                 {
@@ -679,13 +677,13 @@ public sealed class GuildQueue
         {
             _detached = true;
             _state = QueueState.Empty;
-            _connection.TrackStarted -= OnTrackStartedAsync;
-            _connection.TrackFinished -= OnTrackFinishedAsync;
-            _connection.TrackStuck -= OnTrackStuckAsync;
-            _connection.GuildConnectionRestored -= OnRestoredAsync;
-            _connection.GuildConnectionInvalidated -= OnInvalidatedAsync;
+            Connection.TrackStarted -= OnTrackStartedAsync;
+            Connection.TrackFinished -= OnTrackFinishedAsync;
+            Connection.TrackStuck -= OnTrackStuckAsync;
+            Connection.GuildConnectionRestored -= OnRestoredAsync;
+            Connection.GuildConnectionInvalidated -= OnInvalidatedAsync;
             lock (RegistryLock)
-                Queues.Remove(_connection);
+                Queues.Remove(Connection);
         }
         finally
         {

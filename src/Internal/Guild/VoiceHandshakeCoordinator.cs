@@ -6,14 +6,14 @@ using Nyra.Exceptions;
 
 namespace Nyra.Internal;
 
-internal sealed class VoiceHandshakeCoordinator
+internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? timeProvider = null)
 {
     private readonly ConcurrentDictionary<ulong, PendingHandshake> _pending = new();
 
     private static readonly ConditionalWeakTable<
         IDiscordBridge,
         ConcurrentDictionary<ulong, LeaveEchoGuard>
-    > LeaveEchoGuards = new();
+    > LeaveEchoGuards = [];
 
     private static ConcurrentDictionary<ulong, LeaveEchoGuard> GuardFor(IDiscordBridge client) =>
         LeaveEchoGuards.GetValue(
@@ -148,33 +148,25 @@ internal sealed class VoiceHandshakeCoordinator
     private static readonly ConditionalWeakTable<
         VoiceStateUpdatedEventArgs,
         object
-    > ConsumedEchoes = new();
+    > ConsumedEchoes = [];
 
     private static string DescribeMovedChannel(ulong? channelId) =>
         channelId is { } id ? $" (channel {id})" : string.Empty;
 
     private static readonly object Marker = new();
 
-    private readonly TimeSpan _timeout;
-
-    private readonly TimeProvider _time;
-
-    public VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? timeProvider = null)
-    {
-        _timeout = timeout;
-        _time = timeProvider ?? TimeProvider.System;
-    }
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
     private string DescribeTimeout()
     {
-        if (_timeout < TimeSpan.FromSeconds(1))
+        if (timeout < TimeSpan.FromSeconds(1))
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "{0:0} milliseconds",
-                _timeout.TotalMilliseconds
+                timeout.TotalMilliseconds
             );
 
-        var seconds = Math.Round(_timeout.TotalSeconds, MidpointRounding.AwayFromZero);
+        var seconds = Math.Round(timeout.TotalSeconds, MidpointRounding.AwayFromZero);
         return string.Format(
             CultureInfo.InvariantCulture,
             "{0:N0} second{1}",
@@ -333,7 +325,7 @@ internal sealed class VoiceHandshakeCoordinator
         Task? joinSend = null;
         Task<DiscordVoiceState>? stateTask = null;
 
-        using var joinCts = new TimeoutLink(_time, _timeout, cancellationToken);
+        using var joinCts = new TimeoutLink(_time, timeout, cancellationToken);
         try
         {
             try
@@ -372,7 +364,7 @@ internal sealed class VoiceHandshakeCoordinator
             {
                 var updatesTask = Task.WhenAll(stateTask, serverTask);
                 var completed = await Task.WhenAny(updatesTask, movedTask)
-                    .WaitAsync(_timeout, _time, cancellationToken)
+                    .WaitAsync(timeout, _time, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (ReferenceEquals(completed, movedTask))
@@ -457,11 +449,11 @@ internal sealed class VoiceHandshakeCoordinator
                         ? ArmGuard(
                             client,
                             guildId,
-                            _time.GetMilliseconds() + (long)_timeout.TotalMilliseconds
+                            _time.GetMilliseconds() + (long)timeout.TotalMilliseconds
                         )
                         : null;
 
-                var compensationCts = new CancellationTokenSource(_timeout);
+                var compensationCts = new CancellationTokenSource(timeout);
                 var leaveSend = SendVoiceUpdateSafely(client, guildId, null, compensationCts.Token);
 
                 _ = ObserveCompensationAsync(
@@ -482,12 +474,12 @@ internal sealed class VoiceHandshakeCoordinator
 
     public async Task LeaveChannelAsync(IDiscordBridge client, ulong guildId)
     {
-        var deadline = _time.GetMilliseconds() + (long)_timeout.TotalMilliseconds;
+        var deadline = _time.GetMilliseconds() + (long)timeout.TotalMilliseconds;
         var armTicket = ArmGuard(client, guildId, deadline);
 
         try
         {
-            using var leaveCts = new CancellationTokenSource(_timeout);
+            using var leaveCts = new CancellationTokenSource(timeout);
             var leaveSend = SendVoiceUpdateSafely(client, guildId, null, leaveCts.Token);
             try
             {

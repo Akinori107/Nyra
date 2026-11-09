@@ -108,7 +108,6 @@ public sealed class GuildFilters
     private readonly SemaphoreSlim _filterGate = new(1, 1);
 
     private readonly CancellationTokenSource _filterSendCts = new();
-    private FilterChain _filters = new();
     private FilterChain? _pendingFilters;
 
     internal GuildFilters(GuildConnection connection)
@@ -125,7 +124,7 @@ public sealed class GuildFilters
     /// confirms those through the websocket event, which this surface does not ingest. A filter write does not
     /// pick the change up either, it re-sends from Nyra's own view and replaces the co-client's change.
     /// </remarks>
-    public FilterChain Applied => _filters;
+    public FilterChain Applied { get; private set; } = new();
 
     internal bool HasPendingFilters => _pendingFilters is not null;
 
@@ -228,7 +227,7 @@ public sealed class GuildFilters
 
         using var blank = Wire(place(new FilterChain(), null));
         using var wanted = Wire(place(new FilterChain(), filter), NyraJson.ComparisonOptions);
-        using var held = Wire(_filters);
+        using var held = Wire(Applied);
 
         foreach (var member in wanted.RootElement.EnumerateObject())
         {
@@ -339,9 +338,9 @@ public sealed class GuildFilters
         await WriteAsync(
                 () =>
                 {
-                    FilterValidation.ValidateFilterBounds(filters, _filters, _node.IsNodeLink);
+                    FilterValidation.ValidateFilterBounds(filters, Applied, _node.IsNodeLink);
 
-                    if (filters.Volume is not null && filters.Volume != _filters.Volume)
+                    if (filters.Volume is not null && filters.Volume != Applied.Volume)
                     {
                         NodeGuards.RequireLavalink(_node, "volume filter");
                         FilterValidation.ThrowIfOutOfRange(
@@ -359,7 +358,7 @@ public sealed class GuildFilters
             .ConfigureAwait(false);
     }
 
-    private FilterChain DesiredFilters() => _pendingFilters ?? _filters;
+    private FilterChain DesiredFilters() => _pendingFilters ?? Applied;
 
     private async Task WriteAsync(Func<FilterChain> compose, CancellationToken cancellationToken)
     {
@@ -473,7 +472,7 @@ public sealed class GuildFilters
     {
         TimescaleFilter? oldTimescale;
         lock (_connection.PlaybackPositionLock)
-            oldTimescale = _filters.Timescale;
+            oldTimescale = Applied.Timescale;
 
         var player = await _node
             .Rest.Players.UpdateAsync(
@@ -501,7 +500,7 @@ public sealed class GuildFilters
         bool gaveUp;
         lock (_connection.PlaybackPositionLock)
         {
-            _filters =
+            Applied =
                 _node.IsNodeLink && player.Filters is { } effective
                     ? effective
                     : StripConfigDisabledFilters(desired);
@@ -516,7 +515,7 @@ public sealed class GuildFilters
 
     private void ReanchorIfPaceChanged(TimescaleFilter? oldTimescale)
     {
-        var applied = _filters.Timescale;
+        var applied = Applied.Timescale;
         if (
             (oldTimescale?.Speed ?? 1.0) == (applied?.Speed ?? 1.0)
             && (oldTimescale?.Rate ?? 1.0) == (applied?.Rate ?? 1.0)
@@ -636,8 +635,8 @@ public sealed class GuildFilters
                 TimescaleFilter? oldTimescale;
                 lock (_connection.PlaybackPositionLock)
                 {
-                    oldTimescale = _filters.Timescale;
-                    _filters = serverFilters;
+                    oldTimescale = Applied.Timescale;
+                    Applied = serverFilters;
                     ReanchorIfPaceChanged(oldTimescale);
                 }
             }
@@ -668,7 +667,7 @@ public sealed class GuildFilters
         {
             _pendingFilters = null;
             _pendingFilterDivergences = 0;
-            _filters = new();
+            Applied = new();
         }
         finally
         {

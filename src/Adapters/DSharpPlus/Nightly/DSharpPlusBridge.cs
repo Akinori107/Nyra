@@ -1,3 +1,4 @@
+using System.Globalization;
 using DSharpPlus;
 using DSharpPlus.EventArgs;
 using DSharpPlus.Net.Abstractions;
@@ -94,16 +95,15 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var client = Volatile.Read(ref _client);
-        if (client is null)
-            throw new InvalidOperationException(
+        var client =
+            Volatile.Read(ref _client)
+            ?? throw new InvalidOperationException(
                 "The Nyra bridge has not been bound to a DiscordClient yet, the event handlers only run after the client connects."
             );
-
         var payload = new Dictionary<string, object?>
         {
-            ["guild_id"] = guildId.ToString(),
-            ["channel_id"] = channelId?.ToString(),
+            ["guild_id"] = guildId.ToString(CultureInfo.InvariantCulture),
+            ["channel_id"] = channelId?.ToString(CultureInfo.InvariantCulture),
             ["self_mute"] = selfMute,
             ["self_deaf"] = selfDeaf,
         };
@@ -139,7 +139,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
         _ready.TrySetCanceled();
     }
 
-    internal Task OnClientStarted(DiscordClient sender, ClientStartedEventArgs eventArgs)
+    internal Task OnClientStarted(DiscordClient sender, ClientStartedEventArgs _)
     {
         if (_disposed)
             return Task.CompletedTask;
@@ -161,7 +161,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
         return Task.CompletedTask;
     }
 
-    internal Task OnSessionCreated(DiscordClient sender, SessionCreatedEventArgs eventArgs)
+    internal Task OnSessionCreated(DiscordClient sender, SessionCreatedEventArgs _)
     {
         if (_disposed)
             return Task.CompletedTask;

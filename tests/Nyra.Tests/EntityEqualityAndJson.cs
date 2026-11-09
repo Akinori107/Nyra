@@ -10,11 +10,7 @@ public sealed class EntityEqualityAndJson
 {
     private static readonly JsonSerializerOptions Options = NyraJson.SerializerOptions;
 
-    private sealed class ProbeException : NyraException
-    {
-        public ProbeException(string message)
-            : base(message) { }
-    }
+    private sealed class ProbeException(string message) : NyraException(message) { }
 
     [Test]
     public async Task MessageOnlyException()

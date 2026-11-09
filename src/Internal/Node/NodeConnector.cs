@@ -89,7 +89,7 @@ internal sealed class NodeConnector
 
                 if (started || interrupted)
                     await _node
-                        .Connection.StopAsync()
+                        .Connection.StopAsync(CancellationToken.None)
                         .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
                 throw;
             }

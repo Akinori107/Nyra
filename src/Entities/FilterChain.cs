@@ -154,7 +154,7 @@ public sealed record FilterChain
     /// <returns>The hash code.</returns>
     public override int GetHashCode()
     {
-        var hash = new HashCode();
+        var hash = default(HashCode);
         hash.Add(Volume);
         hash.Add(EqualizerTransition);
         hash.Add(Karaoke);

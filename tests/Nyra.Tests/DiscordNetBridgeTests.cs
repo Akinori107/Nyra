@@ -95,7 +95,7 @@ public sealed class DiscordNetBridgeTests
                 typeof(SocketGuild),
                 BindingFlags.Instance | BindingFlags.NonPublic,
                 null,
-                new object[] { client, id },
+                [client, id],
                 null
             )!;
 
@@ -109,7 +109,7 @@ public sealed class DiscordNetBridgeTests
                 typeof(SocketVoiceChannel),
                 BindingFlags.Instance | BindingFlags.NonPublic,
                 null,
-                new object[] { client, id, guild },
+                [client, id, guild],
                 null
             )!;
 
@@ -123,7 +123,7 @@ public sealed class DiscordNetBridgeTests
                 typeof(SocketTextChannel),
                 BindingFlags.Instance | BindingFlags.NonPublic,
                 null,
-                new object[] { client, id, guild },
+                [client, id, guild],
                 null
             )!;
 
@@ -133,19 +133,7 @@ public sealed class DiscordNetBridgeTests
                 typeof(SocketVoiceState),
                 BindingFlags.Instance | BindingFlags.NonPublic,
                 null,
-                new object[]
-                {
-                    channel,
-                    null!,
-                    "sess",
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                },
+                [channel, null!, "sess", false, false, false, false, false, false, false],
                 null
             )!;
 

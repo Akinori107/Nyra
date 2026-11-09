@@ -7,12 +7,9 @@ namespace Nyra.Abstractions;
 /// invalidates the session is not reported because no guild delete is dispatched for it, so the re-invite
 /// join has to notice the dead connection on its own.
 /// </remarks>
-public sealed class GuildRemovedEventArgs : System.EventArgs
+/// <param name="guildId">The id of the guild the bot was removed from.</param>
+public sealed class GuildRemovedEventArgs(ulong guildId) : System.EventArgs
 {
-    /// <summary>Initializes the event args with the reported values.</summary>
-    /// <param name="guildId">The id of the guild the bot was removed from.</param>
-    public GuildRemovedEventArgs(ulong guildId) => GuildId = guildId;
-
     /// <summary>The id of the guild the bot was removed from.</summary>
-    public ulong GuildId { get; }
+    public ulong GuildId { get; } = guildId;
 }

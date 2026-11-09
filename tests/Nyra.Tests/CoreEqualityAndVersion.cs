@@ -82,9 +82,9 @@ public sealed class CoreEqualityAndVersion
             await Assert.That(!takes || version.Major == major).IsTrue();
         }
 
-        NodeVersion.TryParse("3.10.0", out var plain);
-        NodeVersion.TryParse("3.10.0", out var same);
-        NodeVersion.TryParse("3.10.1", out var bump);
+        _ = NodeVersion.TryParse("3.10.0", out var plain);
+        _ = NodeVersion.TryParse("3.10.0", out var same);
+        _ = NodeVersion.TryParse("3.10.1", out var bump);
         using (Assert.Multiple())
         {
             await Assert.That(plain).IsEqualTo(same);
@@ -94,8 +94,8 @@ public sealed class CoreEqualityAndVersion
             await Assert.That(plain).IsEqualTo((object)same);
         }
 
-        NodeVersion.TryParse("3.10.0", out var older);
-        NodeVersion.TryParse("3.11.0", out var newer);
+        _ = NodeVersion.TryParse("3.10.0", out var older);
+        _ = NodeVersion.TryParse("3.11.0", out var newer);
         using (Assert.Multiple())
         {
             await Assert.That(older == same).IsTrue();

@@ -20,7 +20,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
     private static readonly ConditionalWeakTable<
         GuildQueue,
         StrongBox<IMessageChannel>
-    > QueueChannels = new();
+    > QueueChannels = [];
     private static readonly Lock QueueChannelsGate = new();
     private static readonly AsyncLocal<bool> InCommand = new();
 
@@ -811,7 +811,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         await FollowupAsync(content, ephemeral: true).ConfigureAwait(false);
     }
 
-    private Task EditResponseAsync(string content) =>
+    private Task<IUserMessage> EditResponseAsync(string content) =>
         ModifyOriginalResponseAsync(properties => properties.Content = content);
 
     private static bool TryParseSeek(string input, out double seconds, out bool relative)

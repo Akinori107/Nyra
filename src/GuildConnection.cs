@@ -14,18 +14,8 @@ namespace Nyra;
 /// </summary>
 public sealed class GuildConnection
 {
-    private readonly Node _node;
-    private readonly GuildFilters _filters;
-    private readonly GuildLyrics _lyrics;
-    private readonly GuildSponsorBlock _sponsorBlock;
-    private readonly GuildMix _mix;
-    private readonly GuildEffects _effects;
-    private readonly GuildPlayback _playback;
     private readonly GuildVoiceForwarder _voiceForward;
-    private readonly GuildPatches _patches;
-    private readonly GuildTeardown _teardown;
     private readonly GuildCommands _commands;
-    private readonly EventPump _pump;
     private readonly Func<Exception, System.EventArgs?, Task> _handlerError;
     private volatile bool _tearingDown;
     private volatile bool _restoring;
@@ -67,18 +57,18 @@ public sealed class GuildConnection
         string voiceToken
     )
     {
-        _node = node;
-        _filters = new GuildFilters(this);
-        _lyrics = new GuildLyrics(this);
-        _sponsorBlock = new GuildSponsorBlock(this);
-        _mix = new GuildMix(this);
-        _effects = new GuildEffects(this);
-        _playback = new GuildPlayback(this, node.Time);
+        Node = node;
+        Filters = new GuildFilters(this);
+        Lyrics = new GuildLyrics(this);
+        SponsorBlock = new GuildSponsorBlock(this);
+        Mix = new GuildMix(this);
+        Effects = new GuildEffects(this);
+        Playback = new GuildPlayback(this, node.Time);
         _voiceForward = new GuildVoiceForwarder(this);
-        _patches = new GuildPatches(this);
-        _teardown = new GuildTeardown(this);
+        Patches = new GuildPatches(this);
+        Teardown = new GuildTeardown(this);
         _commands = new GuildCommands(this);
-        _pump = new EventPump($"guild {guildId}", node.Logger, LogEvents.Playback);
+        Pump = new EventPump($"guild {guildId}", node.Logger, LogEvents.Playback);
         _handlerError = OnHandlerErrorAsync;
         GuildId = guildId;
         ChannelId = channelId;
@@ -122,13 +112,13 @@ public sealed class GuildConnection
 
     internal bool IsTearingDown => _tearingDown;
 
-    internal GuildPatches Patches => _patches;
+    internal GuildPatches Patches { get; }
 
-    internal GuildTeardown Teardown => _teardown;
+    internal GuildTeardown Teardown { get; }
 
-    internal GuildPlayback Playback => _playback;
+    internal GuildPlayback Playback { get; }
 
-    internal EventPump Pump => _pump;
+    internal EventPump Pump { get; }
 
     internal Task RaiseInvalidatedAsync(ulong? lastChannelId) =>
         GuildConnectionInvalidated.RaiseAsync(
@@ -137,7 +127,7 @@ public sealed class GuildConnection
             _handlerError
         );
 
-    internal bool IsNodeLinkServer => _node.IsNodeLink;
+    internal bool IsNodeLinkServer => Node.IsNodeLink;
 
     internal void MarkTearingDown() => _tearingDown = true;
 
@@ -154,24 +144,24 @@ public sealed class GuildConnection
     internal void CommitPlayerUpdate() => _playerCommitted = true;
 
     /// <summary>The node this connection plays through.</summary>
-    public Node Node => _node;
+    public Node Node { get; }
 
-    internal TimeProvider Time => _node.Time;
+    internal TimeProvider Time => Node.Time;
 
     /// <summary>The audio filters of the connection.</summary>
-    public GuildFilters Filters => _filters;
+    public GuildFilters Filters { get; }
 
     /// <summary>The lyrics subscription of the connection.</summary>
-    public GuildLyrics Lyrics => _lyrics;
+    public GuildLyrics Lyrics { get; }
 
     /// <summary>The SponsorBlock settings of the connection.</summary>
-    public GuildSponsorBlock SponsorBlock => _sponsorBlock;
+    public GuildSponsorBlock SponsorBlock { get; }
 
     /// <summary>The mix layers of the connection.</summary>
-    public GuildMix Mix => _mix;
+    public GuildMix Mix { get; }
 
     /// <summary>The fading, ducking, loudness and crossfade effects of the connection.</summary>
-    public GuildEffects Effects => _effects;
+    public GuildEffects Effects { get; }
 
     /// <summary>The track currently loaded, or null when nothing is playing.</summary>
     /// <remarks>
@@ -206,7 +196,7 @@ public sealed class GuildConnection
     /// end.
     /// </para>
     /// </remarks>
-    public TimeSpan? Position => _playback.Position;
+    public TimeSpan? Position => Playback.Position;
 
     /// <summary>Raised when the server started playing the current track.</summary>
     public event AsyncEventHandler<TrackStartedEventArgs>? TrackStarted;
@@ -513,7 +503,7 @@ public sealed class GuildConnection
     /// <returns>A task that completes when the player was destroyed.</returns>
     /// <exception cref="RestException">The server refused the player destroy.</exception>
     public Task DisconnectAsync(CancellationToken cancellationToken = default) =>
-        _teardown.DisconnectAsync(cancellationToken);
+        Teardown.DisconnectAsync(cancellationToken);
 
     internal void CaptureForRestore()
     {
@@ -526,9 +516,9 @@ public sealed class GuildConnection
                 CurrentTrack,
                 Position,
                 Volume,
-                _filters.Applied,
+                Filters.Applied,
                 IsPaused,
-                _node.Time.GetMilliseconds()
+                Node.Time.GetMilliseconds()
             ),
             null
         );
@@ -547,10 +537,10 @@ public sealed class GuildConnection
         try
         {
             await _voiceForward.DrainAsync().ConfigureAwait(false);
-            await _patches.DrainAsync().ConfigureAwait(false);
+            await Patches.DrainAsync().ConfigureAwait(false);
 
             ResetPlayerState();
-            await _filters.ResetForNewSessionAsync().ConfigureAwait(false);
+            await Filters.ResetForNewSessionAsync().ConfigureAwait(false);
             _voiceForward.ClearPending();
 
             await _voiceForward
@@ -569,7 +559,7 @@ public sealed class GuildConnection
                 return false;
 
             resent =
-                _node.Options.RescuePlayback
+                Node.Options.RescuePlayback
                 && snapshot is not null
                 && !IsRescueExpired(snapshot)
                 && await ResendPlaybackAsync(snapshot).ConfigureAwait(false);
@@ -587,9 +577,9 @@ public sealed class GuildConnection
     }
 
     private bool IsRescueExpired(RestoreSnapshot snapshot) =>
-        _node.Options.RescueTimeout != Timeout.InfiniteTimeSpan
-        && _node.Time.GetMilliseconds() - snapshot.CapturedTick
-            > _node.Options.RescueTimeout.TotalMilliseconds;
+        Node.Options.RescueTimeout != Timeout.InfiniteTimeSpan
+        && Node.Time.GetMilliseconds() - snapshot.CapturedTick
+            > Node.Options.RescueTimeout.TotalMilliseconds;
 
     private async Task<bool> ResendPlaybackAsync(RestoreSnapshot snapshot)
     {
@@ -603,7 +593,7 @@ public sealed class GuildConnection
             if (_tearingDown)
                 return false;
 
-            _node.HandleError(
+            Node.HandleError(
                 new InvalidOperationException(
                     $"Failed to restore the playback of guild {GuildId}: {exception.Message}",
                     exception
@@ -643,20 +633,20 @@ public sealed class GuildConnection
                     : null,
             };
 
-            _playback.StampPlayRequested();
+            Playback.StampPlayRequested();
             if (snapshot.Paused)
-                _playback.StampPauseRequested();
+                Playback.StampPauseRequested();
         }
         else if (volume is null && filters is null)
             return;
 
-        var requestTick = _node.Time.GetMilliseconds();
+        var requestTick = Node.Time.GetMilliseconds();
 
         using var timeout = new CancellationTokenSource(GuildVoiceForwarder.VoiceSendDeadline);
-        var player = await _patches
+        var player = await Patches
             .SendAsync(
                 ct =>
-                    _node.Rest.Players.UpdateAsync(
+                    Node.Rest.Players.UpdateAsync(
                         GuildId,
                         new PlayerUpdatePayload
                         {
@@ -673,7 +663,7 @@ public sealed class GuildConnection
             .ConfigureAwait(false);
 
         if (filters is not null)
-            await _filters.LandRescuedAsync(player, filters).ConfigureAwait(false);
+            await Filters.LandRescuedAsync(player, filters).ConfigureAwait(false);
         CaptureState(player, requestTick, startMilliseconds);
     }
 
@@ -681,23 +671,23 @@ public sealed class GuildConnection
         _voiceForward.DrainAsync(cancellationToken);
 
     internal Task DrainFiltersAsync(CancellationToken cancellationToken = default) =>
-        _filters.DrainAsync(cancellationToken);
+        Filters.DrainAsync(cancellationToken);
 
-    internal Task CompleteEventPumpAsync() => _pump.CompleteAsync(TimeSpan.FromSeconds(5));
+    internal Task CompleteEventPumpAsync() => Pump.CompleteAsync(TimeSpan.FromSeconds(5));
 
     /// <summary>Returns the connection as its guild and node.</summary>
     /// <returns>The guild and node of the connection.</returns>
-    public override string ToString() => $"{GuildId} ({_node})";
+    public override string ToString() => $"{GuildId} ({Node})";
 
     internal void HandleTrackStart(TrackStartedEventArgs eventArgs)
     {
         if (_tearingDown)
             return;
 
-        if (_filters.HasPendingFilters)
-            _ = _filters.ResendPendingFiltersAsync();
+        if (Filters.HasPendingFilters)
+            _ = Filters.ResendPendingFiltersAsync();
 
-        _playback.OnTrackStart(eventArgs);
+        Playback.OnTrackStart(eventArgs);
 
         Dispatch(TrackStarted, eventArgs);
     }
@@ -707,7 +697,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnTrackEnd(eventArgs);
+        Playback.OnTrackEnd(eventArgs);
 
         Dispatch(TrackFinished, eventArgs);
     }
@@ -723,7 +713,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnPlayerUpdate(eventArgs);
+        Playback.OnPlayerUpdate(eventArgs);
 
         Dispatch(PlayerUpdated, eventArgs, droppable: true);
     }
@@ -732,23 +722,23 @@ public sealed class GuildConnection
     {
         Dispatch(WebSocketClosed, eventArgs);
 
-        if (!_node.IsNodeLink)
+        if (!Node.IsNodeLink)
             _ = DisconnectAfterVoiceClosedWithGraceAsync(
                 eventArgs.Code,
-                _node.Time.GetMilliseconds()
+                Node.Time.GetMilliseconds()
             );
     }
 
-    internal Lock PlaybackPositionLock => _playback.PositionLock;
+    internal Lock PlaybackPositionLock => Playback.PositionLock;
 
     internal void ReanchorTimescaleUnderLock(TimescaleFilter? oldTimescale) =>
-        _playback.OnTimescaleChangedUnderLock(oldTimescale);
+        Playback.OnTimescaleChangedUnderLock(oldTimescale);
 
     private async Task DisconnectAfterVoiceClosedWithGraceAsync(int? closeCode, long closeTick)
     {
         var transientClose = closeCode is 4009 or 4015 or 4022;
 
-        await Task.Delay(VoiceCloseGracePeriod, _node.Time, CancellationToken.None)
+        await Task.Delay(VoiceCloseGracePeriod, Node.Time, CancellationToken.None)
             .ConfigureAwait(false);
 
         if (_tearingDown)
@@ -759,7 +749,7 @@ public sealed class GuildConnection
             !_voiceForward.HasPending
             && (
                 transientClose
-                    ? _node.Time.GetMilliseconds() - lastForwardTick
+                    ? Node.Time.GetMilliseconds() - lastForwardTick
                         < VoiceCloseGracePeriod.TotalMilliseconds
                             + ForwardActivityWindow.TotalMilliseconds
                     : lastForwardTick >= closeTick
@@ -774,12 +764,12 @@ public sealed class GuildConnection
         {
             if (
                 closeCode is not 4014
-                && _node.Client is { } bridge
-                && _node.Time.GetMilliseconds() - Volatile.Read(ref _voiceRescueTick)
+                && Node.Client is { } bridge
+                && Node.Time.GetMilliseconds() - Volatile.Read(ref _voiceRescueTick)
                     > VoiceRescueInterval.TotalMilliseconds
             )
             {
-                Volatile.Write(ref _voiceRescueTick, _node.Time.GetMilliseconds());
+                Volatile.Write(ref _voiceRescueTick, Node.Time.GetMilliseconds());
                 var baseline = _voiceForward.LastForwardTick;
 
                 await SendRescueJoinAsync(bridge, leaveFirst: false).ConfigureAwait(false);
@@ -791,7 +781,7 @@ public sealed class GuildConnection
                     return;
             }
 
-            await _teardown.AfterVoiceClosedAsync().ConfigureAwait(false);
+            await Teardown.AfterVoiceClosedAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -801,7 +791,7 @@ public sealed class GuildConnection
 
     private async Task<bool> RescueSettledAsync(TimeSpan window, long baseline)
     {
-        await Task.Delay(window, _node.Time, CancellationToken.None).ConfigureAwait(false);
+        await Task.Delay(window, Node.Time, CancellationToken.None).ConfigureAwait(false);
         return _tearingDown || _voiceForward.LastForwardTick > baseline;
     }
 
@@ -813,7 +803,7 @@ public sealed class GuildConnection
                 return;
 
             if (leaveFirst)
-                await _node.VoiceHandshake.LeaveChannelAsync(bridge, GuildId).ConfigureAwait(false);
+                await Node.VoiceHandshake.LeaveChannelAsync(bridge, GuildId).ConfigureAwait(false);
 
             if (_tearingDown)
                 return;
@@ -859,7 +849,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnVolumeChanged(eventArgs);
+        Playback.OnVolumeChanged(eventArgs);
 
         Dispatch(VolumeChanged, eventArgs);
     }
@@ -872,7 +862,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnTrackSought(eventArgs);
+        Playback.OnTrackSought(eventArgs);
 
         Dispatch(TrackSought, eventArgs);
     }
@@ -882,7 +872,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnPauseChanged(eventArgs);
+        Playback.OnPauseChanged(eventArgs);
 
         Dispatch(PauseChanged, eventArgs);
     }
@@ -971,11 +961,10 @@ public sealed class GuildConnection
     internal void CaptureState(Player player, long requestTick, long? startMilliseconds = null)
     {
         if (_tearingDown)
-            _node
-                .Registry.DestroyPlayerExclusivelyAsync(this, CancellationToken.None)
-                .ObserveFaults(_node.HandleError);
+            Node.Registry.DestroyPlayerExclusivelyAsync(this, CancellationToken.None)
+                .ObserveFaults(Node.HandleError);
 
-        _playback.Capture(player, requestTick, startMilliseconds);
+        Playback.Capture(player, requestTick, startMilliseconds);
     }
 
     internal void ClearState()
@@ -990,13 +979,13 @@ public sealed class GuildConnection
         IsPaused = false;
         State = null;
         Volume = 100;
-        _playback.Clear();
+        Playback.Clear();
     }
 
     internal async Task ClearStateAsync()
     {
         ClearState();
-        await _filters.ResetAsync().ConfigureAwait(false);
+        await Filters.ResetAsync().ConfigureAwait(false);
         _voiceForward.ClearPending();
     }
 
@@ -1010,8 +999,8 @@ public sealed class GuildConnection
             throw new InvalidOperationException(
                 "The connection is being restored after the node lost its session, try again in a moment."
             );
-        if (!_node.IsReady)
-            throw new InvalidOperationException($"The node '{_node.Name}' is not ready.");
+        if (!Node.IsReady)
+            throw new InvalidOperationException($"The node '{Node.Name}' is not ready.");
         if (!IsConnected)
             throw new InvalidOperationException("The bot is not connected to a voice channel.");
     }
@@ -1022,7 +1011,7 @@ public sealed class GuildConnection
         bool droppable = false
     )
         where TArgs : System.EventArgs =>
-        _pump.TryDispatch(handler, this, eventArgs, _handlerError, droppable);
+        Pump.TryDispatch(handler, this, eventArgs, _handlerError, droppable);
 
     private Task OnHandlerErrorAsync(Exception exception, System.EventArgs? origin) =>
         HandlerError.RaiseAsync(
@@ -1032,7 +1021,7 @@ public sealed class GuildConnection
             {
                 try
                 {
-                    _node.Logger?.LogError(
+                    Node.Logger?.LogError(
                         LogEvents.Playback,
                         handlerFailure,
                         "A HandlerError handler of guild {GuildId} threw.",

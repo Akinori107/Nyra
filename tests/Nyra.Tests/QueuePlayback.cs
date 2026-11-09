@@ -372,7 +372,12 @@ public sealed class QueuePlayback
             await rig.Queue.RemoveAsync(0).ConfigureAwait(false);
 
             await Assert
-                .That(string.Join(",", rig.Log.Where(entry => entry.StartsWith("next:"))))
+                .That(
+                    string.Join(
+                        ",",
+                        rig.Log.Where(entry => entry.StartsWith("next:", StringComparison.Ordinal))
+                    )
+                )
                 .IsEqualTo("next:b,next:none");
         }
     }

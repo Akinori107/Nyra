@@ -297,7 +297,7 @@ public sealed class GenerationStormAndPlayback
                 catch { }
                 await Task.Delay(10).ConfigureAwait(false);
             }
-            rig.Server.KillCaptured(hung!);
+            FakeNodeServer.KillCaptured(hung!);
             await Task.Delay(300).ConfigureAwait(false);
             await Assert.That(rig.Node.IsConnected).IsTrue();
             await Assert.That(rig.Node.IsConnected).IsTrue();
@@ -1046,10 +1046,7 @@ public sealed class GenerationStormAndPlayback
         var loudSink = new List<string>();
         var loud = new NyraExtension(new LoudBridge { Logger = new ListLogger(loudSink) });
         await Assert
-            .That(() =>
-            {
-                loud.Dispose();
-            })
+            .That(loud.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("generation storm: the loud bridge dies");
         await Assert.That(loudSink.Count).IsEqualTo(0);
@@ -1059,23 +1056,20 @@ public sealed class GenerationStormAndPlayback
             new AsyncThrowerBridge { Logger = new ListLogger(asyncSink) }
         );
         await Assert
-            .That(() =>
-            {
-                asyncThrower.Dispose();
-            })
+            .That(asyncThrower.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("generation storm: the async bridge dies");
         await Assert.That(asyncSink.Count).IsEqualTo(0);
 
         var plain = new NyraExtension(new PlainBridge());
-        await Assert.That(() => plain.Dispose()).ThrowsNothing();
+        await Assert.That(plain.Dispose).ThrowsNothing();
 
         var rig = await RigAsync().ConfigureAwait(false);
         try
         {
             rig.Server.Dispose();
             await Task.Delay(300).ConfigureAwait(false);
-            await Assert.That(() => rig.Extension.Dispose()).ThrowsNothing();
+            await Assert.That(rig.Extension.Dispose).ThrowsNothing();
         }
         finally
         {

@@ -5,7 +5,7 @@ namespace Nyra.Tests;
 
 public sealed class NodeEventEdge
 {
-    private static readonly string StatsJson =
+    private const string StatsJson =
         """{"op":"stats","players":1,"playingPlayers":1,"uptime":500,"memory":{"free":1,"used":2,"allocated":3,"reservable":4},"cpu":{"cores":2,"systemLoad":0.1,"lavalinkLoad":0.2}}""";
 
     private sealed class CapturingLogger(List<string> sink) : ILogger
@@ -55,7 +55,8 @@ public sealed class NodeEventEdge
         {
             await Task.Delay(50).ConfigureAwait(false);
             sessionPatchSeen = server.RestCalls.Any(c =>
-                c.Method == "PATCH" && c.Path.EndsWith("/sessions/fake-session")
+                c.Method == "PATCH"
+                && c.Path.EndsWith("/sessions/fake-session", StringComparison.Ordinal)
             );
         }
         await Assert.That(sessionPatchSeen).IsTrue();

@@ -8,11 +8,11 @@ namespace Nyra.NetCord;
 public static class GatewayClientExtensions
 {
     private static readonly Lock UseNyraGate = new();
-    private static readonly ConditionalWeakTable<GatewayClient, NyraExtension> Extensions = new();
+    private static readonly ConditionalWeakTable<GatewayClient, NyraExtension> Extensions = [];
     private static readonly ConditionalWeakTable<
         ShardedGatewayClient,
         NyraExtension
-    > ShardedExtensions = new();
+    > ShardedExtensions = [];
 
     /// <summary>Enables Nyra on the client.</summary>
     /// <remarks>

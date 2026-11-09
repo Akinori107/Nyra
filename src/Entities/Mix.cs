@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace Nyra.Entities;
@@ -116,7 +117,10 @@ public sealed record MixLayer
     /// <summary>Returns the layer with its normalized members.</summary>
     /// <returns>The layer's public surface, the raw backing fields stay out of it.</returns>
     public override string ToString() =>
-        $"MixLayer {{ Id = {Id}, Track = {Track}, Volume = {Volume}, PositionBytes = {PositionBytes}, StartTime = {StartTime?.ToString() ?? "null"} }}";
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"MixLayer {{ Id = {Id}, Track = {Track}, Volume = {Volume}, PositionBytes = {PositionBytes}, StartTime = {StartTime?.ToString(CultureInfo.InvariantCulture) ?? "null"} }}"
+        );
 }
 
 internal sealed record MixLayerCreate(

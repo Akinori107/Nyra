@@ -135,7 +135,7 @@ internal class FakeBridge : IDiscordBridge, IGuildRemovalSource, IAsyncDisposabl
     private static TaskCompletionSource<ClientInformation> CreateReady() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public RecordingList<(ulong GuildId, ulong? ChannelId)> VoiceSends { get; } = new();
+    public RecordingList<(ulong GuildId, ulong? ChannelId)> VoiceSends { get; } = [];
 
     private readonly TaskCompletionSource<bool> _neverCompletes = new(
         TaskCreationOptions.RunContinuationsAsynchronously
@@ -319,7 +319,7 @@ internal sealed class FakeNodeServer : IDisposable
                 .ConfigureAwait(false);
     }
 
-    public void KillCaptured(object captured)
+    public static void KillCaptured(object captured)
     {
         if (captured is NetworkStream stream)
             stream.Close();
@@ -933,7 +933,7 @@ internal static class NodeHarness
         if (ready)
             stateType
                 .GetMethod("IndicateReady", BindingFlags.Public | BindingFlags.Instance)!
-                .Invoke(state, new object?[] { null });
+                .Invoke(state, [null]);
         return state;
     }
 }

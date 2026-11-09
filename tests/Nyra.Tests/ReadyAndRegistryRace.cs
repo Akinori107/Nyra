@@ -17,7 +17,7 @@ public sealed class ReadyAndRegistryRace
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
 
-        public RecordingList<string> Messages { get; } = new();
+        public RecordingList<string> Messages { get; } = [];
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -129,7 +129,7 @@ public sealed class ReadyAndRegistryRace
 
             try
             {
-                var disposal = Task.Run(() => stack.Extension.Dispose());
+                var disposal = Task.Run(stack.Extension.Dispose);
                 await AdvanceUntilAsync(
                         time,
                         disposal,
@@ -155,7 +155,7 @@ public sealed class ReadyAndRegistryRace
         var bridge = new FaultingAsyncBridge();
         var extension = new NyraExtension(bridge);
         await Assert
-            .That(() => extension.Dispose())
+            .That(extension.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessage("bridge dispose refused");
     }
@@ -187,8 +187,6 @@ public sealed class ReadyAndRegistryRace
             bool selfMute = false,
             CancellationToken cancellationToken = default
         ) => Task.CompletedTask;
-
-        public ClientInformation Identification => new(7);
 
         public ValueTask DisposeAsync() =>
             ValueTask.FromException(new InvalidOperationException("bridge dispose refused"));

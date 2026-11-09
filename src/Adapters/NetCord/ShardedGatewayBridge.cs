@@ -27,7 +27,7 @@ internal sealed class ShardedGatewayBridge : GatewayBridgeBase
         foreach (var shard in client)
             if (shard.Status is WebSocketStatus.Ready)
             {
-                MarkReady(client.Id);
+                SetReady(client.Id);
                 break;
             }
     }

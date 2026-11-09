@@ -3,25 +3,17 @@ using Nyra.Abstractions;
 
 namespace Nyra.NetCord;
 
-internal abstract class GatewayBridgeBase : IDisposable
+internal abstract class GatewayBridgeBase(
+    Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
+    Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
+    Action<GuildRemovedEventArgs> onGuildRemoved
+) : IDisposable
 {
-    private readonly Action<VoiceServerUpdatedEventArgs> _onVoiceServerUpdated;
-    private readonly Action<VoiceStateUpdatedEventArgs> _onVoiceStateUpdated;
-    private readonly Action<GuildRemovedEventArgs> _onGuildRemoved;
+    private readonly Action<VoiceServerUpdatedEventArgs> _onVoiceServerUpdated =
+        onVoiceServerUpdated;
     private readonly TaskCompletionSource<ClientInformation> _ready = new(
         TaskCreationOptions.RunContinuationsAsynchronously
     );
-
-    protected GatewayBridgeBase(
-        Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
-        Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
-        Action<GuildRemovedEventArgs> onGuildRemoved
-    )
-    {
-        _onVoiceServerUpdated = onVoiceServerUpdated;
-        _onVoiceStateUpdated = onVoiceStateUpdated;
-        _onGuildRemoved = onGuildRemoved;
-    }
 
     public async Task SendVoiceUpdateAsync(
         ulong guildId,
@@ -62,9 +54,12 @@ internal abstract class GatewayBridgeBase : IDisposable
 
     protected abstract GatewayClient GetClient(ulong guildId);
 
+    protected void SetReady(ulong currentUserId) =>
+        _ready.TrySetResult(new ClientInformation(currentUserId));
+
     protected ValueTask MarkReady(ulong currentUserId)
     {
-        _ready.TrySetResult(new ClientInformation(currentUserId));
+        SetReady(currentUserId);
         return ValueTask.CompletedTask;
     }
 
@@ -104,7 +99,7 @@ internal abstract class GatewayBridgeBase : IDisposable
         if (eventArgs.GuildId is 0)
             return ValueTask.CompletedTask;
 
-        _onVoiceStateUpdated(
+        onVoiceStateUpdated(
             new VoiceStateUpdatedEventArgs(
                 eventArgs.GuildId,
                 new DiscordVoiceState(
@@ -123,7 +118,7 @@ internal abstract class GatewayBridgeBase : IDisposable
         if (eventArgs.IsUnavailable)
             return ValueTask.CompletedTask;
 
-        _onGuildRemoved(new GuildRemovedEventArgs(eventArgs.GuildId));
+        onGuildRemoved(new GuildRemovedEventArgs(eventArgs.GuildId));
         return ValueTask.CompletedTask;
     }
 }

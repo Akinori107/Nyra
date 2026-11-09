@@ -56,12 +56,7 @@ public sealed class AdapterEdge
         var plain = Adapter.NewOfflineClient(9);
         using var plainBridge = new DspBridge(plain);
         Reflect.Field(plainBridge, "_client", new object());
-        await Assert
-            .That(() =>
-            {
-                plainBridge.Dispose();
-            })
-            .ThrowsNothing();
+        await Assert.That(plainBridge.Dispose).ThrowsNothing();
     }
 
     [Test]
@@ -133,12 +128,7 @@ public sealed class AdapterEdge
         var token = new BotToken("MTIz.ab.cd");
         var client = new GatewayClient(token);
         var bridge = new GatewayBridge(client, _ => { }, _ => { }, _ => { });
-        await Assert
-            .That(() =>
-            {
-                bridge.Dispose();
-            })
-            .ThrowsNothing();
+        await Assert.That(bridge.Dispose).ThrowsNothing();
 
         await Assert
             .That(() =>

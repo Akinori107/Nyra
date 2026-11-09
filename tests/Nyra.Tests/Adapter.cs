@@ -42,7 +42,7 @@ public sealed class Adapter
         public int Count;
         public T? Last;
 
-        public void Handler(object? sender, T args)
+        public void Handler(object? _, T args)
         {
             Count++;
             Last = args;
@@ -119,15 +119,12 @@ public sealed class Adapter
         await Assert.That(ReferenceEquals(senderSeen[0], owner)).IsTrue();
     }
 
-    private sealed class TestGatewayBridge : GatewayBridgeBase
+    private sealed class TestGatewayBridge(
+        Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
+        Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
+        Action<GuildRemovedEventArgs> onGuildRemoved
+    ) : GatewayBridgeBase(onVoiceServerUpdated, onVoiceStateUpdated, onGuildRemoved)
     {
-        public TestGatewayBridge(
-            Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
-            Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
-            Action<GuildRemovedEventArgs> onGuildRemoved
-        )
-            : base(onVoiceServerUpdated, onVoiceStateUpdated, onGuildRemoved) { }
-
         public void RaiseServer(NcServerArgs args) =>
             HandleVoiceServerUpdateAsync(args).AsTask().GetAwaiter().GetResult();
 
@@ -274,7 +271,7 @@ public sealed class Adapter
         await Assert
             .That(fiveEvents.All(name => ListCount(Reflect.FieldValue(client, name)) == 0))
             .IsTrue();
-        await Assert.That(CancelsWithin(token => bridge.WaitForReadyAsync(token), 200)).IsTrue();
+        await Assert.That(CancelsWithin(bridge.WaitForReadyAsync, 200)).IsTrue();
     }
 
     private static void RaiseNetCord<T>(GatewayClient client, string fieldName, T payload)
@@ -471,9 +468,7 @@ public sealed class Adapter
             await Assert.That(logged.Count).IsEqualTo(1);
             await Assert.That(logged[0]).IsEqualTo(LogLevel.Warning);
 
-            await Assert
-                .That(CancelsWithin(token => loggedBridge.WaitForReadyAsync(token), 200))
-                .IsTrue();
+            await Assert.That(CancelsWithin(loggedBridge.WaitForReadyAsync, 200)).IsTrue();
         }
 
         var afterDispose = fiveEvents.ToDictionary(
@@ -1101,6 +1096,6 @@ public sealed class Adapter
         var deadSharded = new ShardedGatewayClient(token);
         var deadBridge = QuietSharded(deadSharded);
         deadSharded.Dispose();
-        await Assert.That(() => deadBridge.Dispose()).ThrowsNothing();
+        await Assert.That(deadBridge.Dispose).ThrowsNothing();
     }
 }

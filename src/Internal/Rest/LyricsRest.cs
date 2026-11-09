@@ -49,7 +49,7 @@ internal sealed class LyricsRest
         if (lavaJson.Length == 0)
             return new LyricsResult { LoadType = LyricsLoadType.Empty };
 
-        return _rest
+        return RestClient
             .DeserializeOrThrow<LavaLyricsLyrics>(lavaJson, lavaPath, "lyrics result", options)
             .ToResult();
     }
@@ -68,7 +68,7 @@ internal sealed class LyricsRest
         var json = await _rest
             .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        return _rest.DeserializeList<Chapter>(json, path, options);
+        return RestClient.DeserializeList<Chapter>(json, path, options);
     }
 
     public async Task<MeaningResult> LoadMeaningAsync(

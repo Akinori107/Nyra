@@ -214,7 +214,7 @@ internal static partial class ConnectionFailure
         if (
             exception.InnerException is SocketException
             {
-                SocketErrorCode: SocketError.HostNotFound
+                SocketErrorCode: SocketError.HostNotFound,
             }
         )
             return "host or port is invalid";

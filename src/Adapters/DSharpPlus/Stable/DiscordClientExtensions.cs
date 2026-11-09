@@ -8,7 +8,7 @@ namespace Nyra.DSharpPlus;
 public static class DiscordClientExtensions
 {
     private static readonly Lock UseNyraGate = new();
-    private static readonly ConditionalWeakTable<DiscordClient, NyraExtension> Extensions = new();
+    private static readonly ConditionalWeakTable<DiscordClient, NyraExtension> Extensions = [];
 
     /// <summary>Enables Nyra on the client.</summary>
     /// <param name="client">The client to enable Nyra on.</param>
@@ -183,7 +183,7 @@ public static class DiscordClientExtensions
     private static readonly ConditionalWeakTable<
         DiscordShardedClient,
         SemaphoreSlim
-    > ShardInitGates = new();
+    > ShardInitGates = [];
 
     private static async Task InitializeShardsSerializedAsync(DiscordShardedClient client)
     {

@@ -15,10 +15,13 @@ namespace Nyra.EventArgs;
 /// have no handlers, so subscribe to the returned connection after a reconnect.
 /// </para>
 /// </remarks>
-public sealed class GuildConnectionInvalidatedEventArgs : System.EventArgs
+/// <param name="guildId">The guild whose connection was invalidated.</param>
+/// <param name="lastChannelId">The voice channel the connection last played in, null when none is known.</param>
+public sealed class GuildConnectionInvalidatedEventArgs(ulong guildId, ulong? lastChannelId)
+    : System.EventArgs
 {
     /// <summary>The guild whose connection was invalidated.</summary>
-    public ulong GuildId { get; }
+    public ulong GuildId { get; } = guildId;
 
     /// <summary>
     /// The voice channel the connection was last connected to, null when none is known.
@@ -27,14 +30,5 @@ public sealed class GuildConnectionInvalidatedEventArgs : System.EventArgs
     /// Snapshotted before the invalidation wipes the connection's state, by the time a handler runs, the
     /// sender's own channel reads null, this is the channel to rejoin.
     /// </remarks>
-    public ulong? LastChannelId { get; }
-
-    /// <summary>Initializes the event args with the invalidated connection's ids.</summary>
-    /// <param name="guildId">The guild whose connection was invalidated.</param>
-    /// <param name="lastChannelId">The voice channel the connection last played in, null when none is known.</param>
-    public GuildConnectionInvalidatedEventArgs(ulong guildId, ulong? lastChannelId)
-    {
-        GuildId = guildId;
-        LastChannelId = lastChannelId;
-    }
+    public ulong? LastChannelId { get; } = lastChannelId;
 }

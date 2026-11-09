@@ -30,7 +30,7 @@ public sealed class NightlyAdapter
         public int Count;
         public T? Last;
 
-        public void Handler(object? sender, T args)
+        public void Handler(object? _, T args)
         {
             Count++;
             Last = args;

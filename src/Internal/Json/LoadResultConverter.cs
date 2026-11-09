@@ -164,7 +164,10 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
         return 0;
     }
 
-    private static LoadResult ReadPlaylist(ref Utf8JsonReader data, JsonSerializerOptions options)
+    private static LoadResult.PlaylistLoaded ReadPlaylist(
+        ref Utf8JsonReader data,
+        JsonSerializerOptions options
+    )
     {
         var name = string.Empty;
         var selectedTrack = -1;
