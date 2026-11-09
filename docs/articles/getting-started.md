@@ -71,7 +71,7 @@ Later, in another command, `nyra.GetConnection(guildId)` gives the connection ba
 
 ## Play the next track
 
-Nyra has no queue. It tells you when a track ends, and you start the next one. Only some end reasons mean you should:
+Nyra has a [queue](queue.md) that does this for you. If you keep your own, Nyra tells you when a track ends, and you start the next one. Only some end reasons mean you should:
 
 ```csharp
 connection.TrackFinished += async (sender, args) =>
