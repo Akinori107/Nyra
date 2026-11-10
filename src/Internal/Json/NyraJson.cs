@@ -50,12 +50,17 @@ internal static class NyraJson
         JsonSerializerOptions options
     ) => JsonSerializer.Deserialize(ref reader, TypeInfoOf<TValue>(options));
 
+#if NET11_0_OR_GREATER
+    private static JsonTypeInfo<TValue> TypeInfoOf<TValue>(JsonSerializerOptions options) =>
+        options.GetTypeInfo<TValue>();
+#else
     private static JsonTypeInfo<TValue> TypeInfoOf<TValue>(JsonSerializerOptions options) =>
         options.GetTypeInfo(typeof(TValue)) is JsonTypeInfo<TValue> typeInfo
             ? typeInfo
             : throw new NotSupportedException(
                 $"The type '{typeof(TValue)}' is not covered by the options' serialization context."
             );
+#endif
 
     private static JsonSerializerOptions Create(
         bool? isNodeLink = null,

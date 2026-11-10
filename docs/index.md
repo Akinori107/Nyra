@@ -4,7 +4,7 @@ _layout: landing
 
 # Nyra
 
-A .NET 10 client for Lavalink 4.2.0+ and NodeLink 3.9.0+.
+A .NET 10 and .NET 11 client for Lavalink 4.2.0+ and NodeLink 3.9.0+.
 
 This site follows the `dev` branch, so it can be ahead of the NuGet release.
 
