@@ -20,6 +20,7 @@ public sealed class GuildConnection
     private volatile bool _tearingDown;
     private volatile bool _restoring;
     private RestoreSnapshot? _restoreSnapshot;
+    private readonly GuildTimer _idleTimer;
 
     private sealed record RestoreSnapshot(
         Track? Track,
@@ -70,6 +71,7 @@ public sealed class GuildConnection
         _commands = new GuildCommands(this);
         Pump = new EventPump($"guild {guildId}", node.Logger, LogEvents.Playback);
         _handlerError = OnHandlerErrorAsync;
+        _idleTimer = new GuildTimer(node.Time, OnIdleTimerFired);
         GuildId = guildId;
         ChannelId = channelId;
         VoiceSessionId = sessionId;
@@ -129,7 +131,11 @@ public sealed class GuildConnection
 
     internal bool IsNodeLinkServer => Node.IsNodeLink;
 
-    internal void MarkTearingDown() => _tearingDown = true;
+    internal void MarkTearingDown()
+    {
+        _tearingDown = true;
+        _idleTimer.Stop();
+    }
 
     private int _voiceLeaveClaimed;
 
@@ -141,7 +147,11 @@ public sealed class GuildConnection
 
     internal bool IsPlayerCommitted => _playerCommitted;
 
-    internal void CommitPlayerUpdate() => _playerCommitted = true;
+    internal void CommitPlayerUpdate()
+    {
+        _playerCommitted = true;
+        UpdateIdleTimer();
+    }
 
     /// <summary>The node this connection plays through.</summary>
     public Node Node { get; }
@@ -169,7 +179,15 @@ public sealed class GuildConnection
     /// not clear this, the stale track lives on until the next play or a teardown resets it, and a later
     /// PlayAsync re-creates the player.
     /// </remarks>
-    public Track? CurrentTrack { get; internal set; }
+    public Track? CurrentTrack
+    {
+        get;
+        internal set
+        {
+            field = value;
+            UpdateIdleTimer();
+        }
+    }
 
     /// <summary>The last player state reported by the server, or null when none arrived yet.</summary>
     public PlayerState? State { get; internal set; }
@@ -323,6 +341,13 @@ public sealed class GuildConnection
     /// while the restore runs throw <see cref="InvalidOperationException"/>.
     /// </remarks>
     public event AsyncEventHandler<GuildConnectionRestoredEventArgs>? GuildConnectionRestored;
+
+    /// <summary>
+    /// Raised when the connection went <see cref="NodeOptions.IdleTimeout"/> without a track, right before it
+    /// disconnects.
+    /// </summary>
+    /// <remarks>A handler that starts a track keeps the connection.</remarks>
+    public event AsyncEventHandler<GuildConnectionIdleEventArgs>? IdleTimedOut;
 
     /// <summary>The voice connection dropped and is being re-established.</summary>
     /// <remarks>
@@ -1003,6 +1028,44 @@ public sealed class GuildConnection
             throw new InvalidOperationException($"The node '{Node.Name}' is not ready.");
         if (!IsConnected)
             throw new InvalidOperationException("The bot is not connected to a voice channel.");
+    }
+
+    private void UpdateIdleTimer()
+    {
+        var timeout = Node.Options.IdleTimeout;
+        if (timeout == Timeout.InfiniteTimeSpan || !_playerCommitted)
+            return;
+
+        if (CurrentTrack is not null)
+            _idleTimer.Disarm();
+        else
+            _idleTimer.Arm(timeout);
+    }
+
+    private void OnIdleTimerFired()
+    {
+        if (_tearingDown || CurrentTrack is not null || ChannelId is not { } channelId)
+            return;
+
+        if (_restoring)
+        {
+            UpdateIdleTimer();
+            return;
+        }
+
+        LeaveIdleAsync(channelId).ObserveFaults(Node.HandleError);
+    }
+
+    private async Task LeaveIdleAsync(ulong channelId)
+    {
+        await IdleTimedOut
+            .RaiseAsync(this, new GuildConnectionIdleEventArgs(GuildId, channelId), _handlerError)
+            .ConfigureAwait(false);
+
+        if (_tearingDown || CurrentTrack is not null)
+            return;
+
+        await DisconnectAsync().ConfigureAwait(false);
     }
 
     private void Dispatch<TArgs>(

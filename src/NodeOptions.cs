@@ -37,6 +37,16 @@ public sealed record NodeOptions
     /// </remarks>
     public TimeSpan RescueTimeout { get; init; } = TimeSpan.FromMinutes(3);
 
+    /// <summary>
+    /// How long a guild connection can go without a track before it leaves its voice channel, off by default.
+    /// </summary>
+    /// <remarks>
+    /// Counted from the moment nothing is playing, a paused track still counts as playing. When the time runs out
+    /// the connection raises <see cref="GuildConnection.IdleTimedOut"/> and then disconnects, unless a handler
+    /// started a track. <see cref="Timeout.InfiniteTimeSpan"/>, the default, never leaves.
+    /// </remarks>
+    public TimeSpan IdleTimeout { get; init; } = Timeout.InfiniteTimeSpan;
+
     /// <summary>How long the server keeps a disconnected resumable session alive.</summary>
     /// <remarks>
     /// Only used while <see cref="Resuming"/> is enabled, with resuming disabled the server drops the session

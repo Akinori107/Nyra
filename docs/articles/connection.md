@@ -10,6 +10,20 @@ After that, `nyra.GetConnection(guildId)` returns `null`, and `connection.IsConn
 
 Nothing breaks. The connection stays, and `connection.ChannelId` changes to the new channel.
 
+## Nothing plays for a while
+
+Set `IdleTimeout` in [NodeOptions](../api/Nyra.NodeOptions.yml) to leave the voice channel when nothing plays for that long. The count starts when the connection has no track, a paused track still counts as playing. When the time runs out the connection raises `IdleTimedOut` and then disconnects, unless a handler started a track. It is off by default.
+
+```csharp
+var node = new Node(endpoint, new NodeOptions { IdleTimeout = TimeSpan.FromMinutes(5) });
+
+connection.IdleTimedOut += (sender, args) =>
+{
+    Console.WriteLine($"Left channel {args.ChannelId} of guild {args.GuildId}, nothing was playing.");
+    return Task.CompletedTask;
+};
+```
+
 ## The server drops
 
 Nyra reconnects by itself, waiting longer after each failure. It never stops unless you set `MaxReconnectAttempts` in [NodeOptions](../api/Nyra.NodeOptions.yml).

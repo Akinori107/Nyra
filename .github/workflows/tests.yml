@@ -23,7 +23,7 @@ jobs:
       - run: dotnet build --configuration Release
       - run: >-
           dotnet run --project tests/Nyra.Tests --configuration Release --no-build --
-          --fail-fast --timeout 5m --minimum-expected-tests 600
+          --fail-fast --timeout 5m --minimum-expected-tests 609
           --results-directory results --coverage --coverage-output-format cobertura
           --coverage-output results.xml
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7

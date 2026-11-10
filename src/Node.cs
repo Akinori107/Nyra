@@ -66,6 +66,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
                 nameof(options),
                 "NodeOptions.RescueTimeout must be positive, or Timeout.InfiniteTimeSpan for no limit."
             );
+        ThrowIfInvalidLeaveTimeout(Options.IdleTimeout, nameof(NodeOptions.IdleTimeout));
         ThrowIfNotPositive(
             Options.VoiceHandshakeTimeout,
             nameof(NodeOptions.VoiceHandshakeTimeout)
@@ -112,6 +113,23 @@ public sealed class Node : IAsyncDisposable, IDisposable
                 paramName,
                 $"NodeOptions.{option} must be positive."
             );
+    }
+
+    private static void ThrowIfInvalidLeaveTimeout(
+        TimeSpan value,
+        string option,
+        string paramName = "options"
+    )
+    {
+        if (value == Timeout.InfiniteTimeSpan)
+            return;
+
+        if (value <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                $"NodeOptions.{option} must be positive, or Timeout.InfiniteTimeSpan to never leave."
+            );
+        ThrowIfOverLimit(value, option, paramName);
     }
 
     private static void ThrowIfOverLimit(
