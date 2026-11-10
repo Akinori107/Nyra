@@ -18,6 +18,17 @@ namespace Nyra.Entities.Filters;
 /// changes still step.
 /// </para>
 /// </remarks>
+/// <param name="SinOffset">Offset of the sine term, the server default is 0.0.</param>
+/// <param name="SinScale">Scale of the sine term, the server default is 1.0.</param>
+/// <param name="CosOffset">Offset of the cosine term, the server default is 0.0.</param>
+/// <param name="CosScale">Scale of the cosine term, the server default is 1.0.</param>
+/// <param name="TanOffset">Offset of the tangent term, the server default is 0.0.</param>
+/// <param name="TanScale">Scale of the tangent term, the server default is 1.0.</param>
+/// <param name="Offset">General offset, the server default is 0.0.</param>
+/// <param name="Scale">General scale, the server default is 1.0.</param>
+/// <param name="Transition">
+/// Fades the filter in or out instead of stepping, NodeLink only. Parameter changes still step.
+/// </param>
 public sealed record DistortionFilter(
     [property: JsonPropertyName("sinOffset")] float? SinOffset = null,
     [property: JsonPropertyName("sinScale")] float? SinScale = null,
