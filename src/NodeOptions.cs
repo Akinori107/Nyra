@@ -47,6 +47,30 @@ public sealed record NodeOptions
     /// </remarks>
     public TimeSpan IdleTimeout { get; init; } = Timeout.InfiniteTimeSpan;
 
+    /// <summary>
+    /// How long a guild connection can stay without <see cref="GuildConnection.Listeners"/> before it leaves its
+    /// voice channel, off by default.
+    /// </summary>
+    /// <remarks>
+    /// Counted from the moment no user who is not a bot is in the channel, someone joining stops it. When the
+    /// time runs out the connection raises <see cref="GuildConnection.AloneTimedOut"/> and then disconnects.
+    /// Needs a bridge that reports listeners, which the built-in bridges do, see
+    /// <see cref="Abstractions.IVoiceListenerSource"/>. <see cref="Timeout.InfiniteTimeSpan"/>, the default,
+    /// never leaves.
+    /// </remarks>
+    public TimeSpan AloneTimeout { get; init; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
+    /// Whether a guild connection pauses when no <see cref="GuildConnection.Listeners"/> are left and resumes
+    /// when someone joins again, off by default.
+    /// </summary>
+    /// <remarks>
+    /// It only resumes a pause it made itself, a call to <see cref="GuildConnection.PauseAsync"/> or
+    /// <see cref="GuildConnection.ResumeAsync"/> in between hands the pause back to the caller. Needs a bridge
+    /// that reports listeners, the same as <see cref="AloneTimeout"/>.
+    /// </remarks>
+    public bool PauseWhenAlone { get; init; }
+
     /// <summary>How long the server keeps a disconnected resumable session alive.</summary>
     /// <remarks>
     /// Only used while <see cref="Resuming"/> is enabled, with resuming disabled the server drops the session

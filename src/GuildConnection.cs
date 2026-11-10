@@ -21,8 +21,10 @@ public sealed class GuildConnection
     private volatile bool _restoring;
     private RestoreSnapshot? _restoreSnapshot;
     private readonly GuildTimer _idleTimer;
+    private readonly GuildTimer _aloneTimer;
     private readonly Lock _listenersLock = new();
     private HashSet<ulong>? _listeners;
+    private volatile bool _pausedWhenAlone;
 
     private sealed record RestoreSnapshot(
         Track? Track,
@@ -74,6 +76,7 @@ public sealed class GuildConnection
         Pump = new EventPump($"guild {guildId}", node.Logger, LogEvents.Playback);
         _handlerError = OnHandlerErrorAsync;
         _idleTimer = new GuildTimer(node.Time, OnIdleTimerFired);
+        _aloneTimer = new GuildTimer(node.Time, OnAloneTimerFired);
         GuildId = guildId;
         ChannelId = channelId;
         VoiceSessionId = sessionId;
@@ -137,6 +140,7 @@ public sealed class GuildConnection
     {
         _tearingDown = true;
         _idleTimer.Stop();
+        _aloneTimer.Stop();
     }
 
     private int _voiceLeaveClaimed;
@@ -369,6 +373,13 @@ public sealed class GuildConnection
     /// <summary>Raised when <see cref="Listeners"/> changes.</summary>
     public event AsyncEventHandler<GuildConnectionListenersEventArgs>? ListenersChanged;
 
+    /// <summary>
+    /// Raised when the connection went <see cref="NodeOptions.AloneTimeout"/> without <see cref="Listeners"/>,
+    /// right before it disconnects.
+    /// </summary>
+    /// <remarks>The connection stays when someone joined while the handlers ran.</remarks>
+    public event AsyncEventHandler<GuildConnectionListenersEventArgs>? AloneTimedOut;
+
     /// <summary>The voice connection dropped and is being re-established.</summary>
     /// <remarks>
     /// NodeLink only. The server dispatches this per re-establishment attempt, one reconnect with an
@@ -478,8 +489,11 @@ public sealed class GuildConnection
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the player was paused.</returns>
-    public Task PauseAsync(CancellationToken cancellationToken = default) =>
-        _commands.SetPausedAsync(true, cancellationToken);
+    public Task PauseAsync(CancellationToken cancellationToken = default)
+    {
+        _pausedWhenAlone = false;
+        return _commands.SetPausedAsync(true, cancellationToken);
+    }
 
     /// <summary>Resumes playback.</summary>
     /// <remarks>
@@ -487,8 +501,11 @@ public sealed class GuildConnection
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the player was resumed.</returns>
-    public Task ResumeAsync(CancellationToken cancellationToken = default) =>
-        _commands.SetPausedAsync(false, cancellationToken);
+    public Task ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        _pausedWhenAlone = false;
+        return _commands.SetPausedAsync(false, cancellationToken);
+    }
 
     /// <summary>Seeks the current track to a position.</summary>
     /// <remarks>
@@ -1159,6 +1176,72 @@ public sealed class GuildConnection
             ListenersChanged,
             new GuildConnectionListenersEventArgs(GuildId, channelId, after)
         );
+        if (after > 0)
+        {
+            _aloneTimer.Disarm();
+            if (_pausedWhenAlone)
+                ResumeWhenBackAsync().ObserveFaults(Node.HandleError);
+            return;
+        }
+
+        if (Node.Options.AloneTimeout != Timeout.InfiniteTimeSpan)
+            _aloneTimer.Arm(Node.Options.AloneTimeout);
+        if (Node.Options.PauseWhenAlone && CurrentTrack is not null && !IsPaused)
+            PauseWhenAloneAsync().ObserveFaults(Node.HandleError);
+    }
+
+    private async Task PauseWhenAloneAsync()
+    {
+        if (_tearingDown || _restoring)
+            return;
+
+        await _commands.SetPausedAsync(true, CancellationToken.None).ConfigureAwait(false);
+        _pausedWhenAlone = true;
+        if (Listeners > 0)
+            await ResumeWhenBackAsync().ConfigureAwait(false);
+    }
+
+    private async Task ResumeWhenBackAsync()
+    {
+        _pausedWhenAlone = false;
+        if (_tearingDown || _restoring || !IsPaused)
+            return;
+
+        await _commands.SetPausedAsync(false, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private void OnAloneTimerFired()
+    {
+        if (_tearingDown || ChannelId is not { } channelId)
+            return;
+
+        SyncListeners();
+        if (Listeners != 0)
+            return;
+
+        if (_restoring)
+        {
+            _aloneTimer.Arm(Node.Options.AloneTimeout);
+            return;
+        }
+
+        LeaveAloneAsync(channelId).ObserveFaults(Node.HandleError);
+    }
+
+    private async Task LeaveAloneAsync(ulong channelId)
+    {
+        await AloneTimedOut
+            .RaiseAsync(
+                this,
+                new GuildConnectionListenersEventArgs(GuildId, channelId, 0),
+                _handlerError
+            )
+            .ConfigureAwait(false);
+
+        if (_tearingDown || Listeners != 0)
+            return;
+
+        await DisconnectAsync().ConfigureAwait(false);
     }
 
     private void Dispatch<TArgs>(

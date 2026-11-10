@@ -67,6 +67,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
                 "NodeOptions.RescueTimeout must be positive, or Timeout.InfiniteTimeSpan for no limit."
             );
         ThrowIfInvalidLeaveTimeout(Options.IdleTimeout, nameof(NodeOptions.IdleTimeout));
+        ThrowIfInvalidLeaveTimeout(Options.AloneTimeout, nameof(NodeOptions.AloneTimeout));
         ThrowIfNotPositive(
             Options.VoiceHandshakeTimeout,
             nameof(NodeOptions.VoiceHandshakeTimeout)

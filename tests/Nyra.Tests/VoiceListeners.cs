@@ -2,12 +2,15 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
+using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
 
 public sealed class VoiceListeners
 {
+    private static readonly TimeSpan Timeout5 = TimeSpan.FromMinutes(5);
+
     private sealed class ListeningBridge : FakeBridge, IVoiceListenerSource
     {
         public ConcurrentDictionary<ulong, ulong> Cache { get; } = [];
@@ -61,6 +64,9 @@ public sealed class VoiceListeners
 
     private static string TrackJson(string id) =>
         $$$"""{"encoded":"enc-{{{id}}}","info":{"identifier":"{{{id}}}","author":"a","title":"{{{id}}}","length":100000,"isStream":false,"isSeekable":true,"position":0}}""";
+
+    private static Track Make(string id) =>
+        JsonSerializer.Deserialize<Track>(TrackJson(id), NyraJson.SerializerOptions)!;
 
     private static Task<Rig> StartAsync(
         Func<NodeOptions, NodeOptions> configure,
@@ -142,8 +148,21 @@ public sealed class VoiceListeners
             rig.Log.Enqueue($"listeners:{e.Listeners}");
             return Task.CompletedTask;
         };
+        connection.AloneTimedOut += (_, e) =>
+        {
+            rig.Log.Enqueue($"alone:{e.GuildId}:{e.ChannelId}:{rig.Connected}");
+            return Task.CompletedTask;
+        };
         return rig;
     }
+
+    private static NodeOptions Leave(NodeOptions options) =>
+        options with
+        {
+            AloneTimeout = Timeout5,
+        };
+
+    private static NodeOptions Pause(NodeOptions options) => options with { PauseWhenAlone = true };
 
     private static async Task Eventually(Func<bool> condition) =>
         await Assert.That(condition).WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
@@ -177,6 +196,111 @@ public sealed class VoiceListeners
             await Assert
                 .That(rig.Log)
                 .IsEquivalentTo(["listeners:2", "listeners:1", "listeners:0"]);
+        }
+    }
+
+    [Test]
+    public async Task LeavesAfterTheTimeoutAlone()
+    {
+        var rig = await StartAsync(Leave).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4.9)).ConfigureAwait(false);
+            await Assert.That(rig.Connected).IsTrue();
+
+            var left = await AdvanceUntilAsync(
+                    rig.Time,
+                    () => !rig.Connected,
+                    TimeSpan.FromMinutes(1)
+                )
+                .ConfigureAwait(false);
+
+            await Assert.That(left).IsTrue();
+            await Assert.That(rig.Log.Contains("alone:777:555:True")).IsTrue();
+            await Assert.That(rig.Bridge.VoiceSends.Contains((777, null))).IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task SomeoneJoiningStopsTheCount()
+    {
+        var rig = await StartAsync(Leave).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4)).ConfigureAwait(false);
+            rig.Bridge.Move(1, 555);
+
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12)).ConfigureAwait(false);
+
+            await Assert.That(rig.Connected).IsTrue();
+            await Assert
+                .That(rig.Log.Any(entry => entry.StartsWith("alone", StringComparison.Ordinal)))
+                .IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task TheCacheIsCheckedAgainBeforeLeaving()
+    {
+        var rig = await StartAsync(Leave).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Bridge.Cache[1] = 555;
+
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12)).ConfigureAwait(false);
+
+            await Assert.That(rig.Connected).IsTrue();
+            await Assert.That(rig.Connection.Listeners).IsEqualTo(1);
+        }
+    }
+
+    [Test]
+    public async Task PausesWhenAloneAndResumesWhenSomeoneJoins()
+    {
+        var rig = await StartAsync(Pause, 1).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
+
+            rig.Bridge.Move(1, null);
+            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
+
+            rig.Bridge.Move(2, 555);
+            await Eventually(() => !rig.Connection.IsPaused).ConfigureAwait(false);
+        }
+    }
+
+    [Test]
+    public async Task APauseByTheAppIsNotResumed()
+    {
+        var rig = await StartAsync(Pause, 1).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
+            await rig.Connection.PauseAsync().ConfigureAwait(false);
+
+            rig.Bridge.Move(1, null);
+            rig.Bridge.Move(2, 555);
+            await RunForAsync(rig.Time, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            await Assert.That(rig.Connection.IsPaused).IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task NothingPlayingIsNotPaused()
+    {
+        var rig = await StartAsync(Pause, 1).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var patches = rig.Server.RestCalls.Count(call => call.Method == "PATCH");
+
+            rig.Bridge.Move(1, null);
+            await RunForAsync(rig.Time, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            await Assert
+                .That(rig.Server.RestCalls.Count(call => call.Method == "PATCH"))
+                .IsEqualTo(patches);
         }
     }
 
@@ -216,6 +340,7 @@ public sealed class VoiceListeners
     public async Task ABridgeWithoutListenersReportsNull()
     {
         var server = new FakeNodeServer();
+        var time = new FakeTimeProvider();
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
@@ -226,6 +351,8 @@ public sealed class VoiceListeners
                 new Endpoint("127.0.0.1", server.Port, server.Password),
                 new NodeOptions
                 {
+                    TimeProvider = time,
+                    AloneTimeout = Timeout5,
                     VoiceHandshakeTimeout = TimeSpan.FromSeconds(5),
                     ReadyTimeout = TimeSpan.FromSeconds(5),
                 }
@@ -234,7 +361,22 @@ public sealed class VoiceListeners
             await extension.ConnectAllNodesAsync().ConfigureAwait(false);
             var connection = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
 
+            await RunForAsync(time, TimeSpan.FromMinutes(12)).ConfigureAwait(false);
+
             await Assert.That(connection.Listeners).IsNull();
+            await Assert.That(node.GetConnection(777)).IsSameReferenceAs(connection);
         }
+    }
+
+    [Test]
+    [Arguments(0)]
+    [Arguments(-1000)]
+    public async Task ANonPositiveTimeoutIsRejected(int milliseconds)
+    {
+        var options = new NodeOptions { AloneTimeout = TimeSpan.FromMilliseconds(milliseconds) };
+
+        await Assert
+            .That(() => new Node(new Endpoint("127.0.0.1", 1, "p"), options))
+            .Throws<ArgumentOutOfRangeException>();
     }
 }

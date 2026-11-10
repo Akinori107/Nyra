@@ -28,6 +28,19 @@ connection.IdleTimedOut += (sender, args) =>
 
 `connection.Listeners` counts the users in the voice channel who are not bots, and `ListenersChanged` is raised when it changes. The built-in bridges read it from the library's cache, a custom bridge reports it by implementing `IVoiceListenerSource`, without one it stays `null`.
 
+Two options in [NodeOptions](../api/Nyra.NodeOptions.yml) act on it, both off by default:
+
+```csharp
+var node = new Node(endpoint, new NodeOptions
+{
+    AloneTimeout = TimeSpan.FromMinutes(2),
+    PauseWhenAlone = true,
+});
+```
+
+- `AloneTimeout` leaves the channel when nobody listened for that long. The connection raises `AloneTimedOut` and then disconnects, unless someone joined in the meantime.
+- `PauseWhenAlone` pauses when the last listener leaves and resumes when someone joins. It only resumes its own pause, a `PauseAsync` or `ResumeAsync` in between leaves the pause to you.
+
 ## The server drops
 
 Nyra reconnects by itself, waiting longer after each failure. It never stops unless you set `MaxReconnectAttempts` in [NodeOptions](../api/Nyra.NodeOptions.yml).
