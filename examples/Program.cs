@@ -49,7 +49,19 @@ using var client = new DiscordSocketClient(
 );
 
 var nyra = client.UseNyra(logger);
-nyra.AddNode(new Node(endpoint, new NodeOptions { Name = "main", RescuePlayback = true }));
+nyra.AddNode(
+    new Node(
+        endpoint,
+        new NodeOptions
+        {
+            Name = "main",
+            RescuePlayback = true,
+            IdleTimeout = TimeSpan.FromSeconds(90),
+            AloneTimeout = TimeSpan.FromSeconds(30),
+            PauseWhenAlone = true,
+        }
+    )
+);
 
 using var interactions = new InteractionService(
     client,

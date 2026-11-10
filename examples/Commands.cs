@@ -330,6 +330,16 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         await RespondAsync(reply).ConfigureAwait(false);
     }
 
+    [SlashCommand("autoplay", "Keep playing recommendations when the queue runs out")]
+    public async Task AutoplayAsync([Summary("enabled", "Turn autoplay on or off")] bool enabled)
+    {
+        if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
+            return;
+
+        connection.UseQueue().Autoplay = enabled;
+        await RespondAsync(enabled ? "Autoplay is on." : "Autoplay is off.").ConfigureAwait(false);
+    }
+
     [SlashCommand("stop", "Stop the music and clear the queue")]
     public async Task StopAsync()
     {
@@ -754,6 +764,10 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
                 Logger?.LogWarning(args.Exception, "A queue handler threw");
                 return Task.CompletedTask;
             };
+            queue.Connection.IdleTimedOut += (_, _) =>
+                SendAsync(target, "Left the voice channel, nothing was playing.");
+            queue.Connection.AloneTimedOut += (_, _) =>
+                SendAsync(target, "Left the voice channel, nobody was listening.");
             queue.Connection.TrackException += (_, args) =>
             {
                 Logger?.LogWarning(
