@@ -26,7 +26,11 @@ namespace Nyra.DSharpPlus.Nightly;
 /// shard id) and, with a nonzero stride, a guild inside the set can be routed to the wrong shard.
 /// </para>
 /// </remarks>
-public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDisposable
+public sealed class DSharpPlusBridge
+    : IDiscordBridge,
+        IGuildRemovalSource,
+        IVoiceListenerSource,
+        IDisposable
 {
     private DiscordClient? _client;
     private readonly TaskCompletionSource<ClientInformation> _ready = new(
@@ -43,6 +47,9 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     /// <summary>Raised when the bot was removed from a guild.</summary>
     /// <remarks>Not raised for guild outages.</remarks>
     public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
+
+    /// <summary>Raised when a user who is not a bot joins, leaves or changes a voice channel.</summary>
+    public event EventHandler<ListenerVoiceStateUpdatedEventArgs>? ListenerVoiceStateUpdated;
 
     internal DSharpPlusBridge() { }
 
@@ -126,6 +133,31 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     }
 
     /// <inheritdoc />
+    public IReadOnlyCollection<ulong>? GetListeners(ulong guildId, ulong channelId)
+    {
+        if (
+            Volatile.Read(ref _client) is not { } client
+            || !client.Guilds.TryGetValue(guildId, out var guild)
+        )
+            return null;
+
+        var self = client.CurrentUser?.Id;
+        return
+        [
+            .. guild
+                .VoiceStates.Values.Where(state =>
+                    state.ChannelId == channelId
+                    && state.UserId != self
+                    && !IsBot(guild, state.UserId)
+                )
+                .Select(state => state.UserId),
+        ];
+    }
+
+    private static bool IsBot(global::DSharpPlus.Entities.DiscordGuild guild, ulong userId) =>
+        guild.Members.TryGetValue(userId, out var member) && member.IsBot;
+
+    /// <inheritdoc />
     public Task<ClientInformation> WaitForReadyAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -197,12 +229,29 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
 
         Bind(sender);
 
-        if (
-            eventArgs.GuildId is not { } guildId
-            || sender.CurrentUser is not { } self
-            || eventArgs.UserId != self.Id
-        )
+        if (eventArgs.GuildId is not { } guildId || sender.CurrentUser is not { } self)
             return Task.CompletedTask;
+
+        if (eventArgs.UserId != self.Id)
+        {
+            if (
+                !(
+                    sender.Guilds.TryGetValue(guildId, out var guild)
+                    && IsBot(guild, eventArgs.UserId)
+                )
+            )
+                BridgeEvent.RaiseIsolated(
+                    ListenerVoiceStateUpdated,
+                    this,
+                    new ListenerVoiceStateUpdatedEventArgs(
+                        guildId,
+                        eventArgs.UserId,
+                        eventArgs.ChannelId
+                    ),
+                    Logger
+                );
+            return Task.CompletedTask;
+        }
 
         BridgeEvent.RaiseIsolated(
             VoiceStateUpdated,

@@ -24,6 +24,10 @@ connection.IdleTimedOut += (sender, args) =>
 };
 ```
 
+## Nobody is listening
+
+`connection.Listeners` counts the users in the voice channel who are not bots, and `ListenersChanged` is raised when it changes. The built-in bridges read it from the library's cache, a custom bridge reports it by implementing `IVoiceListenerSource`, without one it stays `null`.
+
 ## The server drops
 
 Nyra reconnects by itself, waiting longer after each failure. It never stops unless you set `MaxReconnectAttempts` in [NodeOptions](../api/Nyra.NodeOptions.yml).

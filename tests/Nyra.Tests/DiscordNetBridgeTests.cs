@@ -615,9 +615,16 @@ public sealed class DiscordNetBridgeTests
             )
             .IsTrue();
 
+        var listened = new List<ListenerVoiceStateUpdatedEventArgs>();
+        bridge.ListenerVoiceStateUpdated += (_, args) => listened.Add(args);
         var foreign = Reflect.New<SocketGuildUser>();
+        var global = System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(
+            typeof(SocketUser).Assembly.GetType("Discord.WebSocket.SocketGlobalUser", true)!
+        );
+        Reflect.Set(global, "IsBot", false);
         Reflect.Set(foreign, "Id", 99UL);
         Reflect.Set(foreign, "Guild", guild);
+        Reflect.Set(foreign, "GlobalUser", global);
         Reflect.Invoke(
             bridge,
             "OnVoiceStateUpdated",
@@ -626,6 +633,9 @@ public sealed class DiscordNetBridgeTests
             default(SocketVoiceState)
         );
         await Assert.That(states).IsEqualTo(2);
+        await Assert
+            .That(listened.Select(args => (args.GuildId, args.UserId, args.ChannelId)))
+            .IsEquivalentTo([(777UL, 99UL, (ulong?)null)]);
 
         await Task.CompletedTask.ConfigureAwait(false);
     }

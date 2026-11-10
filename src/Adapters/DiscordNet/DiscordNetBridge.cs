@@ -11,7 +11,11 @@ namespace Nyra.DiscordNet;
 /// The voice state update goes through Discord.Net's public external-audio route, so the bridge keeps the
 /// audio channel of each guild to disconnect from later.
 /// </remarks>
-public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDisposable
+public sealed class DiscordNetBridge
+    : IDiscordBridge,
+        IGuildRemovalSource,
+        IVoiceListenerSource,
+        IDisposable
 {
     private readonly BaseSocketClient _client;
     private readonly ConcurrentDictionary<ulong, IAudioChannel> _audioChannels = new();
@@ -35,6 +39,9 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
     /// <summary>Raised when the bot was removed from a guild.</summary>
     /// <remarks>Not raised for guild outages.</remarks>
     public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
+
+    /// <summary>Raised when a user who is not a bot joins, leaves or changes a voice channel.</summary>
+    public event EventHandler<ListenerVoiceStateUpdatedEventArgs>? ListenerVoiceStateUpdated;
 
     /// <summary>Wraps a <see cref="DiscordSocketClient"/>, forwarding its voice events.</summary>
     /// <param name="client">The client to wrap.</param>
@@ -78,6 +85,21 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
 
     /// <inheritdoc />
     public ILogger? Logger { get; }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<ulong>? GetListeners(ulong guildId, ulong channelId)
+    {
+        if (_client.GetGuild(guildId)?.GetVoiceChannel(channelId) is not { } channel)
+            return null;
+
+        var self = _client.CurrentUser?.Id;
+        return
+        [
+            .. channel
+                .ConnectedUsers.Where(user => !user.IsBot && user.Id != self)
+                .Select(user => user.Id),
+        ];
+    }
 
     /// <inheritdoc />
     public async Task SendVoiceUpdateAsync(
@@ -243,15 +265,29 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
         SocketVoiceState state
     )
     {
-        if (user.Id != _client.CurrentUser?.Id)
-            return Task.CompletedTask;
-
-        _removalFence.Sweep();
-
         var guildId =
             oldState.VoiceChannel?.Guild?.Id
             ?? state.VoiceChannel?.Guild?.Id
             ?? (user as SocketGuildUser)?.Guild?.Id;
+
+        if (user.Id != _client.CurrentUser?.Id)
+        {
+            if (guildId is { } listenerGuildId && !user.IsBot)
+                BridgeEvent.RaiseIsolated(
+                    ListenerVoiceStateUpdated,
+                    this,
+                    new ListenerVoiceStateUpdatedEventArgs(
+                        listenerGuildId,
+                        user.Id,
+                        state.VoiceChannelId
+                    ),
+                    Logger
+                );
+            return Task.CompletedTask;
+        }
+
+        _removalFence.Sweep();
+
         if (guildId is null)
             return Task.CompletedTask;
 

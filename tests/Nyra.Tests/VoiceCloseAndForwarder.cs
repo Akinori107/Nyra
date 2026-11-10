@@ -347,7 +347,7 @@ public sealed class VoiceCloseAndForwarder
     }
 
     private sealed class ProbeBridge(GatewayClient client)
-        : GatewayBridgeBase(_ => { }, _ => { }, _ => { })
+        : GatewayBridgeBase(_ => { }, _ => { }, _ => { }, _ => { })
     {
         public RecordingList<ulong> ResolvedGuilds { get; } = [];
 

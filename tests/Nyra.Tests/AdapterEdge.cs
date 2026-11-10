@@ -127,7 +127,7 @@ public sealed class AdapterEdge
     {
         var token = new BotToken("MTIz.ab.cd");
         var client = new GatewayClient(token);
-        var bridge = new GatewayBridge(client, _ => { }, _ => { }, _ => { });
+        var bridge = new GatewayBridge(client, _ => { }, _ => { }, _ => { }, _ => { });
         await Assert.That(bridge.Dispose).ThrowsNothing();
 
         await Assert

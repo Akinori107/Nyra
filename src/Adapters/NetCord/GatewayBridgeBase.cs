@@ -1,3 +1,4 @@
+using NetCord;
 using NetCord.Gateway;
 using Nyra.Abstractions;
 
@@ -6,7 +7,8 @@ namespace Nyra.NetCord;
 internal abstract class GatewayBridgeBase(
     Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
     Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
-    Action<GuildRemovedEventArgs> onGuildRemoved
+    Action<GuildRemovedEventArgs> onGuildRemoved,
+    Action<ListenerVoiceStateUpdatedEventArgs> onListenerVoiceStateUpdated
 ) : IDisposable
 {
     private readonly Action<VoiceServerUpdatedEventArgs> _onVoiceServerUpdated =
@@ -32,6 +34,24 @@ internal abstract class GatewayBridgeBase(
         await GetClient(guildId)
             .UpdateVoiceStateAsync(properties, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public IReadOnlyCollection<ulong>? GetListeners(ulong guildId, ulong channelId)
+    {
+        var client = GetClient(guildId);
+        if (!client.Cache.Guilds.TryGetValue(guildId, out var guild))
+            return null;
+
+        return
+        [
+            .. guild
+                .VoiceStates.Values.Where(state =>
+                    state.ChannelId == channelId
+                    && state.UserId != client.Id
+                    && !IsBot(guild, state.UserId, state.User)
+                )
+                .Select(state => state.UserId),
+        ];
     }
 
     public Task<ClientInformation> WaitForReadyAsync(CancellationToken cancellationToken)
@@ -93,11 +113,21 @@ internal abstract class GatewayBridgeBase(
 
     protected ValueTask HandleVoiceStateUpdateAsync(VoiceState eventArgs, ulong currentUserId)
     {
-        if (eventArgs.UserId != currentUserId)
-            return ValueTask.CompletedTask;
-
         if (eventArgs.GuildId is 0)
             return ValueTask.CompletedTask;
+
+        if (eventArgs.UserId != currentUserId)
+        {
+            if (eventArgs.User?.IsBot != true)
+                onListenerVoiceStateUpdated(
+                    new ListenerVoiceStateUpdatedEventArgs(
+                        eventArgs.GuildId,
+                        eventArgs.UserId,
+                        eventArgs.ChannelId
+                    )
+                );
+            return ValueTask.CompletedTask;
+        }
 
         onVoiceStateUpdated(
             new VoiceStateUpdatedEventArgs(
@@ -112,6 +142,9 @@ internal abstract class GatewayBridgeBase(
         );
         return ValueTask.CompletedTask;
     }
+
+    private static bool IsBot(Guild guild, ulong userId, GuildUser? user) =>
+        user?.IsBot ?? (guild.Users.TryGetValue(userId, out var cached) && cached.IsBot);
 
     protected ValueTask HandleGuildDeleteAsync(GuildDeleteEventArgs eventArgs)
     {

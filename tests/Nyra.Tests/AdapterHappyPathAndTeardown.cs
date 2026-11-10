@@ -260,7 +260,13 @@ public sealed class AdapterHappyPathAndTeardown
             .GetMethod("IndicateReady", BindingFlags.Public | BindingFlags.Instance)!
             .Invoke(state, [fakeConnectionState]);
 
-        using var bridge = new NetCord.GatewayBridge(client, _ => { }, _ => { }, _ => { });
+        using var bridge = new NetCord.GatewayBridge(
+            client,
+            _ => { },
+            _ => { },
+            _ => { },
+            _ => { }
+        );
         await bridge
             .SendVoiceUpdateAsync(5, 77, false, false, CancellationToken.None)
             .ConfigureAwait(false);

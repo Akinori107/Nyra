@@ -9,7 +9,11 @@ namespace Nyra.NetCord;
 /// NetCord logs through its own <c>IGatewayLogger</c>, configured only at client creation and not exposed
 /// afterwards, so the logger here is one the caller provides.
 /// </remarks>
-public sealed class NetCordBridge : IDiscordBridge, IGuildRemovalSource, IDisposable
+public sealed class NetCordBridge
+    : IDiscordBridge,
+        IGuildRemovalSource,
+        IVoiceListenerSource,
+        IDisposable
 {
     private readonly GatewayBridgeBase _client;
 
@@ -27,6 +31,12 @@ public sealed class NetCordBridge : IDiscordBridge, IGuildRemovalSource, IDispos
     /// <summary>Raised when the bot was removed from a guild, with this bridge as the sender.</summary>
     public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
 
+    /// <summary>
+    /// Raised when a user who is not a bot joins, leaves or changes a voice channel, with this bridge as the
+    /// sender.
+    /// </summary>
+    public event EventHandler<ListenerVoiceStateUpdatedEventArgs>? ListenerVoiceStateUpdated;
+
     /// <summary>Wraps a <see cref="GatewayClient"/>, forwarding its voice events.</summary>
     /// <param name="client">The client to wrap.</param>
     /// <param name="logger">The logger to write the bridge's messages to.</param>
@@ -38,7 +48,8 @@ public sealed class NetCordBridge : IDiscordBridge, IGuildRemovalSource, IDispos
             client,
             RaiseVoiceServerUpdated,
             RaiseVoiceStateUpdated,
-            RaiseGuildRemoved
+            RaiseGuildRemoved,
+            RaiseListenerVoiceStateUpdated
         );
     }
 
@@ -53,7 +64,8 @@ public sealed class NetCordBridge : IDiscordBridge, IGuildRemovalSource, IDispos
             client,
             RaiseVoiceServerUpdated,
             RaiseVoiceStateUpdated,
-            RaiseGuildRemoved
+            RaiseGuildRemoved,
+            RaiseListenerVoiceStateUpdated
         );
     }
 
@@ -66,8 +78,15 @@ public sealed class NetCordBridge : IDiscordBridge, IGuildRemovalSource, IDispos
     private void RaiseGuildRemoved(GuildRemovedEventArgs eventArgs) =>
         BridgeEvent.RaiseIsolated(GuildRemoved, this, eventArgs, Logger);
 
+    private void RaiseListenerVoiceStateUpdated(ListenerVoiceStateUpdatedEventArgs eventArgs) =>
+        BridgeEvent.RaiseIsolated(ListenerVoiceStateUpdated, this, eventArgs, Logger);
+
     /// <inheritdoc />
     public ILogger? Logger { get; }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<ulong>? GetListeners(ulong guildId, ulong channelId) =>
+        _client.GetListeners(guildId, channelId);
 
     /// <inheritdoc />
     public Task SendVoiceUpdateAsync(

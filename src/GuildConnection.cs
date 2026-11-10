@@ -21,6 +21,8 @@ public sealed class GuildConnection
     private volatile bool _restoring;
     private RestoreSnapshot? _restoreSnapshot;
     private readonly GuildTimer _idleTimer;
+    private readonly Lock _listenersLock = new();
+    private HashSet<ulong>? _listeners;
 
     private sealed record RestoreSnapshot(
         Track? Track,
@@ -151,6 +153,7 @@ public sealed class GuildConnection
     {
         _playerCommitted = true;
         UpdateIdleTimer();
+        SyncListeners();
     }
 
     /// <summary>The node this connection plays through.</summary>
@@ -186,6 +189,20 @@ public sealed class GuildConnection
         {
             field = value;
             UpdateIdleTimer();
+        }
+    }
+
+    /// <summary>
+    /// How many users who are not bots are in the voice channel with the bot, or null when the bridge does not
+    /// report it.
+    /// </summary>
+    /// <remarks>The built-in bridges report it from the library's cache, see <see cref="IVoiceListenerSource"/>.</remarks>
+    public int? Listeners
+    {
+        get
+        {
+            lock (_listenersLock)
+                return _listeners?.Count;
         }
     }
 
@@ -348,6 +365,9 @@ public sealed class GuildConnection
     /// </summary>
     /// <remarks>A handler that starts a track keeps the connection.</remarks>
     public event AsyncEventHandler<GuildConnectionIdleEventArgs>? IdleTimedOut;
+
+    /// <summary>Raised when <see cref="Listeners"/> changes.</summary>
+    public event AsyncEventHandler<GuildConnectionListenersEventArgs>? ListenersChanged;
 
     /// <summary>The voice connection dropped and is being re-established.</summary>
     /// <remarks>
@@ -934,6 +954,7 @@ public sealed class GuildConnection
 
         ChannelId = channelId;
         HandleVoiceSessionUpdated(sessionId);
+        SyncListeners();
     }
 
     internal void HandleVoiceSessionUpdated(string? sessionId)
@@ -1066,6 +1087,78 @@ public sealed class GuildConnection
             return;
 
         await DisconnectAsync().ConfigureAwait(false);
+    }
+
+    internal void SyncListeners()
+    {
+        if (
+            _tearingDown
+            || ChannelId is not { } channelId
+            || Node.Client is not IVoiceListenerSource source
+        )
+            return;
+
+        IReadOnlyCollection<ulong>? found;
+        try
+        {
+            found = source.GetListeners(GuildId, channelId);
+        }
+        catch (Exception exception)
+        {
+            Node.HandleError(exception);
+            return;
+        }
+
+        if (found is null)
+            return;
+
+        int? before;
+        int after;
+        lock (_listenersLock)
+        {
+            before = _listeners?.Count;
+            _listeners = [.. found];
+            after = _listeners.Count;
+        }
+
+        OnListenersChanged(before, after, channelId);
+    }
+
+    internal void HandleListenerVoiceState(ulong userId, ulong? channelId)
+    {
+        if (_tearingDown || ChannelId is not { } own)
+            return;
+
+        if (Listeners is null)
+            SyncListeners();
+
+        int before;
+        int after;
+        lock (_listenersLock)
+        {
+            if (_listeners is null)
+                return;
+
+            before = _listeners.Count;
+            if (channelId == own)
+                _listeners.Add(userId);
+            else
+                _listeners.Remove(userId);
+            after = _listeners.Count;
+        }
+
+        OnListenersChanged(before, after, own);
+    }
+
+    private void OnListenersChanged(int? before, int after, ulong channelId)
+    {
+        if (before == after)
+            return;
+
+        Dispatch(
+            ListenersChanged,
+            new GuildConnectionListenersEventArgs(GuildId, channelId, after)
+        );
     }
 
     private void Dispatch<TArgs>(

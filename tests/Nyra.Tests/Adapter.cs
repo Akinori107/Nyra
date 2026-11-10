@@ -31,10 +31,10 @@ public sealed class Adapter
     private static void Ignore<T>(T args) { }
 
     private static GatewayBridge QuietGateway(GatewayClient client) =>
-        new(client, Ignore, Ignore, Ignore);
+        new(client, Ignore, Ignore, Ignore, Ignore);
 
     private static ShardedGatewayBridge QuietSharded(ShardedGatewayClient client) =>
-        new(client, Ignore, Ignore, Ignore);
+        new(client, Ignore, Ignore, Ignore, Ignore);
 
     internal sealed class Recording<T>
         where T : System.EventArgs
@@ -122,8 +122,15 @@ public sealed class Adapter
     private sealed class TestGatewayBridge(
         Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
         Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
-        Action<GuildRemovedEventArgs> onGuildRemoved
-    ) : GatewayBridgeBase(onVoiceServerUpdated, onVoiceStateUpdated, onGuildRemoved)
+        Action<GuildRemovedEventArgs> onGuildRemoved,
+        Action<ListenerVoiceStateUpdatedEventArgs> onListenerVoiceStateUpdated
+    )
+        : GatewayBridgeBase(
+            onVoiceServerUpdated,
+            onVoiceStateUpdated,
+            onGuildRemoved,
+            onListenerVoiceStateUpdated
+        )
     {
         public void RaiseServer(NcServerArgs args) =>
             HandleVoiceServerUpdateAsync(args).AsTask().GetAwaiter().GetResult();
@@ -144,7 +151,8 @@ public sealed class Adapter
         ulong guildId,
         ulong? channelId,
         ulong userId,
-        string sessionId
+        string sessionId,
+        bool? bot = null
     ) =>
         new(
             new JsonVoiceState
@@ -153,10 +161,42 @@ public sealed class Adapter
                 ChannelId = channelId,
                 UserId = userId,
                 SessionId = sessionId,
+                User = bot is { } isBot
+                    ? new JsonGuildUser
+                    {
+                        User = new JsonUser { Id = userId, IsBot = isBot },
+                    }
+                    : null,
             },
             guildId,
             null!
         );
+
+    [Test]
+    public async Task NetCordListeners()
+    {
+        var states = new Recording<VoiceStateUpdatedEventArgs>();
+        var listeners = new Recording<ListenerVoiceStateUpdatedEventArgs>();
+        var bridge = new TestGatewayBridge(Ignore, states.Record, Ignore, listeners.Record);
+
+        bridge.RaiseState(WireState(5, 77, 10, "s1", bot: false), 9);
+        await Assert.That(listeners.Last?.UserId).IsEqualTo(10UL);
+        await Assert.That(listeners.Last?.ChannelId).IsEqualTo(77UL);
+
+        bridge.RaiseState(WireState(5, 77, 11, "s2", bot: true), 9);
+        await Assert.That(listeners.Count).IsEqualTo(1);
+
+        bridge.RaiseState(WireState(5, null, 12, "s3"), 9);
+        bridge.RaiseState(WireState(5, 77, 9, "s4"), 9);
+
+        using (Assert.Multiple())
+        {
+            await Assert.That(states.Count).IsEqualTo(1);
+            await Assert.That(listeners.Count).IsEqualTo(2);
+            await Assert.That(listeners.Last?.UserId).IsEqualTo(12UL);
+            await Assert.That(listeners.Last?.ChannelId).IsNull();
+        }
+    }
 
     [Test]
     public async Task NetCordEvents()
@@ -164,7 +204,7 @@ public sealed class Adapter
         var servers = new Recording<VoiceServerUpdatedEventArgs>();
         var states = new Recording<VoiceStateUpdatedEventArgs>();
         var removals = new Recording<GuildRemovedEventArgs>();
-        var bridge = new TestGatewayBridge(servers.Record, states.Record, removals.Record);
+        var bridge = new TestGatewayBridge(servers.Record, states.Record, removals.Record, Ignore);
 
         bridge.RaiseServer(
             new NcServerArgs(
@@ -719,6 +759,7 @@ public sealed class Adapter
                 forwardingClient,
                 _ => forwarded++,
                 Ignore,
+                Ignore,
                 Ignore
             )
         )
@@ -1061,7 +1102,8 @@ public sealed class Adapter
             forwardSharded,
             servers.Record,
             states.Record,
-            removals.Record
+            removals.Record,
+            Ignore
         );
 
         Reflect.Invoke(forwardBridge, "OnVoiceStateUpdate", shard, WireState(5, 77, 123, "sess"));

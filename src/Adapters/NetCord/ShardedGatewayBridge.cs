@@ -11,9 +11,15 @@ internal sealed class ShardedGatewayBridge : GatewayBridgeBase
         ShardedGatewayClient client,
         Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
         Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
-        Action<GuildRemovedEventArgs> onGuildRemoved
+        Action<GuildRemovedEventArgs> onGuildRemoved,
+        Action<ListenerVoiceStateUpdatedEventArgs> onListenerVoiceStateUpdated
     )
-        : base(onVoiceServerUpdated, onVoiceStateUpdated, onGuildRemoved)
+        : base(
+            onVoiceServerUpdated,
+            onVoiceStateUpdated,
+            onGuildRemoved,
+            onListenerVoiceStateUpdated
+        )
     {
         _client = client;
 
