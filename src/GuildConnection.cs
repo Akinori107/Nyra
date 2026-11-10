@@ -631,6 +631,8 @@ public sealed class GuildConnection
             _restoring = false;
         }
 
+        ReapplyListeners();
+
         Dispatch(
             GuildConnectionRestored,
             new GuildConnectionRestoredEventArgs(GuildId, channelId, resent)
@@ -1176,38 +1178,53 @@ public sealed class GuildConnection
             ListenersChanged,
             new GuildConnectionListenersEventArgs(GuildId, channelId, after)
         );
-        if (after > 0)
-        {
+        ApplyListeners(after);
+    }
+
+    internal void ReapplyListeners()
+    {
+        if (Listeners is { } listeners)
+            ApplyListeners(listeners);
+    }
+
+    private void ApplyListeners(int listeners)
+    {
+        if (listeners > 0)
             _aloneTimer.Disarm();
-            if (_pausedWhenAlone)
-                ResumeWhenBackAsync().ObserveFaults(Node.HandleError);
-            return;
-        }
-
-        if (Node.Options.AloneTimeout != Timeout.InfiniteTimeSpan)
+        else if (Node.Options.AloneTimeout != Timeout.InfiniteTimeSpan)
             _aloneTimer.Arm(Node.Options.AloneTimeout);
-        if (Node.Options.PauseWhenAlone && CurrentTrack is not null && !IsPaused)
-            PauseWhenAloneAsync().ObserveFaults(Node.HandleError);
+
+        if (Node.Options.PauseWhenAlone || _pausedWhenAlone)
+            SettlePauseWhenAloneAsync().ObserveFaults(Node.HandleError);
     }
 
-    private async Task PauseWhenAloneAsync()
+    private async Task SettlePauseWhenAloneAsync()
     {
-        if (_tearingDown || _restoring)
-            return;
+        for (var pass = 0; pass < 4; pass++)
+        {
+            if (_tearingDown || _restoring || !Node.IsReady || Listeners is not { } listeners)
+                return;
 
-        await _commands.SetPausedAsync(true, CancellationToken.None).ConfigureAwait(false);
-        _pausedWhenAlone = true;
-        if (Listeners > 0)
-            await ResumeWhenBackAsync().ConfigureAwait(false);
-    }
+            if (listeners == 0)
+            {
+                if (!Node.Options.PauseWhenAlone || CurrentTrack is null || IsPaused)
+                    return;
 
-    private async Task ResumeWhenBackAsync()
-    {
-        _pausedWhenAlone = false;
-        if (_tearingDown || _restoring || !IsPaused)
-            return;
+                await _commands.SetPausedAsync(true, CancellationToken.None).ConfigureAwait(false);
+                _pausedWhenAlone = true;
+            }
+            else
+            {
+                if (!_pausedWhenAlone)
+                    return;
 
-        await _commands.SetPausedAsync(false, CancellationToken.None).ConfigureAwait(false);
+                if (IsPaused)
+                    await _commands
+                        .SetPausedAsync(false, CancellationToken.None)
+                        .ConfigureAwait(false);
+                _pausedWhenAlone = false;
+            }
+        }
     }
 
     private void OnAloneTimerFired()

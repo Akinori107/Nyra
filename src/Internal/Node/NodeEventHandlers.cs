@@ -194,6 +194,7 @@ internal sealed class NodeEventHandlers
                 {
                     connection.DiscardRestoreSnapshot();
                     await connection.ResendPendingVoiceAsync().ConfigureAwait(false);
+                    connection.ReapplyListeners();
                 }
                 catch (Exception exception)
                 {
