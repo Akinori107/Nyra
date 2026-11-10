@@ -46,3 +46,16 @@ That gives a gapless change. For an overlap, enable the crossfade with `GuildEff
 - A queue on a Lavalink node ignores `PreloadNext`.
 - Avoid reordering the queue in the last seconds of a track, NodeLink buffers the next track again.
 - A crossfade needs both tracks to have a known length and not be streams, otherwise the change is gapless or plain.
+
+## Autoplay
+
+With `Autoplay` on, the queue doesn't stop when it runs out. It loads recommendations for the last track and plays the first one that isn't that track or in the history:
+
+```csharp
+queue.Autoplay = true;
+```
+
+- YouTube tracks use `ytrec` on NodeLink and the YouTube mix on Lavalink.
+- Spotify tracks use `sprec`, which needs NodeLink or Lavalink with the LavaSrc plugin.
+- A track of another source ends the queue as before.
+- `Ended` is raised only when nothing was found.

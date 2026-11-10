@@ -194,6 +194,16 @@ public sealed class GuildQueue
         }
     }
 
+    /// <summary>Gets or sets whether the queue keeps playing recommendations when it runs out, off by default.</summary>
+    /// <remarks>
+    /// When the last track ends, the queue loads recommendations for it and plays the first one that is not that
+    /// track or in <see cref="History"/>. YouTube tracks use <c>ytrec</c> on NodeLink and the YouTube mix on
+    /// Lavalink, Spotify tracks use <c>sprec</c>, which needs NodeLink or Lavalink with the LavaSrc plugin. A track
+    /// of another source ends the queue as before. <see cref="Ended"/> is raised only when nothing was found, and
+    /// a load that throws goes to <see cref="Node.Error"/>.
+    /// </remarks>
+    public bool Autoplay { get; set; }
+
     internal static GuildQueue For(GuildConnection connection)
     {
         lock (RegistryLock)
@@ -531,6 +541,7 @@ public sealed class GuildQueue
     {
         var notes = new QueueNotes();
         Exception? failure = null;
+        Track? seed = null;
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -550,7 +561,10 @@ public sealed class GuildQueue
             {
                 Commit(after, notes);
                 _loop = LoopMode.Off;
-                notes.Ended = true;
+                if (Autoplay && (before.Current ?? ended) is { } last)
+                    seed = last;
+                else
+                    notes.Ended = true;
             }
             else
             {
@@ -578,8 +592,70 @@ public sealed class GuildQueue
         }
 
         await FlushAsync(notes).ConfigureAwait(false);
+        if (seed is not null && !await TryAutoplayAsync(seed).ConfigureAwait(false))
+            await Ended
+                .RaiseAsync(this, new QueueEndedEventArgs(), _handlerError)
+                .ConfigureAwait(false);
+
         if (failure is not null)
             ExceptionDispatchInfo.Capture(failure).Throw();
+    }
+
+    private async Task<bool> TryAutoplayAsync(Track seed)
+    {
+        if (RecommendationQuery(seed) is not { } query)
+            return false;
+
+        Track? next;
+        try
+        {
+            var found = TracksOf(
+                await Connection.Node.LoadTracksAsync(query, SearchType.Raw).ConfigureAwait(false)
+            );
+            var history = _state.History;
+            next = found.FirstOrDefault(track =>
+                !GuildConnection.IsSameTrack(track, seed)
+                && !history.Any(played => GuildConnection.IsSameTrack(played, track))
+            );
+            if (next is null || _detached)
+                return false;
+            if (_state.Current is not null)
+                return true;
+
+            await EnqueueAsync(next).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Connection.Node.HandleError(exception);
+            return false;
+        }
+
+        return _state.Current is not null;
+    }
+
+    private static IReadOnlyList<Track> TracksOf(LoadResult result) =>
+        result switch
+        {
+            PlaylistLoaded playlist => playlist.Tracks,
+            SearchLoaded search => search.Tracks,
+            TrackLoaded loaded => [loaded.Track],
+            _ => [],
+        };
+
+    private string? RecommendationQuery(Track seed)
+    {
+        var id = seed.Info.Identifier;
+        if (string.IsNullOrEmpty(id))
+            return null;
+
+        return seed.Info.SourceName switch
+        {
+            "youtube" => Connection.Node.IsNodeLink
+                ? $"ytrec:{id}"
+                : $"https://www.youtube.com/watch?v={id}&list=RD{id}",
+            "spotify" => $"sprec:seed_tracks={id}",
+            _ => null,
+        };
     }
 
     private async Task ServerAdvancedAsync(Track? ended)
