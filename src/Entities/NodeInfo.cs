@@ -35,10 +35,7 @@ public sealed record NodeInfo
     /// reports its missing-value sentinel (-1 on Lavalink dev builds and NodeLink without build info).
     /// </summary>
     [JsonIgnore]
-    public DateTimeOffset BuildTime =>
-        BuildTimeMilliseconds is > 0 and <= UnixTime.MaxMilliseconds
-            ? DateTimeOffset.FromUnixTimeMilliseconds(BuildTimeMilliseconds)
-            : DateTimeOffset.MinValue;
+    public DateTimeOffset BuildTime => UnixTime.ToDateTimeOffsetAfterEpoch(BuildTimeMilliseconds);
 
     /// <summary>The git revision the server was built from.</summary>
     [JsonPropertyName("git"), JsonInclude]
@@ -80,7 +77,7 @@ public sealed record NodeInfo
     public IReadOnlyList<string> SourceManagers
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>Audio filters the server has enabled, such as equalizer or timescale.</summary>
@@ -88,7 +85,7 @@ public sealed record NodeInfo
     public IReadOnlyList<string> Filters
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>The plugins the server loaded.</summary>
@@ -96,7 +93,7 @@ public sealed record NodeInfo
     public IReadOnlyList<NodeInfoPlugin> Plugins
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>
@@ -185,7 +182,7 @@ public sealed record NodeInfoVersion
     public IReadOnlyList<string> PreReleaseIdentifiers
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>Indicates whether both versions carry the same numbers and pre-release identifiers.</summary>
@@ -232,10 +229,7 @@ public sealed record NodeInfoGit
     /// sentinel.
     /// </summary>
     [JsonIgnore]
-    public DateTimeOffset CommitTime =>
-        CommitTimeMilliseconds is > 0 and <= UnixTime.MaxMilliseconds
-            ? DateTimeOffset.FromUnixTimeMilliseconds(CommitTimeMilliseconds)
-            : DateTimeOffset.MinValue;
+    public DateTimeOffset CommitTime => UnixTime.ToDateTimeOffsetAfterEpoch(CommitTimeMilliseconds);
 }
 
 /// <summary>The voice library a NodeLink server speaks Discord voice through.</summary>

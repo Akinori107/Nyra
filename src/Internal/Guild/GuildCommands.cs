@@ -5,6 +5,11 @@ namespace Nyra.Internal;
 
 internal sealed class GuildCommands
 {
+    private static readonly PlayerUpdatePayload StopPayload = new()
+    {
+        Track = new PlayerUpdateTrack { Encoded = null },
+    };
+
     private readonly GuildConnection _connection;
     private readonly Node _node;
 
@@ -42,10 +47,7 @@ internal sealed class GuildCommands
             && GuildConnection.IsSameTrack(_connection.CurrentTrack, track)
         )
             await _connection
-                .Patches.UpdateAsync(
-                    new PlayerUpdatePayload { Track = new PlayerUpdateTrack { Encoded = null } },
-                    cancellationToken
-                )
+                .Patches.UpdateAsync(StopPayload, cancellationToken)
                 .ConfigureAwait(false);
 
         var refusable = options?.NoReplace == true && _connection.CurrentTrack is not null;
@@ -179,12 +181,7 @@ internal sealed class GuildCommands
     {
         _connection.EnsureActive();
 
-        await _connection
-            .Patches.UpdateAsync(
-                new PlayerUpdatePayload { Track = new PlayerUpdateTrack { Encoded = null } },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        await _connection.Patches.UpdateAsync(StopPayload, cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task SetPausedAsync(bool paused, CancellationToken cancellationToken = default)

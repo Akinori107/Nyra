@@ -56,7 +56,7 @@ public sealed record MeaningTranslation
     public IReadOnlyList<string> Paragraphs
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>Returns the translation as its title and paragraph count.</summary>
@@ -150,7 +150,7 @@ public sealed record MeaningData
     public IReadOnlyList<string> Paragraphs
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>The URL the meaning was loaded from.</summary>

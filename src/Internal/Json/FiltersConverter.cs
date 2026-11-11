@@ -267,7 +267,7 @@ internal sealed class FiltersConverter(
 
         if (filter is null)
         {
-            WriteNull(writer, key);
+            writer.WriteNull(key);
             return false;
         }
 
@@ -301,12 +301,6 @@ internal sealed class FiltersConverter(
             writer.WriteStartArray();
             writer.WriteEndArray();
         }
-    }
-
-    private static void WriteNull(Utf8JsonWriter writer, string name)
-    {
-        writer.WritePropertyName(name);
-        writer.WriteNullValue();
     }
 
     private bool ShouldWrite(string key) => enabledFilters is null || enabledFilters.Contains(key);

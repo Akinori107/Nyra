@@ -66,8 +66,7 @@ public static class DiscordClientExtensions
                 catch { }
 
             var extension = new NyraExtension(new DSharpPlusBridge(client, shardCount));
-            Extensions.Remove(client);
-            Extensions.Add(client, extension);
+            Extensions.AddOrUpdate(client, extension);
             return extension;
         }
     }

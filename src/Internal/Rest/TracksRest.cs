@@ -152,7 +152,7 @@ internal sealed class TracksRest
 
         using var headerCts = new TimeoutLink(
             _rest.Node.Time,
-            TimeSpan.FromSeconds(60),
+            RestClient.RequestTimeout,
             cancellationToken
         );
         HttpResponseMessage response;
@@ -175,10 +175,7 @@ internal sealed class TracksRest
         }
         catch (HttpRequestException exception)
         {
-            throw new NodeUnreachableException(
-                $"The node '{_rest.Node.Name}' at {_rest.Node.Endpoint} is not reachable: {exception.Message}",
-                exception
-            );
+            throw _rest.Unreachable(exception);
         }
 
         if (!response.IsSuccessStatusCode)

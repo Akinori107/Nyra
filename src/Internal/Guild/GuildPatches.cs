@@ -57,10 +57,7 @@ internal sealed class GuildPatches
     {
         lock (_playerPatchGate)
         {
-            if (_connection.IsTearingDown)
-                throw new InvalidOperationException(
-                    "The connection is being torn down, it no longer accepts operations."
-                );
+            _connection.EnsureNotTearingDown();
             _inFlightPlayerPatches++;
         }
 

@@ -98,7 +98,7 @@ public sealed record SponsorBlockState
     public IReadOnlyList<string> Categories
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>
@@ -109,7 +109,7 @@ public sealed record SponsorBlockState
     public IReadOnlyList<string> ActionTypes
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>The segments loaded for the current track, a null list reads as empty.</summary>
@@ -117,7 +117,7 @@ public sealed record SponsorBlockState
     public IReadOnlyList<SponsorBlockSegment> Segments
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>The id of the segment that was skipped last.</summary>

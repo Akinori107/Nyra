@@ -19,7 +19,7 @@ internal sealed class RestClient
         ConnectTimeout = TimeSpan.FromSeconds(10),
     };
 
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(60);
+    internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(60);
 
     private static readonly HttpClient Http = new(SharedHandler, disposeHandler: false)
     {
@@ -303,21 +303,17 @@ internal sealed class RestClient
         {
             throw new OperationCanceledException(exception.Message, exception, cancellationToken);
         }
-        catch (HttpRequestException exception)
+        catch (Exception exception) when (exception is HttpRequestException or IOException)
         {
-            throw new NodeUnreachableException(
-                $"The node '{Node.Name}' at {Node.Endpoint} is not reachable: {exception.Message}",
-                exception
-            );
-        }
-        catch (IOException exception)
-        {
-            throw new NodeUnreachableException(
-                $"The node '{Node.Name}' at {Node.Endpoint} is not reachable: {exception.Message}",
-                exception
-            );
+            throw Unreachable(exception);
         }
     }
+
+    internal NodeUnreachableException Unreachable(Exception exception) =>
+        new(
+            $"The node '{Node.Name}' at {Node.Endpoint} is not reachable: {exception.Message}",
+            exception
+        );
 
     internal static async Task<(string Body, bool Unreadable)> ReadErrorBodyAsync(
         HttpContent content,

@@ -42,7 +42,7 @@ internal sealed class NodeEventHandlers
         int epoch;
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown)
                 return -1;
 
             if (!_node.Connection.IsCurrentGeneration(generation))
@@ -62,7 +62,7 @@ internal sealed class NodeEventHandlers
     {
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown)
                 return;
 
             if (!_node.Connection.IsCurrentGeneration(generation))
@@ -89,7 +89,7 @@ internal sealed class NodeEventHandlers
         TaskCompletionSource<bool>? completion;
         lock (_node.EventsLock)
         {
-            if (epoch != _connectionEpoch || _node.Stopped || _node.Disposed || _node.IsReady)
+            if (epoch != _connectionEpoch || _node.IsShutDown || _node.IsReady)
                 return;
 
             _readyAbortClaimedEpoch = epoch;
@@ -118,7 +118,7 @@ internal sealed class NodeEventHandlers
         try
         {
             lock (_node.EventsLock)
-                if (epoch != _connectionEpoch || _node.Stopped || _node.Disposed || _node.IsReady)
+                if (epoch != _connectionEpoch || _node.IsShutDown || _node.IsReady)
                     return;
 
             try
@@ -152,7 +152,7 @@ internal sealed class NodeEventHandlers
 
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown)
                 return;
 
             if (connectionEpoch != _connectionEpoch)
@@ -306,7 +306,7 @@ internal sealed class NodeEventHandlers
     {
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown)
                 return;
 
             _node.Stats = stats;
@@ -324,7 +324,7 @@ internal sealed class NodeEventHandlers
 
     internal GuildConnection[] SnapshotWorkerFailed(WorkerFailedEventArgs eventArgs)
     {
-        if (_node.Stopped || _node.Disposed)
+        if (_node.IsShutDown)
             return [];
 
         if (eventArgs.AffectedGuilds is not { Count: > 0 } guilds)
@@ -348,7 +348,7 @@ internal sealed class NodeEventHandlers
         WorkerFailedEventArgs eventArgs
     )
     {
-        if (_node.Stopped || _node.Disposed)
+        if (_node.IsShutDown)
             return;
 
         if (eventArgs.AffectedGuilds is { Count: > 0 })
@@ -361,7 +361,7 @@ internal sealed class NodeEventHandlers
     {
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown)
                 return;
             _node.ConnectionStatus = status;
             _node.RaiseConnectionStatusUpdated(new NodeConnectionStatusEventArgs(status));

@@ -275,13 +275,11 @@ internal sealed class StringOrNumberConverter : JsonConverter<string?>
         }
     }
 
-    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
-    {
-        if (value is null)
-            writer.WriteNullValue();
-        else
-            writer.WriteStringValue(value);
-    }
+    public override void Write(
+        Utf8JsonWriter writer,
+        string? value,
+        JsonSerializerOptions options
+    ) => writer.WriteStringValue(value);
 }
 
 internal static class JsonNumberParsing
@@ -399,13 +397,11 @@ internal sealed class NullableTolerantStringConverter : JsonConverter<string?>
         return null;
     }
 
-    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
-    {
-        if (value is null)
-            writer.WriteNullValue();
-        else
-            writer.WriteStringValue(value);
-    }
+    public override void Write(
+        Utf8JsonWriter writer,
+        string? value,
+        JsonSerializerOptions options
+    ) => writer.WriteStringValue(value);
 }
 
 internal sealed class NullableTolerantBooleanConverter : JsonConverter<bool?>

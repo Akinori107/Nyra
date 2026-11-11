@@ -97,7 +97,7 @@ public sealed record GroupUpdateResult
     public IReadOnlyList<Player> Players
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>Per-guild failures of the update.</summary>
@@ -110,7 +110,7 @@ public sealed record GroupUpdateResult
     public IReadOnlyList<GroupGuildError> Errors
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>Indicates whether both results carry the same id, membership, players and failures.</summary>

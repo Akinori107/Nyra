@@ -27,10 +27,7 @@ public sealed class GuildEffects
         CancellationToken cancellationToken = default
     )
     {
-        if (options?.Ducking is not null)
-            NodeGuards.RequireNodeLink(_node, "ducking");
-        else
-            NodeGuards.RequireNodeLink(_node, "fading");
+        NodeGuards.RequireNodeLink(_node, options?.Ducking is not null ? "ducking" : "fading");
         FilterValidation.ThrowIfOutOfRange(
             options?.Ducking?.TargetVolume,
             0.0f,

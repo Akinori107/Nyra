@@ -43,12 +43,11 @@ public static class GatewayClientExtensions
 
         lock (UseNyraGate)
         {
-            if (Extensions.TryGetValue(client, out var existing) && !existing.IsDisposed)
+            if (Find(Extensions, client) is { } existing)
                 return existing;
 
             var extension = new NyraExtension(new NetCordBridge(client, logger));
-            Extensions.Remove(client);
-            Extensions.Add(client, extension);
+            Extensions.AddOrUpdate(client, extension);
             return extension;
         }
     }
@@ -78,14 +77,11 @@ public static class GatewayClientExtensions
 
         lock (UseNyraGate)
         {
-            if (ShardedExtensions.TryGetValue(client, out var existing) && !existing.IsDisposed)
+            if (Find(ShardedExtensions, client) is { } existing)
                 return existing;
 
             foreach (var shard in client)
-                if (
-                    Extensions.TryGetValue(shard, out var shardExtension)
-                    && !shardExtension.IsDisposed
-                )
+                if (Find(Extensions, shard) is not null)
                 {
                     try
                     {
@@ -99,8 +95,7 @@ public static class GatewayClientExtensions
                 }
 
             var extension = new NyraExtension(new NetCordBridge(client, logger));
-            ShardedExtensions.Remove(client);
-            ShardedExtensions.Add(client, extension);
+            ShardedExtensions.AddOrUpdate(client, extension);
             return extension;
         }
     }
@@ -111,9 +106,7 @@ public static class GatewayClientExtensions
     public static NyraExtension? GetNyra(this GatewayClient client)
     {
         ArgumentNullException.ThrowIfNull(client);
-        return Extensions.TryGetValue(client, out var extension) && !extension.IsDisposed
-            ? extension
-            : null;
+        return Find(Extensions, client);
     }
 
     /// <summary>Gets the Nyra extension of the sharded client, or null when Nyra is not enabled.</summary>
@@ -122,8 +115,15 @@ public static class GatewayClientExtensions
     public static NyraExtension? GetNyra(this ShardedGatewayClient client)
     {
         ArgumentNullException.ThrowIfNull(client);
-        return ShardedExtensions.TryGetValue(client, out var extension) && !extension.IsDisposed
+        return Find(ShardedExtensions, client);
+    }
+
+    private static NyraExtension? Find<TClient>(
+        ConditionalWeakTable<TClient, NyraExtension> extensions,
+        TClient client
+    )
+        where TClient : class =>
+        extensions.TryGetValue(client, out var extension) && !extension.IsDisposed
             ? extension
             : null;
-    }
 }

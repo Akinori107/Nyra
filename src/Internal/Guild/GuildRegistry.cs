@@ -176,7 +176,7 @@ internal sealed class GuildRegistry
                     )
                     .ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (Exception exception)
             {
                 await RollbackRegistrationAsync(
                         guildId,
@@ -185,19 +185,13 @@ internal sealed class GuildRegistry
                         completePump: true
                     )
                     .ConfigureAwait(false);
-                throw new VoiceHandshakeException(
-                    $"The player registration for guild {guildId} did not answer within the voice handshake timeout, the node may be overloaded or unable to reach the Discord voice server (Lavalink answers this request only once its voice connection is up)."
-                );
-            }
-            catch
-            {
-                await RollbackRegistrationAsync(
-                        guildId,
-                        connection,
-                        sendLeave: true,
-                        completePump: true
-                    )
-                    .ConfigureAwait(false);
+                if (
+                    exception is OperationCanceledException
+                    && !cancellationToken.IsCancellationRequested
+                )
+                    throw new VoiceHandshakeException(
+                        $"The player registration for guild {guildId} did not answer within the voice handshake timeout, the node may be overloaded or unable to reach the Discord voice server (Lavalink answers this request only once its voice connection is up)."
+                    );
                 throw;
             }
 

@@ -21,8 +21,7 @@ public sealed class NodeGroups
     public async Task<IReadOnlyList<Group>> ListAsync(CancellationToken cancellationToken = default)
     {
         _node.ThrowIfDisposed();
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "groups");
+        await _node.RequireNodeLinkAsync("groups", cancellationToken).ConfigureAwait(false);
 
         return await _node.Rest.Groups.ListAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -57,13 +56,12 @@ public sealed class NodeGroups
     private async Task<Group> CreateAsyncCore(
         string groupId,
         IReadOnlyList<ulong>? guildIds,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         _node.ThrowIfDisposed();
         ValidateGroupId(groupId);
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "groups");
+        await _node.RequireNodeLinkAsync("groups", cancellationToken).ConfigureAwait(false);
 
         return await _node
             .Rest.Groups.CreateAsync(groupId, guildIds, cancellationToken)
@@ -88,8 +86,7 @@ public sealed class NodeGroups
     {
         _node.ThrowIfDisposed();
         ValidateGroupId(groupId);
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "groups");
+        await _node.RequireNodeLinkAsync("groups", cancellationToken).ConfigureAwait(false);
 
         return await _node.Rest.Groups.GetAsync(groupId, cancellationToken).ConfigureAwait(false);
     }
@@ -155,8 +152,7 @@ public sealed class NodeGroups
     {
         _node.ThrowIfDisposed();
         ValidateGroupId(groupId);
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "groups");
+        await _node.RequireNodeLinkAsync("groups", cancellationToken).ConfigureAwait(false);
 
         await _node.Rest.Groups.DeleteAsync(groupId, cancellationToken).ConfigureAwait(false);
     }

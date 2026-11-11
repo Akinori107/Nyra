@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
@@ -156,11 +155,7 @@ public sealed class GuildFilters
     public async Task AddAsync(IFilter filter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
-        if (!FilterSlots.TryGetValue(filter.GetType(), out var place))
-            throw new ArgumentException(
-                $"The filter type '{filter.GetType().Name}' is not supported.",
-                nameof(filter)
-            );
+        var place = SlotOf(filter.GetType(), nameof(filter));
         RequireNodeLinkFilters(place(new FilterChain(), filter));
 
         await WriteAsync(
@@ -219,11 +214,7 @@ public sealed class GuildFilters
     public bool IsApplied(IFilter filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
-        if (!FilterSlots.TryGetValue(filter.GetType(), out var place))
-            throw new ArgumentException(
-                $"The filter type '{filter.GetType().Name}' is not supported.",
-                nameof(filter)
-            );
+        var place = SlotOf(filter.GetType(), nameof(filter));
 
         using var blank = Wire(place(new FilterChain(), null));
         using var wanted = Wire(place(new FilterChain(), filter), NyraJson.ComparisonOptions);
@@ -423,14 +414,21 @@ public sealed class GuildFilters
         CancellationToken cancellationToken
     )
     {
-        if (!FilterSlots.TryGetValue(filterType, out var place))
-            throw new ArgumentException(
-                $"The filter type '{filterType.Name}' is not supported.",
-                paramName
-            );
+        var place = SlotOf(filterType, paramName);
         await WriteAsync(() => place(DesiredFilters(), null), cancellationToken)
             .ConfigureAwait(false);
     }
+
+    private static Func<FilterChain, IFilter?, FilterChain> SlotOf(
+        Type filterType,
+        string? paramName
+    ) =>
+        FilterSlots.TryGetValue(filterType, out var place)
+            ? place
+            : throw new ArgumentException(
+                $"The filter type '{filterType.Name}' is not supported.",
+                paramName
+            );
 
     private async Task SendFiltersAsync(FilterChain raw, CancellationToken cancellationToken)
     {
@@ -438,10 +436,7 @@ public sealed class GuildFilters
 
         var desired = Normalize(raw);
 
-        if (_connection.IsTearingDown)
-            throw new InvalidOperationException(
-                "The connection is being torn down, it no longer accepts operations."
-            );
+        _connection.EnsureNotTearingDown();
 
         try
         {
@@ -527,11 +522,11 @@ public sealed class GuildFilters
 
     private static readonly TimeSpan ResendDeadline = TimeSpan.FromSeconds(10);
 
-    private readonly StrongBox<long> _resendNotBefore = new();
+    private long _resendNotBefore;
 
     internal async Task ResendPendingFiltersAsync()
     {
-        if (_node.Time.GetMilliseconds() < Volatile.Read(ref _resendNotBefore.Value))
+        if (_node.Time.GetMilliseconds() < Volatile.Read(ref _resendNotBefore))
             return;
 
         await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -564,7 +559,7 @@ public sealed class GuildFilters
         catch (RestException restFailure) when (restFailure.RetryAfter is { } retryAfter)
         {
             Volatile.Write(
-                ref _resendNotBefore.Value,
+                ref _resendNotBefore,
                 _node.Time.GetMilliseconds() + (long)retryAfter.TotalMilliseconds
             );
             _node.HandleError(

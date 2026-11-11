@@ -54,10 +54,15 @@ internal sealed class NodeConnector
                 _completionOwner = _node.Connection.LatestGeneration + 1;
             }
 
-            if (_node.IsReady)
+            void ClearCompletion()
             {
                 if (ReferenceEquals(_completion, completion))
                     _completion = null;
+            }
+
+            if (_node.IsReady)
+            {
+                ClearCompletion();
                 return;
             }
 
@@ -79,8 +84,7 @@ internal sealed class NodeConnector
             }
             catch
             {
-                if (ReferenceEquals(_completion, completion))
-                    _completion = null;
+                ClearCompletion();
                 completion.TrySetResult(false);
 
                 bool interrupted;
@@ -108,13 +112,11 @@ internal sealed class NodeConnector
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                if (ReferenceEquals(_completion, completion))
-                    _completion = null;
+                ClearCompletion();
                 throw;
             }
 
-            if (ReferenceEquals(_completion, completion))
-                _completion = null;
+            ClearCompletion();
 
             if (!becameReady)
                 throw new InvalidOperationException(

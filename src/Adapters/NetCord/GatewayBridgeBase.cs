@@ -11,8 +11,6 @@ internal abstract class GatewayBridgeBase(
     Action<ListenerVoiceStateUpdatedEventArgs> onListenerVoiceStateUpdated
 ) : IDisposable
 {
-    private readonly Action<VoiceServerUpdatedEventArgs> _onVoiceServerUpdated =
-        onVoiceServerUpdated;
     private readonly TaskCompletionSource<ClientInformation> _ready = new(
         TaskCreationOptions.RunContinuationsAsynchronously
     );
@@ -102,7 +100,7 @@ internal abstract class GatewayBridgeBase(
         )
             return ValueTask.CompletedTask;
 
-        _onVoiceServerUpdated(
+        onVoiceServerUpdated(
             new VoiceServerUpdatedEventArgs(
                 eventArgs.GuildId,
                 new VoiceServer(eventArgs.Token, eventArgs.Endpoint)

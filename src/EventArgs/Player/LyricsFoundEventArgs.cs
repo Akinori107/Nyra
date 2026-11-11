@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Nyra.Entities;
 
 namespace Nyra.EventArgs;
 
@@ -89,7 +90,7 @@ public sealed class SubscribedLyrics
     public IReadOnlyList<SyncedLyricsLine>? Lines
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 }
 

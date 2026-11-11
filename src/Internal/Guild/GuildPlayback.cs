@@ -167,7 +167,7 @@ internal sealed class GuildPlayback
         lock (PositionLock)
         {
             pauseHoldsOverStart =
-                !_connection.IsNodeLinkServer
+                !_connection.Node.IsNodeLink
                 && _lastPauseRequestSequence > _lastPlayRequestSequence
                 && _lastPauseRequestSequence > _lastResumeRequestSequence;
 
@@ -358,17 +358,15 @@ internal sealed class GuildPlayback
 
             if (player.State is { } state)
             {
+                _connection.State = state;
                 if (player.Track is not null && !holdsPreSeekPosition)
                 {
-                    _connection.State = state;
                     _lastCaptureTime = state.TimeMilliseconds;
                     if (startMilliseconds is { } start)
                         Anchor(start, player.Track, requestTick);
                     else
                         Anchor(state.PositionMilliseconds, player.Track);
                 }
-                else
-                    _connection.State = state;
             }
 
             _positionAdvancing =

@@ -4,6 +4,9 @@ namespace Nyra.Entities;
 
 internal static class ContentEquality
 {
+    public static IReadOnlyList<T> WithoutNulls<T>(IReadOnlyList<T>? list) =>
+        list is null ? [] : [.. list.Where(item => item is not null)];
+
     public static bool ListEquals<T>(IReadOnlyList<T>? left, IReadOnlyList<T>? right)
     {
         if (ReferenceEquals(left, right))

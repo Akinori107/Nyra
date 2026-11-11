@@ -52,8 +52,7 @@ public static class DiscordClientBuilderExtensions
 
             var bridge = new DSharpPlusBridge();
             var extension = new NyraExtension(bridge);
-            BuilderExtensions.Remove(builder);
-            BuilderExtensions.Add(builder, extension);
+            BuilderExtensions.AddOrUpdate(builder, extension);
 
             builder.ConfigureServices(services =>
             {
@@ -90,8 +89,7 @@ public static class DiscordClientBuilderExtensions
         {
             lock (UseNyraGate)
             {
-                Extensions.Remove(client);
-                Extensions.Add(client, live);
+                Extensions.AddOrUpdate(client, live);
             }
             return live;
         }

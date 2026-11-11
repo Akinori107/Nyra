@@ -134,8 +134,6 @@ public sealed class GuildConnection
             _handlerError
         );
 
-    internal bool IsNodeLinkServer => Node.IsNodeLink;
-
     internal void MarkTearingDown()
     {
         _tearingDown = true;
@@ -605,17 +603,7 @@ public sealed class GuildConnection
             await Filters.ResetForNewSessionAsync().ConfigureAwait(false);
             _voiceForward.ClearPending();
 
-            await _voiceForward
-                .ForwardAsync(
-                    new PlayerVoiceState
-                    {
-                        Token = VoiceToken,
-                        Endpoint = VoiceEndpoint,
-                        SessionId = VoiceSessionId,
-                        ChannelId = channelId,
-                    }
-                )
-                .ConfigureAwait(false);
+            await _voiceForward.ForwardAsync(CurrentVoice(channelId)).ConfigureAwait(false);
 
             if (_voiceForward.HasPending || _tearingDown)
                 return false;
@@ -1001,16 +989,17 @@ public sealed class GuildConnection
         VoiceToken = token;
         VoiceEndpoint = endpoint;
 
-        var voice = new PlayerVoiceState
+        await _voiceForward.ForwardAsync(CurrentVoice(channelId)).ConfigureAwait(false);
+    }
+
+    private PlayerVoiceState CurrentVoice(ulong channelId) =>
+        new()
         {
-            Token = token,
-            Endpoint = endpoint,
+            Token = VoiceToken,
+            Endpoint = VoiceEndpoint,
             SessionId = VoiceSessionId,
             ChannelId = channelId,
         };
-
-        await _voiceForward.ForwardAsync(voice).ConfigureAwait(false);
-    }
 
     internal Task ResendPendingVoiceAsync() => _voiceForward.ResendPendingAsync();
 
@@ -1054,12 +1043,17 @@ public sealed class GuildConnection
         _voiceForward.ClearPending();
     }
 
-    internal void EnsureActive()
+    internal void EnsureNotTearingDown()
     {
         if (_tearingDown)
             throw new InvalidOperationException(
                 "The connection is being torn down, it no longer accepts operations."
             );
+    }
+
+    internal void EnsureActive()
+    {
+        EnsureNotTearingDown();
         if (_restoring)
             throw new InvalidOperationException(
                 "The connection is being restored after the node lost its session, try again in a moment."

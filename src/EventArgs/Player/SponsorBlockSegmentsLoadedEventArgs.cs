@@ -20,6 +20,6 @@ public sealed class SponsorBlockSegmentsLoadedEventArgs : System.EventArgs
     public IReadOnlyList<SponsorBlockSegment> Segments
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 }

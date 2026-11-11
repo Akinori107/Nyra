@@ -46,7 +46,7 @@ public sealed record YouTubeConfigUpdate
     public IReadOnlyList<string> FieldsUpdated
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(f => f is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>Indicates whether the updates carry the same members.</summary>

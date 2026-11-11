@@ -99,8 +99,7 @@ public static class DiscordSocketClientExtensions
                 return existing;
 
             var extension = new NyraExtension(createBridge());
-            Extensions.Remove(client);
-            Extensions.Add(client, extension);
+            Extensions.AddOrUpdate(client, extension);
             return extension;
         }
     }

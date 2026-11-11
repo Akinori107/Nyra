@@ -42,11 +42,10 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
     private void EvictIfIdle(
         ConcurrentDictionary<ulong, LeaveEchoGuard> guard,
         ulong guildId,
-        LeaveEchoGuard guildFence,
-        ConcurrentDictionary<ulong, PendingHandshake> pending
+        LeaveEchoGuard guildFence
     )
     {
-        if (pending.TryGetValue(guildId, out _))
+        if (_pending.ContainsKey(guildId))
             return;
         guildFence.EvictIfIdleUnderLock(
             () =>
@@ -188,7 +187,7 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
 
         if (guard.TryGetValue(eventArgs.GuildId, out var guildFence))
         {
-            EvictIfIdle(guard, eventArgs.GuildId, guildFence, _pending);
+            EvictIfIdle(guard, eventArgs.GuildId, guildFence);
 
             if (eventArgs.VoiceState.ChannelId is null)
             {
@@ -198,7 +197,7 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
                 )
                 {
                     ConsumedEchoes.GetValue(eventArgs, static _ => Marker);
-                    EvictIfIdle(guard, eventArgs.GuildId, guildFence, _pending);
+                    EvictIfIdle(guard, eventArgs.GuildId, guildFence);
                     return true;
                 }
 
@@ -414,15 +413,8 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
                     exception
                 );
             }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (VoiceHandshakeException)
-            {
-                throw;
-            }
             catch (Exception exception)
+                when (exception is not (OperationCanceledException or VoiceHandshakeException))
             {
                 throw new VoiceHandshakeException(
                     $"The voice handshake for guild {guildId} failed: {exception.Message}",

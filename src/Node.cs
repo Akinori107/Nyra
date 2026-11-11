@@ -300,6 +300,12 @@ public sealed class Node : IAsyncDisposable, IDisposable
         bool forceProbe = false
     ) => _serverInfo.EnsureAsync(cancellationToken, forceProbe);
 
+    internal async Task RequireNodeLinkAsync(string feature, CancellationToken cancellationToken)
+    {
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        NodeGuards.RequireNodeLink(this, feature);
+    }
+
     internal void InvalidateServerInfo() => _serverInfo.Invalidate();
 
     internal Task ConnectAsync(
@@ -354,6 +360,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
     internal bool Stopped { get; private set; } = true;
 
     internal bool Disposed => _disposed;
+
+    internal bool IsShutDown => Stopped || Disposed;
 
     internal VoiceHandshakeCoordinator VoiceHandshake { get; }
 

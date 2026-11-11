@@ -74,8 +74,7 @@ public sealed class NodeLyrics
         _node.ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(track);
         ArgumentException.ThrowIfNullOrWhiteSpace(track.Encoded);
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "chapters");
+        await _node.RequireNodeLinkAsync("chapters", cancellationToken).ConfigureAwait(false);
 
         return await _node
             .Rest.Lyrics.LoadChaptersAsync(track.Encoded, cancellationToken)
@@ -101,8 +100,7 @@ public sealed class NodeLyrics
         _node.ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(track);
         ArgumentException.ThrowIfNullOrWhiteSpace(track.Encoded);
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "track meanings");
+        await _node.RequireNodeLinkAsync("track meanings", cancellationToken).ConfigureAwait(false);
 
         try
         {
