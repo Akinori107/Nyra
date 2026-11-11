@@ -135,20 +135,16 @@ public sealed class ConnectorAndTransportEdge
         var stack = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/sessions/fake-session/groups",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
-                        + "Content-Length: 100\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes("short")).ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                    stream.Close();
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/sessions/fake-session/groups", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
+                    + "Content-Length: 100\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream.WriteAsync(Encoding.UTF8.GetBytes("short")).ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+                stream.Close();
+            });
             var truncated = await Assert
                 .That(async () =>
                     await stack
@@ -167,10 +163,8 @@ public sealed class ConnectorAndTransportEdge
         var stack = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                PlayerPath,
-                (_, stream) => WriteTruncatedReplyAsync(stream, "404 Not Found")
+            stack.Server.OnRaw("GET", PlayerPath, (_, stream) =>
+                WriteTruncatedReplyAsync(stream, "404 Not Found")
             );
 
             var unreadable = await Assert
@@ -190,22 +184,18 @@ public sealed class ConnectorAndTransportEdge
         var stack = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/sessions/fake-session/groups",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-                        + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream
-                        .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the payload"))
-                        .ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                    stream.Close();
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/sessions/fake-session/groups", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                    + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream
+                    .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the payload"))
+                    .ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+                stream.Close();
+            });
             var unreachable = await Assert
                 .That(async () =>
                     await stack
@@ -537,23 +527,19 @@ public sealed class ConnectorAndTransportEdge
         var stack = await StartAsync(time: time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/loadstream",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
-                        + "Content-Length: 500\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream
-                        .WriteAsync(Encoding.UTF8.GetBytes("{\"message\":"))
-                        .ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                    stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
-                    stream.Close();
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/loadstream", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
+                    + "Content-Length: 500\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream
+                    .WriteAsync(Encoding.UTF8.GetBytes("{\"message\":"))
+                    .ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+                stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
+                stream.Close();
+            });
             var open = stack.Node.Rest.Tracks.OpenLoadStreamAsync(
                 "track",
                 100,

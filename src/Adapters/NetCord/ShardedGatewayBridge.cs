@@ -56,8 +56,7 @@ internal sealed class ShardedGatewayBridge : GatewayBridgeBase
                 "The sharded client has no started shards, start it before sending voice updates."
             );
 
-        var shard =
-            clients[0].Shard
+        var shard = clients[0].Shard
             ?? throw new InvalidOperationException(
                 "The shard range of this sharded client is not available."
             );

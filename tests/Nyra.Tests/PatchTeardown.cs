@@ -41,15 +41,11 @@ public sealed class PatchTeardown
         var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
 
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        server.On(
-            "PATCH",
-            PlayerPath,
-            _ =>
-            {
-                release.Task.Wait(TimeSpan.FromSeconds(3));
-                return new FakeRestResponse(200, PlayerBody);
-            }
-        );
+        server.On("PATCH", PlayerPath, _ =>
+        {
+            release.Task.Wait(TimeSpan.FromSeconds(3));
+            return new FakeRestResponse(200, PlayerBody);
+        });
         var resumeCts = new CancellationTokenSource();
         var resuming = conn.ResumeAsync(resumeCts.Token);
         await Task.Delay(150).ConfigureAwait(false);
@@ -258,15 +254,11 @@ public sealed class PatchTeardown
         var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
 
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        server.On(
-            "PATCH",
-            PlayerPath,
-            _ =>
-            {
-                release.Task.Wait(TimeSpan.FromSeconds(3));
-                return new FakeRestResponse(200, PlayerBody);
-            }
-        );
+        server.On("PATCH", PlayerPath, _ =>
+        {
+            release.Task.Wait(TimeSpan.FromSeconds(3));
+            return new FakeRestResponse(200, PlayerBody);
+        });
         var resumeCts = new CancellationTokenSource();
         _ = conn.ResumeAsync(resumeCts.Token);
         await Task.Delay(150).ConfigureAwait(false);
@@ -307,15 +299,11 @@ public sealed class PatchTeardown
         var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
 
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        server.On(
-            "DELETE",
-            PlayerPath,
-            _ =>
-            {
-                release.Task.Wait(TimeSpan.FromSeconds(3));
-                return new FakeRestResponse(204, string.Empty);
-            }
-        );
+        server.On("DELETE", PlayerPath, _ =>
+        {
+            release.Task.Wait(TimeSpan.FromSeconds(3));
+            return new FakeRestResponse(204, string.Empty);
+        });
         var holding = node.Registry.DestroyPlayerExclusivelyAsync(conn, CancellationToken.None);
         await Task.Delay(150).ConfigureAwait(false);
 

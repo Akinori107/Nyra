@@ -118,14 +118,10 @@ public sealed class ConnectionLifecycle
             await Assert.That(playBody).IsNotNull();
             await Assert.That(playBody).Contains("\"position\":10000");
 
-            server.On(
-                "GET",
-                PlayerPath,
-                _ => new FakeRestResponse(
-                    200,
-                    """{"guildId":"777","track":null,"volume":80,"paused":true,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                )
-            );
+            server.On("GET", PlayerPath, _ => new FakeRestResponse(
+                200,
+                """{"guildId":"777","track":null,"volume":80,"paused":true,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            ));
             var refreshed = await conn.RefreshAsync().ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -134,11 +130,10 @@ public sealed class ConnectionLifecycle
                 await Assert.That(refreshed.IsPaused).IsTrue();
             }
 
-            server.On(
-                "PATCH",
-                PlayerPath,
-                _ => new FakeRestResponse(500, "{\"message\":\"boom\"}")
-            );
+            server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                500,
+                "{\"message\":\"boom\"}"
+            ));
             await Assert
                 .That(async () =>
                 {
@@ -280,16 +275,12 @@ public sealed class ConnectionLifecycle
                 })
                 .Throws<NotSupportedException>();
 
-            sv.On(
-                "PATCH",
-                PlayerPath,
-                _ => new FakeRestResponse(
-                    200,
-                    "{\"guildId\":\"777\",\"track\":"
-                        + TrackJson
-                        + ",\"volume\":100,\"paused\":false,\"state\":{\"time\":0,\"position\":0,\"connected\":true,\"ping\":42}}"
-                )
-            );
+            sv.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                200,
+                "{\"guildId\":\"777\",\"track\":"
+                    + TrackJson
+                    + ",\"volume\":100,\"paused\":false,\"state\":{\"time\":0,\"position\":0,\"connected\":true,\"ping\":42}}"
+            ));
             var played = await conn.PlayIdentifierAsync("ph8qt3dhvwo").ConfigureAwait(false);
             await Assert.That(played.Info.Title).IsEqualTo("ATWA");
             var identifierBody = sv
@@ -322,11 +313,10 @@ public sealed class ConnectionLifecycle
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
             var track = Track();
 
-            server.On(
-                "PATCH",
-                PlayerPath,
-                _ => new FakeRestResponse(500, "{\"message\":\"boom\"}")
-            );
+            server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                500,
+                "{\"message\":\"boom\"}"
+            ));
             await Assert
                 .That(async () =>
                 {
@@ -342,11 +332,10 @@ public sealed class ConnectionLifecycle
                 .Body;
             await Assert.That(pauseBody).IsEqualTo("{\"paused\":true}");
 
-            server.On(
-                "PATCH",
-                PlayerPath,
-                _ => new FakeRestResponse(500, "{\"message\":\"boom\"}")
-            );
+            server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                500,
+                "{\"message\":\"boom\"}"
+            ));
             await Assert
                 .That(async () =>
                 {
@@ -372,19 +361,15 @@ public sealed class ConnectionLifecycle
 
             var parked = new TaskCompletionSource();
             var release = new TaskCompletionSource();
-            server.On(
-                "PATCH",
-                PlayerPath,
-                _ =>
-                {
-                    parked.TrySetResult();
-                    release.Task.Wait(TimeSpan.FromSeconds(10));
-                    return new FakeRestResponse(
-                        200,
-                        """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                    );
-                }
-            );
+            server.On("PATCH", PlayerPath, _ =>
+            {
+                parked.TrySetResult();
+                release.Task.Wait(TimeSpan.FromSeconds(10));
+                return new FakeRestResponse(
+                    200,
+                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+                );
+            });
             var playing = conn.PlayAsync(Track());
             await parked.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 

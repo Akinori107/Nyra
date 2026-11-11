@@ -46,11 +46,10 @@ public sealed class PositionPath
         );
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-        server.On(
-            "PATCH",
-            PlayerPath,
-            _ => new FakeRestResponse(200, PlayerBody(pausedEcho, filtersEcho))
-        );
+        server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+            200,
+            PlayerBody(pausedEcho, filtersEcho)
+        ));
         var connect = node.ConnectAsync(777, 555);
         await Task.Delay(100).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
@@ -240,14 +239,10 @@ public sealed class PositionPath
     {
         var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false)
             .ConfigureAwait(false);
-        server.On(
-            "PATCH",
-            PlayerPath,
-            _ => new FakeRestResponse(
-                200,
-                PlayerBody(paused: false, positionMilliseconds: serverPosition)
-            )
-        );
+        server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+            200,
+            PlayerBody(paused: false, positionMilliseconds: serverPosition)
+        ));
 
         await conn.PlayAsync(
                 Track(),
@@ -278,11 +273,10 @@ public sealed class PositionPath
                 lavalink: new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" }
             )
             .ConfigureAwait(false);
-        server.On(
-            "PATCH",
-            PlayerPath,
-            _ => new FakeRestResponse(200, PlayerBody(paused: false, positionMilliseconds: 170_000))
-        );
+        server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+            200,
+            PlayerBody(paused: false, positionMilliseconds: 170_000)
+        ));
 
         await conn.PlayIdentifierAsync(
                 "https://example.test/a.mp3",

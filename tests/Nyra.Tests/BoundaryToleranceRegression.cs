@@ -43,18 +43,14 @@ public sealed class BoundaryToleranceRegression
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
 
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ =>
-            {
-                Thread.Sleep(4000);
-                return new FakeRestResponse(
-                    200,
-                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                );
-            }
-        );
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ =>
+        {
+            Thread.Sleep(4000);
+            return new FakeRestResponse(
+                200,
+                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            );
+        });
 
         var connect = node.ConnectAsync(777, 555);
         await Task.Delay(150).ConfigureAwait(false);

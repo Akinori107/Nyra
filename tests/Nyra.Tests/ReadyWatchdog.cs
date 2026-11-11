@@ -86,14 +86,10 @@ public sealed class ReadyWatchdog
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
-            sv.On(
-                "PATCH",
-                "/v4/sessions/fake-session/players/777",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                )
-            );
+            sv.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+                200,
+                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            ));
             var connect = node.ConnectAsync(777, 555);
             await Task.Delay(100).ConfigureAwait(false);
             bridge.FireVoiceState(777, 555, "vsess");
@@ -134,15 +130,11 @@ public sealed class ReadyWatchdog
         {
             var (node, sv) = (stack.Node, stack.Server);
             var sessionBodies = new System.Collections.Concurrent.ConcurrentQueue<string>();
-            sv.On(
-                "PATCH",
-                "/v4/sessions/fake-session",
-                call =>
-                {
-                    sessionBodies.Enqueue(call.Body ?? string.Empty);
-                    return new FakeRestResponse(200, """{"resuming":true,"timeout":60}""");
-                }
-            );
+            sv.On("PATCH", "/v4/sessions/fake-session", call =>
+            {
+                sessionBodies.Enqueue(call.Body ?? string.Empty);
+                return new FakeRestResponse(200, """{"resuming":true,"timeout":60}""");
+            });
             await node.UpdateSessionAsync(false, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
             sessionBodies.Clear();
 

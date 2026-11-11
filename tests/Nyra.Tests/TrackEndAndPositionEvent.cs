@@ -21,11 +21,10 @@ public sealed class TrackEndAndPositionEvent
     {
         var holder = new Holder();
         var server = new FakeNodeServer();
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ => new FakeRestResponse(200, holder.Reply)
-        );
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+            200,
+            holder.Reply
+        ));
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);

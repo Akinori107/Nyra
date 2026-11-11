@@ -67,8 +67,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 if (data.TokenType != JsonTokenType.StartObject)
                     throw new JsonException("Track load result is missing its 'data' object.");
 
-                var track =
-                    NyraJson.Deserialize<Track>(ref data, options)
+                var track = NyraJson.Deserialize<Track>(ref data, options)
                     ?? throw new JsonException("Track load result 'data' member is null.");
                 return new TrackLoaded(track);
             }
@@ -86,8 +85,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 if (!hasData)
                     throw new JsonException("Search load result is missing its 'data' member.");
 
-                var tracks =
-                    NyraJson.Deserialize<List<Track>>(ref data, options)
+                var tracks = NyraJson.Deserialize<List<Track>>(ref data, options)
                     ?? throw new JsonException("Search load result 'data' member is null.");
                 foreach (var track in tracks)
                     if (track is null)

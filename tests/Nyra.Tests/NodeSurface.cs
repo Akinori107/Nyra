@@ -148,18 +148,11 @@ public sealed class NodeSurface
             await Assert.That(groups[0].Id).IsEqualTo("g1");
 
             var created = new TaskCompletionSource<string?>();
-            server.On(
-                "POST",
-                "/v4/sessions/fake-session/groups",
-                call =>
-                {
-                    created.TrySetResult(call.Body);
-                    return new FakeRestResponse(
-                        200,
-                        """{"id":"g2","guildIds":[777],"createdAt":1}"""
-                    );
-                }
-            );
+            server.On("POST", "/v4/sessions/fake-session/groups", call =>
+            {
+                created.TrySetResult(call.Body);
+                return new FakeRestResponse(200, """{"id":"g2","guildIds":[777],"createdAt":1}""");
+            });
             var made = await node
                 .Groups.CreateAsync("g2", new List<ulong> { 777 }.Where(_ => true))
                 .ConfigureAwait(false);
@@ -185,11 +178,10 @@ public sealed class NodeSurface
                 .That(server.RestCalls)
                 .Contains(c => c is { Method: "DELETE", Path: groupPath });
 
-            server.On(
-                "PATCH",
-                groupPath,
-                _ => new FakeRestResponse(200, """{"id":"g1","createdAt":1}""")
-            );
+            server.On("PATCH", groupPath, _ => new FakeRestResponse(
+                200,
+                """{"id":"g1","createdAt":1}"""
+            ));
             await node.Groups.StopAsync("g1").ConfigureAwait(false);
             await Assert.That(PatchBody()).Contains("\"encoded\":null");
             await node.Groups.PauseAsync("g1").ConfigureAwait(false);
@@ -263,15 +255,11 @@ public sealed class NodeSurface
             await Assert.That(PatchBody()).Contains("\"remove\":[\"222\"]");
 
             string? lastSessionBody = null;
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session",
-                call =>
-                {
-                    lastSessionBody = call.Body;
-                    return new FakeRestResponse(200, """{"resuming":true,"timeout":90}""");
-                }
-            );
+            server.On("PATCH", "/v4/sessions/fake-session", call =>
+            {
+                lastSessionBody = call.Body;
+                return new FakeRestResponse(200, """{"resuming":true,"timeout":90}""");
+            });
             var fractional = await node.UpdateSessionAsync(true, TimeSpan.FromMilliseconds(1500))
                 .ConfigureAwait(false);
             using (Assert.Multiple())

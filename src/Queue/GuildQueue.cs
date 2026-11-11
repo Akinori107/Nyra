@@ -510,10 +510,8 @@ public sealed class GuildQueue
     }
 
     private Task OnHandlerErrorAsync(Exception exception, System.EventArgs? origin) =>
-        HandlerError.RaiseAsync(
-            this,
-            new HandlerErrorEventArgs(exception, origin),
-            static (_, _) => Task.CompletedTask
+        HandlerError.RaiseAsync(this, new HandlerErrorEventArgs(exception, origin), static (_, _) =>
+            Task.CompletedTask
         );
 
     internal QueuePolicy Policy => new(_loop, _historyLimit);

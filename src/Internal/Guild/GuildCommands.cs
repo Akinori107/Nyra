@@ -241,8 +241,9 @@ internal sealed class GuildCommands
 
         var requestTick = _node.Time.GetMilliseconds();
         var requestTicket = GuildFilters.NextTicket();
-        var player =
-            await _node.Rest.Players.GetAsync(GuildId, cancellationToken).ConfigureAwait(false)
+        var player = await _node
+            .Rest.Players.GetAsync(GuildId, cancellationToken)
+            .ConfigureAwait(false)
             ?? throw new InvalidOperationException($"The node has no player for guild {GuildId}.");
 
         await _connection

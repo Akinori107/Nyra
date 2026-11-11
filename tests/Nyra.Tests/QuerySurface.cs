@@ -54,11 +54,10 @@ public sealed class QuerySurface
     }
 
     private static void ServeLoad(FakeNodeServer server) =>
-        server.On(
-            "GET",
-            "/v4/loadtracks",
-            _ => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
-        );
+        server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+            200,
+            $$"""{"loadType":"track","data":{{TrackJson}}}"""
+        ));
 
     [Test]
     public async Task Search()
@@ -125,11 +124,10 @@ public sealed class QuerySurface
                     .IsTrue();
             }
 
-            server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
-            );
+            server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                200,
+                $$"""{"loadType":"track","data":{{TrackJson}}}"""
+            ));
             var urlResult = await node.LoadTracksAsync("https://example.com/audio.mp3?t=15")
                 .ConfigureAwait(false);
             await Assert
@@ -143,14 +141,10 @@ public sealed class QuerySurface
             var bareStack = await StartAsync(bareServer).ConfigureAwait(false);
             await using (bareStack.ConfigureAwait(false))
             {
-                bareStack.Server.On(
-                    "GET",
-                    "/v4/loadtracks",
-                    _ => new FakeRestResponse(
-                        200,
-                        $$"""{"loadType":"track","data":{{TrackJson}}}"""
-                    )
-                );
+                bareStack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                    200,
+                    $$"""{"loadType":"track","data":{{TrackJson}}}"""
+                ));
                 var bareLoaded = await bareStack
                     .Node.LoadTracksAsync("atwa", SearchType.Spotify)
                     .ConfigureAwait(false);
@@ -179,11 +173,10 @@ public sealed class QuerySurface
         {
             var (node, server) = (stack.Node, stack.Server);
 
-            server.On(
-                "POST",
-                "/v4/decodetracks",
-                _ => new FakeRestResponse(200, $"[{TrackJson},{TrackJson}]")
-            );
+            server.On("POST", "/v4/decodetracks", _ => new FakeRestResponse(
+                200,
+                $"[{TrackJson},{TrackJson}]"
+            ));
             var decoded = await node.Tracks.DecodeManyAsync(["one", "two"]).ConfigureAwait(false);
             await Assert.That(decoded.Count).IsEqualTo(2);
 
@@ -201,11 +194,10 @@ public sealed class QuerySurface
                 })
                 .Throws<ArgumentException>();
 
-            server.On(
-                "POST",
-                "/v4/encodedtracks",
-                _ => new FakeRestResponse(200, "[\"QXRsZWFzdA==\"]")
-            );
+            server.On("POST", "/v4/encodedtracks", _ => new FakeRestResponse(
+                200,
+                "[\"QXRsZWFzdA==\"]"
+            ));
             var info = new TrackInfo
             {
                 Identifier = "ph8qt3dhvwo",
@@ -216,11 +208,10 @@ public sealed class QuerySurface
             var encoded = await node.Tracks.EncodeAsync(info).ConfigureAwait(false);
             await Assert.That(encoded).IsEqualTo("QXRsZWFzdA==");
 
-            server.On(
-                "POST",
-                "/v4/encodedtracks",
-                _ => new FakeRestResponse(200, "[\"QXRsZWFzdA==\",\"QXRsZWFzdB==\"]")
-            );
+            server.On("POST", "/v4/encodedtracks", _ => new FakeRestResponse(
+                200,
+                "[\"QXRsZWFzdA==\",\"QXRsZWFzdB==\"]"
+            ));
             var batch = await node.Tracks.EncodeManyAsync([info, info]).ConfigureAwait(false);
             await Assert.That(batch.Count).IsEqualTo(2);
 
@@ -238,25 +229,20 @@ public sealed class QuerySurface
                 .Throws<ArgumentException>();
 
             var freed = new TaskCompletionSource<string>();
-            server.On(
-                "POST",
-                "/v4/routeplanner/free/address",
-                call =>
-                {
-                    freed.TrySetResult(call.Body ?? string.Empty);
-                    return new FakeRestResponse(204, string.Empty);
-                }
-            );
+            server.On("POST", "/v4/routeplanner/free/address", call =>
+            {
+                freed.TrySetResult(call.Body ?? string.Empty);
+                return new FakeRestResponse(204, string.Empty);
+            });
             await node.RoutePlanner.FreeAddressAsync("/1.2.3.4").ConfigureAwait(false);
             await Assert
                 .That(await freed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
                 .Contains("1.2.3.4");
             await Assert.That(await freed.Task.ConfigureAwait(false)).DoesNotContain("/1");
-            server.On(
-                "POST",
-                "/v4/routeplanner/free/all",
-                _ => new FakeRestResponse(204, string.Empty)
-            );
+            server.On("POST", "/v4/routeplanner/free/all", _ => new FakeRestResponse(
+                204,
+                string.Empty
+            ));
             await node.RoutePlanner.FreeAllAddressesAsync().ConfigureAwait(false);
             var freedAll = server.RestCalls.Any(c =>
                 c is { Method: "POST", Path: "/v4/routeplanner/free/all" }
@@ -341,17 +327,15 @@ public sealed class QuerySurface
                 })
                 .Throws<ArgumentException>();
 
-            server.On(
-                "GET",
-                "/v4/sessions/fake-session/groups/grp",
-                _ => new FakeRestResponse(404, "{}")
-            );
+            server.On("GET", "/v4/sessions/fake-session/groups/grp", _ => new FakeRestResponse(
+                404,
+                "{}"
+            ));
             await Assert.That(await node.Groups.GetAsync("grp").ConfigureAwait(false)).IsNull();
-            server.On(
-                "GET",
-                "/v4/sessions/fake-session/groups/grp",
-                _ => new FakeRestResponse(200, """{"id":"grp","guildIds":[777],"createdAt":100}""")
-            );
+            server.On("GET", "/v4/sessions/fake-session/groups/grp", _ => new FakeRestResponse(
+                200,
+                """{"id":"grp","guildIds":[777],"createdAt":100}"""
+            ));
             var group = await node.Groups.GetAsync("grp").ConfigureAwait(false);
             await Assert.That(group is { Id: "grp", GuildIds: [777] }).IsTrue();
 
@@ -372,11 +356,10 @@ public sealed class QuerySurface
                 })
                 .Throws<ArgumentOutOfRangeException>();
 
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session/groups/grp",
-                _ => new FakeRestResponse(200, """{"id":"grp","guildIds":[777],"createdAt":100}""")
-            );
+            server.On("PATCH", "/v4/sessions/fake-session/groups/grp", _ => new FakeRestResponse(
+                200,
+                """{"id":"grp","guildIds":[777],"createdAt":100}"""
+            ));
             var result = await node
                 .Groups.UpdateAsync("grp", new GroupUpdate { Volume = 150, Paused = true })
                 .ConfigureAwait(false);
@@ -401,14 +384,10 @@ public sealed class QuerySurface
         await using (stack.ConfigureAwait(false))
         {
             var (node, server) = (stack.Node, stack.Server);
-            server.On(
-                "GET",
-                "/v4/meaning",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"loadType":"meaning","data":{"source":"genius","meaning":"about love"}}"""
-                )
-            );
+            server.On("GET", "/v4/meaning", _ => new FakeRestResponse(
+                200,
+                """{"loadType":"meaning","data":{"source":"genius","meaning":"about love"}}"""
+            ));
             var track = JsonSerializer.Deserialize<Track>(TrackJson, NyraJson.SerializerOptions)!;
             var meaning = await node.Lyrics.LoadMeaningAsync(track, "en").ConfigureAwait(false);
             using (Assert.Multiple())
@@ -441,14 +420,10 @@ public sealed class QuerySurface
             var plain = await node.LoadTracksAsync("plain query").ConfigureAwait(false);
             await Assert.That(plain is TrackLoaded { Track.StartPosition: null }).IsTrue();
 
-            server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(
-                    200,
-                    $$"""{"loadType":"search","data":[{{TrackJson}},{{TrackJson}}]}"""
-                )
-            );
+            server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                200,
+                $$"""{"loadType":"search","data":[{{TrackJson}},{{TrackJson}}]}"""
+            ));
             var search = await node.LoadTracksAsync("https://x.example/watch?list=a&t=90")
                 .ConfigureAwait(false);
             await Assert
@@ -458,14 +433,10 @@ public sealed class QuerySurface
                 )
                 .IsTrue();
 
-            server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(
-                    200,
-                    $$$"""{"loadType":"playlist","data":{"info":{"name":"mix","selectedTrack":1},"tracks":[{{{TrackJson}}},{{{TrackJson}}}]}}"""
-                )
-            );
+            server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                200,
+                $$$"""{"loadType":"playlist","data":{"info":{"name":"mix","selectedTrack":1},"tracks":[{{{TrackJson}}},{{{TrackJson}}}]}}"""
+            ));
             var playlist = await node.LoadTracksAsync("https://x.example/playlist?x=1&t=60")
                 .ConfigureAwait(false);
             await Assert
@@ -476,14 +447,10 @@ public sealed class QuerySurface
                 )
                 .IsTrue();
 
-            server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(
-                    200,
-                    $$$"""{"loadType":"playlist","data":{"info":{"name":"mix","selectedTrack":5},"tracks":[{{{TrackJson}}},{{{TrackJson}}}]}}"""
-                )
-            );
+            server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                200,
+                $$$"""{"loadType":"playlist","data":{"info":{"name":"mix","selectedTrack":5},"tracks":[{{{TrackJson}}},{{{TrackJson}}}]}}"""
+            ));
             var orphan = await node.LoadTracksAsync("https://x.example/playlist?t=30")
                 .ConfigureAwait(false);
             await Assert

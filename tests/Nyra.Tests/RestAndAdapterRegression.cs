@@ -77,11 +77,11 @@ public sealed class RestAndAdapterRegression
         var stack = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.On(
-                "GET",
-                "/v4/sessions/fake-session/groups",
-                _ => new FakeRestResponse(429, """{"message":"slow down"}""", "not-a-date")
-            );
+            stack.Server.On("GET", "/v4/sessions/fake-session/groups", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}""",
+                "not-a-date"
+            ));
             var throttled = await Assert
                 .That(async () =>
                     await stack
@@ -190,11 +190,10 @@ public sealed class RestAndAdapterRegression
                 .Throws<ArgumentOutOfRangeException>();
             await Assert.That(unknown!.ActualValue).IsEqualTo((SearchType)999);
 
-            stack.Server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(200, """{"loadType":"empty","data":[],"pluginInfo":{}}""")
-            );
+            stack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                200,
+                """{"loadType":"empty","data":[],"pluginInfo":{}}"""
+            ));
             var plain = await stack
                 .Node.LoadTracksAsync("no position marker in this one")
                 .ConfigureAwait(false);
@@ -233,15 +232,11 @@ public sealed class RestAndAdapterRegression
 
         var seen = new List<Exception>();
         await handlers
-            .RaiseAsync(
-                new object(),
-                System.EventArgs.Empty,
-                (error, _) =>
-                {
-                    seen.Add(error);
-                    return Task.CompletedTask;
-                }
-            )
+            .RaiseAsync(new object(), System.EventArgs.Empty, (error, _) =>
+            {
+                seen.Add(error);
+                return Task.CompletedTask;
+            })
             .ConfigureAwait(false);
         await Assert.That(seen.Count).IsEqualTo(1);
         await Assert.That(seen[0]).IsTypeOf<InvalidOperationException>();
@@ -250,10 +245,8 @@ public sealed class RestAndAdapterRegression
         await Assert
             .That(async () =>
                 await handlers
-                    .RaiseAsync(
-                        new object(),
-                        System.EventArgs.Empty,
-                        (_, _) => throw new InvalidOperationException("logger boom")
+                    .RaiseAsync(new object(), System.EventArgs.Empty, (_, _) =>
+                        throw new InvalidOperationException("logger boom")
                     )
                     .ConfigureAwait(false)
             )

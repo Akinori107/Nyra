@@ -19,14 +19,10 @@ public sealed class RestEdge
         {
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
-            server.On(
-                "PATCH",
-                PlayerPath,
-                _ => new FakeRestResponse(
-                    200,
-                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                )
-            );
+            server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                200,
+                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            ));
 
             await conn.PlayAsync(Track(), new PlayOptions { NoReplace = true })
                 .ConfigureAwait(false);
@@ -224,15 +220,11 @@ public sealed class RestEdge
             await Assert.That(status?.Class).IsEqualTo(RoutePlannerClass.Rotating);
 
             var freed = new TaskCompletionSource<string?>();
-            server.On(
-                "POST",
-                "/v4/routeplanner/free/address",
-                call =>
-                {
-                    freed.TrySetResult(call.Body);
-                    return new FakeRestResponse(204, string.Empty);
-                }
-            );
+            server.On("POST", "/v4/routeplanner/free/address", call =>
+            {
+                freed.TrySetResult(call.Body);
+                return new FakeRestResponse(204, string.Empty);
+            });
             await node.RoutePlanner.FreeAddressAsync("/1.0.0.0").ConfigureAwait(false);
             await Assert
                 .That(
@@ -268,14 +260,10 @@ public sealed class RestEdge
         await using (stack.ConfigureAwait(false))
         {
             var (node, server) = (stack.Node, stack.Server);
-            server.On(
-                "GET",
-                "/v4/loadlyrics",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"loadType":"lyrics","data":{"name":"ATWA","synced":false,"text":"la"}}"""
-                )
-            );
+            server.On("GET", "/v4/loadlyrics", _ => new FakeRestResponse(
+                200,
+                """{"loadType":"lyrics","data":{"name":"ATWA","synced":false,"text":"la"}}"""
+            ));
             var lyrics = await node
                 .Lyrics.LoadAsync(track, language: "pt", source: "musixmatch")
                 .ConfigureAwait(false);
@@ -326,14 +314,10 @@ public sealed class RestEdge
             var missCall = lavaServer.RestCalls.Last(c => c.Path == "/v4/lyrics");
             await Assert.That(missCall.Query?.Contains("skipTrackSource=true")).IsTrue();
 
-            lavaServer.On(
-                "GET",
-                "/v4/lyrics",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"sourceName":"musixmatch","provider":"Musixmatch","text":"la","lines":[null,{"timestamp":1000,"duration":500,"line":"la"}]}"""
-                )
-            );
+            lavaServer.On("GET", "/v4/lyrics", _ => new FakeRestResponse(
+                200,
+                """{"sourceName":"musixmatch","provider":"Musixmatch","text":"la","lines":[null,{"timestamp":1000,"duration":500,"line":"la"}]}"""
+            ));
             var lavaLyrics = await lavaNode.Lyrics.LoadAsync(track).ConfigureAwait(false);
             await Assert
                 .That(
@@ -358,14 +342,10 @@ public sealed class RestEdge
             var (node, server) = (stack.Node, stack.Server);
             var track = Track();
 
-            server.On(
-                "GET",
-                "/v4/meaning",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"loadType":"meaning","data":{"title":"ATWA","description":"d","paragraphs":["p"]}}"""
-                )
-            );
+            server.On("GET", "/v4/meaning", _ => new FakeRestResponse(
+                200,
+                """{"loadType":"meaning","data":{"title":"ATWA","description":"d","paragraphs":["p"]}}"""
+            ));
             var meaning = await node.Lyrics.LoadMeaningAsync(track, "pt").ConfigureAwait(false);
             await Assert
                 .That(meaning is { LoadType: MeaningLoadType.Meaning, Data.Title: "ATWA" })
@@ -408,14 +388,10 @@ public sealed class RestEdge
             var (node, server) = (stack.Node, stack.Server);
             var track = Track();
 
-            server.On(
-                "GET",
-                "/v4/trackstream",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"url":"https://cdn/x","protocol":"http","format":"m4a","itag":140}"""
-                )
-            );
+            server.On("GET", "/v4/trackstream", _ => new FakeRestResponse(
+                200,
+                """{"url":"https://cdn/x","protocol":"http","format":"m4a","itag":140}"""
+            ));
             var streamUrl = await node
                 .Tracks.GetStreamUrlAsync(track, itag: 140)
                 .ConfigureAwait(false);
@@ -668,18 +644,14 @@ public sealed class RestEdge
             }
 
             var patched = new TaskCompletionSource<string?>();
-            stack.Server.On(
-                "PATCH",
-                "/v4/sessions/fake-session/groups/g1",
-                call =>
-                {
-                    patched.TrySetResult(call.Body);
-                    return new FakeRestResponse(
-                        200,
-                        """{"id":"g1","guildIds":[777],"createdAt":123}"""
-                    );
-                }
-            );
+            stack.Server.On("PATCH", "/v4/sessions/fake-session/groups/g1", call =>
+            {
+                patched.TrySetResult(call.Body);
+                return new FakeRestResponse(
+                    200,
+                    """{"id":"g1","guildIds":[777],"createdAt":123}"""
+                );
+            });
             var result = await node
                 .Groups.UpdateAsync("g1", new GroupUpdate { Paused = true, Volume = 100 })
                 .ConfigureAwait(false);
@@ -717,18 +689,14 @@ public sealed class RestEdge
                     .Throws<ArgumentException>();
 
             var patched = new TaskCompletionSource<string?>();
-            server.On(
-                "PATCH",
-                "/v4/youtube/config",
-                call =>
-                {
-                    patched.TrySetResult(call.Body);
-                    return new FakeRestResponse(
-                        200,
-                        """{"message":"applied","workersUpdated":3,"fieldsUpdated":["refreshToken"]}"""
-                    );
-                }
-            );
+            server.On("PATCH", "/v4/youtube/config", call =>
+            {
+                patched.TrySetResult(call.Body);
+                return new FakeRestResponse(
+                    200,
+                    """{"message":"applied","workersUpdated":3,"fieldsUpdated":["refreshToken"]}"""
+                );
+            });
             var update = await node.YouTube.UpdateConfigAsync("rtok", "vdat").ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -778,11 +746,11 @@ public sealed class RestEdge
                 .IsNull();
 
             stack.Server.InfoBody = null;
-            stack.Server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(429, """{"message":"slow down"}""", "2")
-            );
+            stack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}""",
+                "2"
+            ));
             RestException? throttled = null;
             try
             {
@@ -794,15 +762,11 @@ public sealed class RestEdge
             }
             await Assert.That(throttled?.RetryAfter).IsEqualTo(TimeSpan.FromSeconds(2));
 
-            stack.Server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(
-                    429,
-                    """{"message":"slow down"}""",
-                    DateTimeOffset.UtcNow.AddSeconds(30).ToString("R")
-                )
-            );
+            stack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}""",
+                DateTimeOffset.UtcNow.AddSeconds(30).ToString("R")
+            ));
             RestException? dated = null;
             try
             {
@@ -820,15 +784,11 @@ public sealed class RestEdge
                 )
                 .IsTrue();
 
-            stack.Server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(
-                    429,
-                    """{"message":"slow down"}""",
-                    DateTimeOffset.UtcNow.AddSeconds(-30).ToString("R")
-                )
-            );
+            stack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}""",
+                DateTimeOffset.UtcNow.AddSeconds(-30).ToString("R")
+            ));
             RestException? stale = null;
             try
             {
@@ -840,11 +800,11 @@ public sealed class RestEdge
             }
             await Assert.That(stale?.RetryAfter).IsNull();
 
-            stack.Server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(429, """{"message":"slow down"}""", "banana")
-            );
+            stack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}""",
+                "banana"
+            ));
             RestException? junk = null;
             try
             {

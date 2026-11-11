@@ -102,8 +102,7 @@ public sealed class DSharpPlusBridge
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var client =
-            Volatile.Read(ref _client)
+        var client = Volatile.Read(ref _client)
             ?? throw new InvalidOperationException(
                 "The Nyra bridge has not been bound to a DiscordClient yet, the event handlers only run after the client connects."
             );

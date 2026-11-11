@@ -28,14 +28,10 @@ public sealed class GuildFeature
         );
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-        server.On(
-            "PATCH",
-            PlayerPath,
-            _ => new FakeRestResponse(
-                200,
-                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-            )
-        );
+        server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+            200,
+            """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+        ));
         var connect = node.ConnectAsync(777, 555);
         await Task.Delay(100).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
@@ -77,11 +73,10 @@ public sealed class GuildFeature
                 })
                 .Throws<ArgumentOutOfRangeException>();
 
-            stack.Server.On(
-                "PATCH",
-                path,
-                _ => new FakeRestResponse(200, """{"enabled":true,"categories":["sponsor"]}""")
-            );
+            stack.Server.On("PATCH", path, _ => new FakeRestResponse(
+                200,
+                """{"enabled":true,"categories":["sponsor"]}"""
+            ));
             var state = await conn
                 .SponsorBlock.SetAsync(
                     new SponsorBlockSettings { Enabled = true, Categories = ["sponsor"] }
@@ -104,11 +99,10 @@ public sealed class GuildFeature
                     })
                     .Throws<ArgumentException>();
 
-            stack.Server.On(
-                "POST",
-                path,
-                _ => new FakeRestResponse(200, """{"enabled":true,"segments":[]}""")
-            );
+            stack.Server.On("POST", path, _ => new FakeRestResponse(
+                200,
+                """{"enabled":true,"segments":[]}"""
+            ));
             await conn
                 .SponsorBlock.SetSegmentsAsync([
                     new SponsorBlockSegment
@@ -147,26 +141,18 @@ public sealed class GuildFeature
                     })
                     .Throws<ArgumentException>();
 
-            stack.Server.On(
-                "POST",
-                mixPath,
-                _ => new FakeRestResponse(
-                    200,
-                    $$"""{"id":"layer-1","track":{{TrackJson}},"volume":0.5}"""
-                )
-            );
+            stack.Server.On("POST", mixPath, _ => new FakeRestResponse(
+                200,
+                $$"""{"id":"layer-1","track":{{TrackJson}},"volume":0.5}"""
+            ));
             var layer = await conn.Mix.StartAsync(track, 0.5f).ConfigureAwait(false);
             await Assert.That(layer).IsNotNull();
             await Assert.That(layer.Id).IsEqualTo("layer-1");
 
-            stack.Server.On(
-                "GET",
-                mixPath,
-                _ => new FakeRestResponse(
-                    200,
-                    $$"""{"mixes":[{"id":"layer-1","track":{{TrackJson}}},{"id":"layer-2","track":{{TrackJson}}}]}"""
-                )
-            );
+            stack.Server.On("GET", mixPath, _ => new FakeRestResponse(
+                200,
+                $$"""{"mixes":[{"id":"layer-1","track":{{TrackJson}}},{"id":"layer-2","track":{{TrackJson}}}]}"""
+            ));
             var layers = await conn.Mix.GetLayersAsync().ConfigureAwait(false);
             await Assert.That(layers.Count).IsEqualTo(2);
             await Assert.That(layers[0].Id).IsEqualTo("layer-1");
@@ -182,15 +168,11 @@ public sealed class GuildFeature
                 .Throws<ArgumentOutOfRangeException>();
 
             var patched = new TaskCompletionSource<string?>();
-            stack.Server.On(
-                "PATCH",
-                mixPath + "/layer-1",
-                call =>
-                {
-                    patched.TrySetResult(call.Body);
-                    return new FakeRestResponse(204, string.Empty);
-                }
-            );
+            stack.Server.On("PATCH", mixPath + "/layer-1", call =>
+            {
+                patched.TrySetResult(call.Body);
+                return new FakeRestResponse(204, string.Empty);
+            });
             await conn.Mix.SetVolumeAsync("layer-1", 0.25f).ConfigureAwait(false);
             await Assert
                 .That(
@@ -200,11 +182,10 @@ public sealed class GuildFeature
                 )
                 .IsTrue();
 
-            stack.Server.On(
-                "DELETE",
-                mixPath + "/layer-1",
-                _ => new FakeRestResponse(204, string.Empty)
-            );
+            stack.Server.On("DELETE", mixPath + "/layer-1", _ => new FakeRestResponse(
+                204,
+                string.Empty
+            ));
             await conn.Mix.StopAsync("layer-1").ConfigureAwait(false);
             var stopped = stack.Server.RestCalls.Any(c =>
                 c is { Method: "DELETE" } && c.Path == mixPath + "/layer-1"
@@ -223,15 +204,11 @@ public sealed class GuildFeature
             var subPath = "/v4/sessions/fake-session/players/777/lyrics/subscribe";
 
             var subscribed = new TaskCompletionSource<string?>();
-            stack.Server.On(
-                "POST",
-                subPath,
-                call =>
-                {
-                    subscribed.TrySetResult(call.Query);
-                    return new FakeRestResponse(204, string.Empty);
-                }
-            );
+            stack.Server.On("POST", subPath, call =>
+            {
+                subscribed.TrySetResult(call.Query);
+                return new FakeRestResponse(204, string.Empty);
+            });
             await conn.Lyrics.SubscribeAsync(skipTrackSource: true).ConfigureAwait(false);
             await Assert
                 .That(

@@ -81,10 +81,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
         Rest = new RestClient(this);
         var dispatcher = new NodeEventDispatcher(this);
-        Connection = new NodeConnection(
-            this,
-            dispatcher,
-            cancellationToken => EnsureServerInfoAsync(cancellationToken, forceProbe: true)
+        Connection = new NodeConnection(this, dispatcher, cancellationToken =>
+            EnsureServerInfoAsync(cancellationToken, forceProbe: true)
         );
         VoiceHandshake = new VoiceHandshakeCoordinator(
             Options.VoiceHandshakeTimeout,

@@ -96,22 +96,18 @@ public sealed class QueuePlayback
 
         var current = "null";
         var failPlays = new StrongBox<bool>();
-        server.On(
-            "PATCH",
-            PlayerPath,
-            call =>
-            {
-                if (failPlays.Value)
-                    return new FakeRestResponse(500, "{\"message\":\"boom\"}");
+        server.On("PATCH", PlayerPath, call =>
+        {
+            if (failPlays.Value)
+                return new FakeRestResponse(500, "{\"message\":\"boom\"}");
 
-                if (PlayedId(call.Body) is { } played)
-                    current = TrackJson(played);
-                return new FakeRestResponse(
-                    200,
-                    $$$"""{"guildId":"777","track":{{{current}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                );
-            }
-        );
+            if (PlayedId(call.Body) is { } played)
+                current = TrackJson(played);
+            return new FakeRestResponse(
+                200,
+                $$$"""{"guildId":"777","track":{{{current}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            );
+        });
 
         var queue = connection.UseQueue();
         var rig = new Rig

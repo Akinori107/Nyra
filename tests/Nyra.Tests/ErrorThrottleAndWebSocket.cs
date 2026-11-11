@@ -33,16 +33,13 @@ public sealed class ErrorThrottleAndWebSocket
         var sink = new CapturingLogger();
         var refusing = false;
         var server = new FakeNodeServer();
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ =>
-                refusing
-                    ? new FakeRestResponse(500, """{"error":"voice refused"}""")
-                    : new FakeRestResponse(
-                        200,
-                        """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                    )
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ =>
+            refusing
+                ? new FakeRestResponse(500, """{"error":"voice refused"}""")
+                : new FakeRestResponse(
+                    200,
+                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+                )
         );
         var bridge = new FakeBridge { Logger = sink };
         bridge.GoReady();

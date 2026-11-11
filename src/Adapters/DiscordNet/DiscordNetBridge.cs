@@ -127,14 +127,12 @@ public sealed class DiscordNetBridge
             return;
         }
 
-        var guild =
-            GetGuildOrNull(guildId)
+        var guild = GetGuildOrNull(guildId)
             ?? throw new InvalidOperationException(
                 $"Could not find the guild {guildId}, it is not available to the Discord.Net client."
             );
 
-        var resolvedChannel =
-            guild.GetChannel(channelId.Value)
+        var resolvedChannel = guild.GetChannel(channelId.Value)
             ?? throw new InvalidOperationException(
                 $"The channel {channelId.Value} was not found in guild {guildId}, it may have been deleted."
             );
@@ -265,8 +263,7 @@ public sealed class DiscordNetBridge
         SocketVoiceState state
     )
     {
-        var guildId =
-            oldState.VoiceChannel?.Guild?.Id
+        var guildId = oldState.VoiceChannel?.Guild?.Id
             ?? state.VoiceChannel?.Guild?.Id
             ?? (user as SocketGuildUser)?.Guild?.Id;
 

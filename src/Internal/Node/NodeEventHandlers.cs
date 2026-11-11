@@ -179,12 +179,10 @@ internal sealed class NodeEventHandlers
             _node.ResetSessionSettings();
 
         if (!effectiveResumed && !_node.Connections.IsEmpty)
-            await GuardAllAsync(
-                    [.. _node.Connections.Values],
-                    connection =>
-                        discordTracked
-                            ? connection.Teardown.HandleSessionLostAsync()
-                            : connection.Teardown.HandleSessionInvalidatedAsync()
+            await GuardAllAsync([.. _node.Connections.Values], connection =>
+                    discordTracked
+                        ? connection.Teardown.HandleSessionLostAsync()
+                        : connection.Teardown.HandleSessionInvalidatedAsync()
                 )
                 .ConfigureAwait(false);
 
@@ -292,9 +290,8 @@ internal sealed class NodeEventHandlers
     }
 
     private Task InvalidateAsync(GuildConnection[] invalidated) =>
-        GuardAllAsync(
-            invalidated,
-            connection => connection.Teardown.HandleSessionInvalidatedAsync()
+        GuardAllAsync(invalidated, connection =>
+            connection.Teardown.HandleSessionInvalidatedAsync()
         );
 
     private Task GuardAllAsync(GuildConnection[] connections, Func<GuildConnection, Task> handle) =>

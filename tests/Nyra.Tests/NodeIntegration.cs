@@ -101,11 +101,10 @@ public sealed class NodeIntegration
             var node = stack.Node;
             var server = stack.Server;
 
-            server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
-            );
+            server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                200,
+                $$"""{"loadType":"track","data":{{TrackJson}}}"""
+            ));
             var loaded = await node.LoadTracksAsync("ytsearch:atwa").ConfigureAwait(false);
             await Assert.That(loaded is TrackLoaded { Track.Encoded: "QXRsZWFzdA==" }).IsTrue();
             var loadCall = server.RestCalls.FirstOrDefault(c => c.Path == "/v4/loadtracks");
@@ -117,14 +116,10 @@ public sealed class NodeIntegration
                 )
                 .IsTrue();
 
-            server.On(
-                "GET",
-                "/v4/info",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"version":{"semver":"4.2.0","major":4,"minor":2,"patch":0},"git":{"branch":"main","commit":"abc"},"sourceManagers":["youtube"],"filters":["volume"],"isNodelink":false}"""
-                )
-            );
+            server.On("GET", "/v4/info", _ => new FakeRestResponse(
+                200,
+                """{"version":{"semver":"4.2.0","major":4,"minor":2,"patch":0},"git":{"branch":"main","commit":"abc"},"sourceManagers":["youtube"],"filters":["volume"],"isNodelink":false}"""
+            ));
             var info = await node.GetNodeInfoAsync().ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -136,14 +131,10 @@ public sealed class NodeIntegration
                 await Assert.That(info.IsNodeLink).IsFalse();
             }
 
-            server.On(
-                "GET",
-                "/v4/stats",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"players":9,"playingPlayers":4,"uptime":1000,"memory":{"free":1,"used":2,"allocated":3,"reservable":4},"cpu":{"cores":8,"systemLoad":0.5,"lavalinkLoad":0.25},"detailedStats":{"api":{"requests":{"loadtracks":3}}}}"""
-                )
-            );
+            server.On("GET", "/v4/stats", _ => new FakeRestResponse(
+                200,
+                """{"players":9,"playingPlayers":4,"uptime":1000,"memory":{"free":1,"used":2,"allocated":3,"reservable":4},"cpu":{"cores":8,"systemLoad":0.5,"lavalinkLoad":0.25},"detailedStats":{"api":{"requests":{"loadtracks":3}}}}"""
+            ));
             var stats = await node.GetStatsAsync().ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -164,48 +155,38 @@ public sealed class NodeIntegration
             var decoded = await node.Tracks.DecodeAsync("QXRsZWFzdA==").ConfigureAwait(false);
             await Assert.That(decoded.Encoded).IsEqualTo("QXRsZWFzdA==");
 
-            server.On(
-                "POST",
-                "/v4/decodetracks",
-                _ => new FakeRestResponse(200, $"[{TrackJson},{TrackJson}]")
-            );
+            server.On("POST", "/v4/decodetracks", _ => new FakeRestResponse(
+                200,
+                $"[{TrackJson},{TrackJson}]"
+            ));
             var decodedList = await node
                 .Tracks.DecodeManyAsync(["QXRsZWFzdA==", "QXRsZWFzdA=="])
                 .ConfigureAwait(false);
             await Assert.That(decodedList.Count).IsEqualTo(2);
 
-            server.On(
-                "GET",
-                "/v4/routeplanner/status",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"class":"RotatingIpRoutePlanner","details":{"ipBlock":{"type":"Inet4Address","size":"/8"},"failingAddresses":[]}}"""
-                )
-            );
+            server.On("GET", "/v4/routeplanner/status", _ => new FakeRestResponse(
+                200,
+                """{"class":"RotatingIpRoutePlanner","details":{"ipBlock":{"type":"Inet4Address","size":"/8"},"failingAddresses":[]}}"""
+            ));
             var planner = await node.RoutePlanner.GetStatusAsync().ConfigureAwait(false);
             await Assert.That(planner).IsNotNull();
             await Assert.That(planner.Class).IsEqualTo(RoutePlannerClass.Rotating);
 
             var freed = new TaskCompletionSource<string?>();
-            server.On(
-                "POST",
-                "/v4/routeplanner/free/address",
-                call =>
-                {
-                    freed.TrySetResult(call.Body);
-                    return new FakeRestResponse(204, string.Empty);
-                }
-            );
+            server.On("POST", "/v4/routeplanner/free/address", call =>
+            {
+                freed.TrySetResult(call.Body);
+                return new FakeRestResponse(204, string.Empty);
+            });
             await node.RoutePlanner.FreeAddressAsync("1.2.3.4").ConfigureAwait(false);
             await Assert
                 .That(await freed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
                 .IsEqualTo("""{"address":"1.2.3.4"}""");
 
-            server.On(
-                "GET",
-                "/v4/youtube/config",
-                _ => new FakeRestResponse(200, """{"isConfigured":true,"refreshToken":"***"}""")
-            );
+            server.On("GET", "/v4/youtube/config", _ => new FakeRestResponse(
+                200,
+                """{"isConfigured":true,"refreshToken":"***"}"""
+            ));
             var config = await node.YouTube.GetConfigAsync().ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -214,25 +195,20 @@ public sealed class NodeIntegration
                 await Assert.That(config.RefreshToken).IsEqualTo("***");
             }
 
-            server.On(
-                "PATCH",
-                "/v4/youtube/config",
-                _ => new FakeRestResponse(200, """{"message":"updated","workersUpdated":2}""")
-            );
+            server.On("PATCH", "/v4/youtube/config", _ => new FakeRestResponse(
+                200,
+                """{"message":"updated","workersUpdated":2}"""
+            ));
             var update = await node
                 .YouTube.UpdateConfigAsync(refreshToken: "new-token")
                 .ConfigureAwait(false);
             await Assert.That(update).IsNotNull();
             await Assert.That(update.WorkersUpdated).IsEqualTo(2);
 
-            server.On(
-                "POST",
-                "/v4/youtube/oauth",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"access_token":"tok","expires_in":3600,"token_type":"Bearer"}"""
-                )
-            );
+            server.On("POST", "/v4/youtube/oauth", _ => new FakeRestResponse(
+                200,
+                """{"access_token":"tok","expires_in":3600,"token_type":"Bearer"}"""
+            ));
             var token = await node.YouTube.RefreshTokenAsync("r").ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -241,11 +217,10 @@ public sealed class NodeIntegration
                 await Assert.That(token.ExpiresInSeconds).IsEqualTo(3600);
             }
 
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session",
-                _ => new FakeRestResponse(200, """{"resuming":true,"timeout":120}""")
-            );
+            server.On("PATCH", "/v4/sessions/fake-session", _ => new FakeRestResponse(
+                200,
+                """{"resuming":true,"timeout":120}"""
+            ));
             var session = await node.UpdateSessionAsync(
                     resuming: true,
                     timeout: TimeSpan.FromSeconds(120)
@@ -259,15 +234,11 @@ public sealed class NodeIntegration
             }
 
             var connStatus = new TaskCompletionSource<string?>();
-            server.On(
-                "GET",
-                "/v4/connection",
-                call =>
-                {
-                    connStatus.TrySetResult(call.Authorization);
-                    return new FakeRestResponse(200, """{"status":"good"}""");
-                }
-            );
+            server.On("GET", "/v4/connection", call =>
+            {
+                connStatus.TrySetResult(call.Authorization);
+                return new FakeRestResponse(200, """{"status":"good"}""");
+            });
             var connection = await node.GetConnectionStatusAsync().ConfigureAwait(false);
             await Assert.That(connection).IsNotNull();
             await Assert.That(connection.Status).IsEqualTo(ConnectionQuality.Good);
@@ -283,41 +254,33 @@ public sealed class NodeIntegration
             var node = stack.Node;
             var server = stack.Server;
 
-            server.On(
-                "GET",
-                "/v4/sessions/fake-session/groups",
-                _ => new FakeRestResponse(
-                    200,
-                    """[{"id":"late-night","guildIds":["123","456"],"createdAt":1699999999999}]"""
-                )
-            );
+            server.On("GET", "/v4/sessions/fake-session/groups", _ => new FakeRestResponse(
+                200,
+                """[{"id":"late-night","guildIds":["123","456"],"createdAt":1699999999999}]"""
+            ));
             var groups = await node.Groups.ListAsync().ConfigureAwait(false);
             await Assert.That(groups).IsNotNull();
             await Assert.That(groups.Count).IsEqualTo(1);
             await Assert.That(groups[0] is { Id: "late-night", GuildIds.Count: 2 }).IsTrue();
 
-            server.On(
-                "POST",
-                "/v4/sessions/fake-session/groups",
-                _ => new FakeRestResponse(201, """{"id":"new","guildIds":["123"],"createdAt":5}""")
-            );
+            server.On("POST", "/v4/sessions/fake-session/groups", _ => new FakeRestResponse(
+                201,
+                """{"id":"new","guildIds":["123"],"createdAt":5}"""
+            ));
             var created = await node.Groups.CreateAsync("new", [123]).ConfigureAwait(false);
             await Assert.That(created).IsNotNull();
             await Assert.That(created.Id).IsEqualTo("new");
 
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session/groups/late-night",
-                call =>
-                    call.Body is not null && call.Body.Contains("track")
-                        ? new FakeRestResponse(
-                            200,
-                            """{"id":"late-night","guildIds":["123"],"createdAt":1,"players":[{"guildId":"123","volume":300}],"errors":[]}"""
-                        )
-                        : new FakeRestResponse(
-                            200,
-                            """{"id":"late-night","guildIds":["123","456"],"createdAt":1,"players":[],"errors":[]}"""
-                        )
+            server.On("PATCH", "/v4/sessions/fake-session/groups/late-night", call =>
+                call.Body is not null && call.Body.Contains("track")
+                    ? new FakeRestResponse(
+                        200,
+                        """{"id":"late-night","guildIds":["123"],"createdAt":1,"players":[{"guildId":"123","volume":300}],"errors":[]}"""
+                    )
+                    : new FakeRestResponse(
+                        200,
+                        """{"id":"late-night","guildIds":["123","456"],"createdAt":1,"players":[],"errors":[]}"""
+                    )
             );
             var updated = await node
                 .Groups.UpdateAsync("late-night", new GroupUpdate { Volume = 300, Paused = true })
@@ -343,15 +306,11 @@ public sealed class NodeIntegration
             }
 
             var deleted = new TaskCompletionSource<string?>();
-            server.On(
-                "DELETE",
-                "/v4/sessions/fake-session/groups/late-night",
-                call =>
-                {
-                    deleted.TrySetResult(call.Body);
-                    return new FakeRestResponse(204, string.Empty);
-                }
-            );
+            server.On("DELETE", "/v4/sessions/fake-session/groups/late-night", call =>
+            {
+                deleted.TrySetResult(call.Body);
+                return new FakeRestResponse(204, string.Empty);
+            });
             await node.Groups.DeleteAsync("late-night").ConfigureAwait(false);
             await Assert
                 .That(await deleted.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
@@ -368,14 +327,10 @@ public sealed class NodeIntegration
             var node = stack.Node;
             var server = stack.Server;
 
-            server.On(
-                "GET",
-                "/v4/loadlyrics",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"loadType":"lyrics","data":{"name":"ATWA","synced":true,"lines":[{"text":"line","time":100,"duration":200}],"provider":"musixmatch"}}"""
-                )
-            );
+            server.On("GET", "/v4/loadlyrics", _ => new FakeRestResponse(
+                200,
+                """{"loadType":"lyrics","data":{"name":"ATWA","synced":true,"lines":[{"text":"line","time":100,"duration":200}],"provider":"musixmatch"}}"""
+            ));
             var track = JsonSerializer.Deserialize<Track>(TrackJson, NyraJson.OptionsFor(true))!;
             var lyrics = await node.Lyrics.LoadAsync(track).ConfigureAwait(false);
             using (Assert.Multiple())
@@ -386,24 +341,19 @@ public sealed class NodeIntegration
                 await Assert.That(lyrics.Data!.Synced).IsTrue();
             }
 
-            server.On(
-                "GET",
-                "/v4/loadchapters",
-                _ => new FakeRestResponse(200, """[{"title":"Intro","start":0}]""")
-            );
+            server.On("GET", "/v4/loadchapters", _ => new FakeRestResponse(
+                200,
+                """[{"title":"Intro","start":0}]"""
+            ));
             var chapters = await node.Lyrics.LoadChaptersAsync(track).ConfigureAwait(false);
             await Assert.That(chapters).IsNotNull();
             await Assert.That(chapters.Count).IsEqualTo(1);
             await Assert.That(chapters[0].Title).IsEqualTo("Intro");
 
-            server.On(
-                "GET",
-                "/v4/meaning",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"loadType":"meaning","data":{"title":"About","paragraphs":["p"],"provider":"wikipedia"}}"""
-                )
-            );
+            server.On("GET", "/v4/meaning", _ => new FakeRestResponse(
+                200,
+                """{"loadType":"meaning","data":{"title":"About","paragraphs":["p"],"provider":"wikipedia"}}"""
+            ));
             var meaning = await node.Lyrics.LoadMeaningAsync(track).ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -424,18 +374,14 @@ public sealed class NodeIntegration
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
 
             var playerPatch = new TaskCompletionSource<string?>();
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session/players/777",
-                call =>
-                {
-                    playerPatch.TrySetResult(call.Body);
-                    return new FakeRestResponse(
-                        200,
-                        """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                    );
-                }
-            );
+            server.On("PATCH", "/v4/sessions/fake-session/players/777", call =>
+            {
+                playerPatch.TrySetResult(call.Body);
+                return new FakeRestResponse(
+                    200,
+                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+                );
+            });
 
             var connect = node.ConnectAsync(777, 555);
             await Task.Delay(100).ConfigureAwait(false);
@@ -646,24 +592,19 @@ public sealed class NodeIntegration
                 .IsTrue();
 
             var sponsorPath = "/v4/sessions/fake-session/players/777/sponsorblock";
-            server.On(
-                "GET",
-                sponsorPath,
-                _ => new FakeRestResponse(
-                    200,
-                    """{"enabled":true,"categories":["sponsor"],"actionTypes":["skip"]}"""
-                )
-            );
+            server.On("GET", sponsorPath, _ => new FakeRestResponse(
+                200,
+                """{"enabled":true,"categories":["sponsor"],"actionTypes":["skip"]}"""
+            ));
             var sponsor = await conn.SponsorBlock.GetAsync().ConfigureAwait(false);
             await Assert
                 .That(sponsor is { Enabled: true, Categories: ["sponsor"], ActionTypes: ["skip"] })
                 .IsTrue();
 
-            server.On(
-                "PATCH",
-                sponsorPath,
-                _ => new FakeRestResponse(200, """{"enabled":true,"categories":["sponsor"]}""")
-            );
+            server.On("PATCH", sponsorPath, _ => new FakeRestResponse(
+                200,
+                """{"enabled":true,"categories":["sponsor"]}"""
+            ));
             var setSponsor = await conn
                 .SponsorBlock.SetAsync(
                     new SponsorBlockSettings { Enabled = true, Categories = ["sponsor"] }
@@ -717,15 +658,11 @@ public sealed class NodeIntegration
 
             var subPath = "/v4/sessions/fake-session/players/777/lyrics/subscribe";
             var subscribed = new TaskCompletionSource<string?>();
-            server.On(
-                "POST",
-                subPath,
-                call =>
-                {
-                    subscribed.TrySetResult(call.Body);
-                    return new FakeRestResponse(204, string.Empty);
-                }
-            );
+            server.On("POST", subPath, call =>
+            {
+                subscribed.TrySetResult(call.Body);
+                return new FakeRestResponse(204, string.Empty);
+            });
             server.On("DELETE", subPath, _ => new FakeRestResponse(204, string.Empty));
             await conn.Lyrics.SubscribeAsync().ConfigureAwait(false);
             await Assert
@@ -736,14 +673,10 @@ public sealed class NodeIntegration
             await conn.Lyrics.UnsubscribeAsync().ConfigureAwait(false);
 
             var mixPath = "/v4/sessions/fake-session/players/777/mix";
-            server.On(
-                "POST",
-                mixPath,
-                _ => new FakeRestResponse(
-                    200,
-                    $$"""{"id":"layer-1","track":{{TrackJson}},"volume":0.5}"""
-                )
-            );
+            server.On("POST", mixPath, _ => new FakeRestResponse(
+                200,
+                $$"""{"id":"layer-1","track":{{TrackJson}},"volume":0.5}"""
+            ));
             var layer = await conn.Mix.StartAsync(track, 0.5f).ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -752,14 +685,10 @@ public sealed class NodeIntegration
                 await Assert.That(layer.Volume).IsEqualTo(0.5f);
             }
 
-            server.On(
-                "GET",
-                mixPath,
-                _ => new FakeRestResponse(
-                    200,
-                    $$"""{"mixes":[{"id":"layer-1","track":{{TrackJson}},"volume":0.5}]}"""
-                )
-            );
+            server.On("GET", mixPath, _ => new FakeRestResponse(
+                200,
+                $$"""{"mixes":[{"id":"layer-1","track":{{TrackJson}},"volume":0.5}]}"""
+            ));
             var layers = await conn.Mix.GetLayersAsync().ConfigureAwait(false);
             await Assert.That(layers).IsNotNull();
             await Assert.That(layers.Count).IsEqualTo(1);
@@ -778,24 +707,19 @@ public sealed class NodeIntegration
             );
             await conn.Mix.StopAsync("layer-1").ConfigureAwait(false);
 
-            server.On(
-                "GET",
-                "/v4/sessions/fake-session/players",
-                _ => new FakeRestResponse(200, """[{"guildId":"777","volume":100}]""")
-            );
+            server.On("GET", "/v4/sessions/fake-session/players", _ => new FakeRestResponse(
+                200,
+                """[{"guildId":"777","volume":100}]"""
+            ));
             var players = await node.ListPlayersAsync().ConfigureAwait(false);
             await Assert.That(players).IsNotNull();
             await Assert.That(players.Count).IsEqualTo(1);
             await Assert.That(players[0].GuildId).IsEqualTo(777);
 
-            server.On(
-                "GET",
-                "/v4/trackstream",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"url":"https://stream/1","protocol":"https","format":"arbitrary"}"""
-                )
-            );
+            server.On("GET", "/v4/trackstream", _ => new FakeRestResponse(
+                200,
+                """{"url":"https://stream/1","protocol":"https","format":"arbitrary"}"""
+            ));
             var streamUrl = await node.Tracks.GetStreamUrlAsync(track).ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -827,25 +751,20 @@ public sealed class NodeIntegration
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
             await Assert.That(node.IsNodeLink).IsFalse();
 
-            server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(200, $$"""{"loadType":"track","data":{{TrackJson}}}""")
-            );
+            server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                200,
+                $$"""{"loadType":"track","data":{{TrackJson}}}"""
+            ));
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
             var track = JsonSerializer.Deserialize<Track>(TrackJson, NyraJson.OptionsFor(false))!;
 
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session/players/777",
-                _ =>
-                {
-                    return new FakeRestResponse(
-                        200,
-                        $$$$"""{"guildId":"777","track":{{{{TrackJson}}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42}}"""
-                    );
-                }
-            );
+            server.On("PATCH", "/v4/sessions/fake-session/players/777", _ =>
+            {
+                return new FakeRestResponse(
+                    200,
+                    $$$$"""{"guildId":"777","track":{{{{TrackJson}}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42}}"""
+                );
+            });
 
             await conn.PlayIdentifierAsync("ytsearch:atwa").ConfigureAwait(false);
             await Assert
@@ -1436,28 +1355,24 @@ public sealed class NodeIntegration
 
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
 
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session/players/777",
-                _ => new FakeRestResponse(
-                    200,
-                    """
-                    {"guildId":"777","track":null,"volume":250,"paused":true,
-                     "filters":{"volume":1.4,
-                       "equalizer":{"bands":[{"band":0,"gain":0.5}],"transition":{"durationMs":400}},
-                       "karaoke":{"level":0.75},"timescale":{"speed":1.25},"tremolo":{"frequency":8},
-                       "vibrato":{"frequency":10},"distortion":{"sinScale":2},"rotation":{"rotationHz":2},
-                       "channelMix":{"leftToLeft":0.9},"lowPass":{"smoothing":3},"lowpass":{"smoothing":4},
-                       "echo":{"delay":300,"mix":0.4},"reverb":{"roomSize":0.7},
-                       "highpass":{"smoothing":5},"chorus":{"rate":1.5,"depth":0.7,"mix":0.5},
-                       "compressor":{"threshold":-30,"ratio":6},"flanger":{"rate":0.5,"depth":0.8},
-                       "phaser":{"rate":2,"depth":0.6},"phonograph":{"crackle":0.3},
-                       "spatial":{"x":0.5,"y":-0.5},"pluginFilters":{"custom":{"x":1}}},
-                     "voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"},
-                     "state":{"time":1,"position":2,"connected":true,"ping":3}}
-                    """
-                )
-            );
+            server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+                200,
+                """
+                {"guildId":"777","track":null,"volume":250,"paused":true,
+                 "filters":{"volume":1.4,
+                   "equalizer":{"bands":[{"band":0,"gain":0.5}],"transition":{"durationMs":400}},
+                   "karaoke":{"level":0.75},"timescale":{"speed":1.25},"tremolo":{"frequency":8},
+                   "vibrato":{"frequency":10},"distortion":{"sinScale":2},"rotation":{"rotationHz":2},
+                   "channelMix":{"leftToLeft":0.9},"lowPass":{"smoothing":3},"lowpass":{"smoothing":4},
+                   "echo":{"delay":300,"mix":0.4},"reverb":{"roomSize":0.7},
+                   "highpass":{"smoothing":5},"chorus":{"rate":1.5,"depth":0.7,"mix":0.5},
+                   "compressor":{"threshold":-30,"ratio":6},"flanger":{"rate":0.5,"depth":0.8},
+                   "phaser":{"rate":2,"depth":0.6},"phonograph":{"crackle":0.3},
+                   "spatial":{"x":0.5,"y":-0.5},"pluginFilters":{"custom":{"x":1}}},
+                 "voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"},
+                 "state":{"time":1,"position":2,"connected":true,"ping":3}}
+                """
+            ));
 
             await conn.Filters.ApplyAsync(new FilterChain { Volume = null }).ConfigureAwait(false);
             await conn.SetVolumeAsync(250).ConfigureAwait(false);
@@ -1499,14 +1414,10 @@ public sealed class NodeIntegration
                 await Assert.That(conn.IsPaused).IsTrue();
             }
 
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session/players/777",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"guildId":"777","filters":{"chorus":{"_disabled":true},"karaoke":{"level":0.5}},"volume":100}"""
-                )
-            );
+            server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+                200,
+                """{"guildId":"777","filters":{"chorus":{"_disabled":true},"karaoke":{"level":0.5}},"volume":100}"""
+            ));
             await conn.Filters.ApplyAsync(new FilterChain { Volume = null }).ConfigureAwait(false);
             using (Assert.Multiple())
             {
@@ -1527,11 +1438,10 @@ public sealed class NodeIntegration
             var node = stack.Node;
             var server = stack.Server;
 
-            server.On(
-                "POST",
-                "/v4/encodedtracks",
-                _ => new FakeRestResponse(200, """["QXRsZWFzdA=="]""")
-            );
+            server.On("POST", "/v4/encodedtracks", _ => new FakeRestResponse(
+                200,
+                """["QXRsZWFzdA=="]"""
+            ));
             var info = new TrackInfo
             {
                 Identifier = "ph8qt3dhvwo",
@@ -1616,22 +1526,20 @@ public sealed class NodeIntegration
             var node = stack.Node;
             var server = stack.Server;
 
-            server.On(
-                "GET",
-                "/v4/stats",
-                _ => new FakeRestResponse(400, """{"message":"bad request"}""")
-            );
+            server.On("GET", "/v4/stats", _ => new FakeRestResponse(
+                400,
+                """{"message":"bad request"}"""
+            ));
             var badRequest = await Assert
                 .That(async () => await node.GetStatsAsync().ConfigureAwait(false))
                 .Throws<RestException>()
                 .WithMessageContaining("bad request");
             await Assert.That(badRequest!.StatusCode).IsEqualTo(400);
 
-            server.On(
-                "GET",
-                "/v4/stats",
-                _ => new FakeRestResponse(429, """{"message":"slow down"}""")
-            );
+            server.On("GET", "/v4/stats", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}"""
+            ));
             var rateLimited = await Assert
                 .That(async () => await node.GetStatsAsync().ConfigureAwait(false))
                 .Throws<RestException>();
@@ -1752,11 +1660,10 @@ public sealed class NodeIntegration
         {
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
 
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session/players/555",
-                _ => new FakeRestResponse(200, """{"guildId":"555","volume":100}""")
-            );
+            server.On("PATCH", "/v4/sessions/fake-session/players/555", _ => new FakeRestResponse(
+                200,
+                """{"guildId":"555","volume":100}"""
+            ));
 
             var connect = node.ConnectAsync(555, 556);
             await Task.Delay(100).ConfigureAwait(false);

@@ -64,23 +64,19 @@ public sealed class IdleDisconnect
         var connection = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
 
         var current = "null";
-        server.On(
-            "PATCH",
-            PlayerPath,
-            call =>
+        server.On("PATCH", PlayerPath, call =>
+        {
+            if (call.Body is { } body && body.Contains("\"enc-", StringComparison.Ordinal))
             {
-                if (call.Body is { } body && body.Contains("\"enc-", StringComparison.Ordinal))
-                {
-                    var start = body.IndexOf("\"enc-", StringComparison.Ordinal) + 5;
-                    current = TrackJson(body[start..body.IndexOf('"', start)]);
-                }
-
-                return new FakeRestResponse(
-                    200,
-                    $$$"""{"guildId":"777","track":{{{current}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                );
+                var start = body.IndexOf("\"enc-", StringComparison.Ordinal) + 5;
+                current = TrackJson(body[start..body.IndexOf('"', start)]);
             }
-        );
+
+            return new FakeRestResponse(
+                200,
+                $$$"""{"guildId":"777","track":{{{current}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            );
+        });
         server.On("DELETE", PlayerPath, _ => new FakeRestResponse(204, string.Empty));
 
         var rig = new Rig

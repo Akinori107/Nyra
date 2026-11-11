@@ -89,14 +89,10 @@ public sealed class LifecycleEdge
 
             Reflect.Set(channel, "Id", (ulong)555);
             Reflect.Set(channel, "GuildId", (ulong?)777);
-            stack.Server.On(
-                "PATCH",
-                PlayerPath,
-                _ => new FakeRestResponse(
-                    200,
-                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                )
-            );
+            stack.Server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                200,
+                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            ));
             var join = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
             await Task.Delay(100).ConfigureAwait(false);
             stack.Bridge.FireVoiceState(777, 555, "vsess");
@@ -127,11 +123,11 @@ public sealed class LifecycleEdge
                 .WithMessageContaining("the node exploded");
             await Assert.That(failed!.StatusCode).IsEqualTo(500);
 
-            stack.Server.On(
-                "GET",
-                "/v4/decodetrack",
-                _ => new FakeRestResponse(429, """{"timestamp":0,"status":429}""", "250")
-            );
+            stack.Server.On("GET", "/v4/decodetrack", _ => new FakeRestResponse(
+                429,
+                """{"timestamp":0,"status":429}""",
+                "250"
+            ));
             var throttled = await Assert
                 .That(async () =>
                     await stack
@@ -348,28 +344,20 @@ public sealed class LifecycleEdge
         try
         {
             await ConnectGuildAsync(stack.Bridge, stack.Node, stack.Server).ConfigureAwait(false);
-            stack.Server.On(
-                "GET",
-                "/v4/sessions/fake-session/players",
-                _ => new FakeRestResponse(
-                    200,
-                    """[{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}},{"guildId":"888","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}]"""
-                )
-            );
-            stack.Server.On(
-                "DELETE",
-                GhostPath,
-                _ =>
+            stack.Server.On("GET", "/v4/sessions/fake-session/players", _ => new FakeRestResponse(
+                200,
+                """[{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}},{"guildId":"888","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}]"""
+            ));
+            stack.Server.On("DELETE", GhostPath, _ =>
+            {
+                destroyed.Add("888");
+                return mode switch
                 {
-                    destroyed.Add("888");
-                    return mode switch
-                    {
-                        1 => new FakeRestResponse(404, string.Empty),
-                        2 => new FakeRestResponse(500, "destroy exploded"),
-                        _ => new FakeRestResponse(204, string.Empty),
-                    };
-                }
-            );
+                    1 => new FakeRestResponse(404, string.Empty),
+                    2 => new FakeRestResponse(500, "destroy exploded"),
+                    _ => new FakeRestResponse(204, string.Empty),
+                };
+            });
 
             await stack.Server.DropConnectionAsync(1000, "orphan test drop").ConfigureAwait(false);
             var resumedAgain = new TaskCompletionSource<bool>();
@@ -501,10 +489,8 @@ public sealed class LifecycleEdge
         var stack = await StartAsync().ConfigureAwait(false);
         try
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/loadstream",
-                (_, stream) => WriteTruncatedReplyAsync(stream, "500 Internal Server Error")
+            stack.Server.OnRaw("GET", "/v4/loadstream", (_, stream) =>
+                WriteTruncatedReplyAsync(stream, "500 Internal Server Error")
             );
 
             var truncated = await Assert
@@ -597,24 +583,16 @@ public sealed class LifecycleEdge
         var stack = await StartAsync(time: time).ConfigureAwait(false);
         try
         {
-            stack.Server.On(
-                "GET",
-                "/v4/decodetrack",
-                _ =>
-                {
-                    stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
-                    return new FakeRestResponse(200, "{}");
-                }
-            );
-            stack.Server.On(
-                "GET",
-                "/v4/loadstream",
-                _ =>
-                {
-                    stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
-                    return new FakeRestResponse(200, "audio");
-                }
-            );
+            stack.Server.On("GET", "/v4/decodetrack", _ =>
+            {
+                stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
+                return new FakeRestResponse(200, "{}");
+            });
+            stack.Server.On("GET", "/v4/loadstream", _ =>
+            {
+                stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
+                return new FakeRestResponse(200, "audio");
+            });
             async Task Decode() =>
                 await Assert
                     .That(async () =>
@@ -693,11 +671,10 @@ public sealed class LifecycleEdge
             registry!.Remove(shard);
             registry.Add(shard, stack.Extension);
 
-            var stateType =
-                typeof(ShardedGatewayClient).GetNestedType(
-                    "State",
-                    System.Reflection.BindingFlags.NonPublic
-                ) ?? throw new MissingMemberException("ShardedGatewayClient.State");
+            var stateType = typeof(ShardedGatewayClient).GetNestedType(
+                "State",
+                System.Reflection.BindingFlags.NonPublic
+            ) ?? throw new MissingMemberException("ShardedGatewayClient.State");
             var state = Activator.CreateInstance(stateType)!;
             stateType.GetProperty("Clients")!.SetValue(state, new[] { shard });
             var sharded = new ShardedGatewayClient(token);

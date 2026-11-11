@@ -13,11 +13,8 @@ public sealed class EventPumpTests
         await Assert.That(pump.TryDispatch(() => Task.CompletedTask)).IsFalse();
         await Assert
             .That(
-                pump.TryDispatch(
-                    null,
-                    new object(),
-                    System.EventArgs.Empty,
-                    (_, _) => Task.CompletedTask
+                pump.TryDispatch(null, new object(), System.EventArgs.Empty, (_, _) =>
+                    Task.CompletedTask
                 )
             )
             .IsFalse();

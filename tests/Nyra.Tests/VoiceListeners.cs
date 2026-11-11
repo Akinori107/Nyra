@@ -112,32 +112,28 @@ public sealed class VoiceListeners
         var current = "null";
         var paused = false;
         Rig? rig = null;
-        server.On(
-            "PATCH",
-            PlayerPath,
-            call =>
+        server.On("PATCH", PlayerPath, call =>
+        {
+            rig?.BeforePatch?.Invoke(call.Body ?? string.Empty);
+            if (call.Body is { } body)
             {
-                rig?.BeforePatch?.Invoke(call.Body ?? string.Empty);
-                if (call.Body is { } body)
-                {
-                    using var document = JsonDocument.Parse(body);
-                    var root = document.RootElement;
-                    if (
-                        root.TryGetProperty("track", out var track)
-                        && track.ValueKind == JsonValueKind.Object
-                        && track.GetProperty("encoded").GetString() is { } encoded
-                    )
-                        current = TrackJson(encoded[4..]);
-                    if (root.TryGetProperty("paused", out var pause))
-                        paused = pause.GetBoolean();
-                }
-
-                return new FakeRestResponse(
-                    200,
-                    $$$"""{"guildId":"777","track":{{{current}}},"volume":100,"paused":{{{(paused ? "true" : "false")}}},"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                );
+                using var document = JsonDocument.Parse(body);
+                var root = document.RootElement;
+                if (
+                    root.TryGetProperty("track", out var track)
+                    && track.ValueKind == JsonValueKind.Object
+                    && track.GetProperty("encoded").GetString() is { } encoded
+                )
+                    current = TrackJson(encoded[4..]);
+                if (root.TryGetProperty("paused", out var pause))
+                    paused = pause.GetBoolean();
             }
-        );
+
+            return new FakeRestResponse(
+                200,
+                $$$"""{"guildId":"777","track":{{{current}}},"volume":100,"paused":{{{(paused ? "true" : "false")}}},"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            );
+        });
         server.On("DELETE", PlayerPath, _ => new FakeRestResponse(204, string.Empty));
 
         rig = new Rig

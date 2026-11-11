@@ -57,30 +57,23 @@ public sealed class TrackStartAndPauseEvent
         };
         var holder = new List<string> { PlayerBody(null) };
         var gate = new List<TaskCompletionSource?> { null };
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ => new FakeRestResponse(200, holder[0])
-        );
-        server.OnRaw(
-            "GET",
-            "/v4/sessions/fake-session/players/777",
-            async (_, stream) =>
-            {
-                var pending = gate[0];
-                if (pending is not null)
-                    await pending.Task.ConfigureAwait(false);
-                var body = System.Text.Encoding.UTF8.GetBytes(holder[0]);
-                var head =
-                    $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
-                await stream
-                    .WriteAsync(System.Text.Encoding.UTF8.GetBytes(head))
-                    .ConfigureAwait(false);
-                await stream.WriteAsync(body).ConfigureAwait(false);
-                await stream.FlushAsync().ConfigureAwait(false);
-                stream.Close();
-            }
-        );
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+            200,
+            holder[0]
+        ));
+        server.OnRaw("GET", "/v4/sessions/fake-session/players/777", async (_, stream) =>
+        {
+            var pending = gate[0];
+            if (pending is not null)
+                await pending.Task.ConfigureAwait(false);
+            var body = System.Text.Encoding.UTF8.GetBytes(holder[0]);
+            var head =
+                $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
+            await stream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+            await stream.WriteAsync(body).ConfigureAwait(false);
+            await stream.FlushAsync().ConfigureAwait(false);
+            stream.Close();
+        });
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);

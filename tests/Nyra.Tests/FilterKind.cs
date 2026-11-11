@@ -88,21 +88,24 @@ public sealed class FilterKind
             foreach (var (filter, wire) in kinds)
             {
                 await conn.Filters.AddAsync(filter).ConfigureAwait(false);
-                var addBody =
-                    server.RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath }).Body
+                var addBody = server
+                    .RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath })
+                    .Body
                     ?? string.Empty;
                 await Assert.That(addBody).Contains($"\"{wire}\":{{");
 
                 await conn.Filters.RemoveAsync(filter).ConfigureAwait(false);
-                var removeBody =
-                    server.RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath }).Body
+                var removeBody = server
+                    .RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath })
+                    .Body
                     ?? string.Empty;
                 await Assert.That(removeBody).Contains($"\"{wire}\":null");
 
                 await conn.Filters.AddAsync(filter).ConfigureAwait(false);
                 await RemoveByTypeAsync(conn, filter.GetType()).ConfigureAwait(false);
-                var genericBody =
-                    server.RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath }).Body
+                var genericBody = server
+                    .RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath })
+                    .Body
                     ?? string.Empty;
                 await Assert.That(genericBody).Contains($"\"{wire}\":null");
             }
@@ -239,10 +242,9 @@ public sealed class FilterKind
         {
             var lavaConn = lavaStack.Node.GetConnection(777)!;
             await lavaConn.Filters.SetVolumeFilterAsync(2.5f).ConfigureAwait(false);
-            var body =
-                lavaStack
-                    .Server.RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath })
-                    .Body
+            var body = lavaStack
+                .Server.RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath })
+                .Body
                 ?? string.Empty;
             await Assert.That(body).Contains("\"volume\":2.5");
 

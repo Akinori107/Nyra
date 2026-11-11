@@ -211,14 +211,11 @@ public sealed class AdapterHappyPathAndTeardown
 
         var assembly = typeof(global::NetCord.Gateway.GatewayClient).Assembly;
         var wsType = typeof(global::NetCord.Gateway.WebSocketClient);
-        var stateType =
-            wsType.GetNestedType("State", BindingFlags.NonPublic)
+        var stateType = wsType.GetNestedType("State", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("WebSocketClient.State");
-        var connectionStateType =
-            wsType.GetNestedType("ConnectionState", BindingFlags.NonPublic)
+        var connectionStateType = wsType.GetNestedType("ConnectionState", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("WebSocketClient.ConnectionState");
-        var resultType =
-            wsType.GetNestedType("ConnectionStateResult", BindingFlags.NonPublic)
+        var resultType = wsType.GetNestedType("ConnectionStateResult", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("WebSocketClient.ConnectionStateResult");
 
         var fakeConnectionState = RuntimeHelpers.GetUninitializedObject(connectionStateType);
@@ -228,8 +225,7 @@ public sealed class AdapterHappyPathAndTeardown
             connection
         );
         SetByType(fakeConnectionState, typeof(global::NetCord.Gateway.IRateLimiter), limiter);
-        var providerType =
-            assembly.GetType("NetCord.Gateway.CancellationTokenProvider")
+        var providerType = assembly.GetType("NetCord.Gateway.CancellationTokenProvider")
             ?? throw new MissingMemberException("NetCord.Gateway.CancellationTokenProvider");
         Reflect.Field(
             fakeConnectionState,
@@ -239,8 +235,7 @@ public sealed class AdapterHappyPathAndTeardown
 
         var state = RuntimeHelpers.GetUninitializedObject(stateType);
         Reflect.Field(state, "_lock", new Lock());
-        var stateProviderType =
-            assembly.GetType("NetCord.Gateway.CancellationTokenProvider")
+        var stateProviderType = assembly.GetType("NetCord.Gateway.CancellationTokenProvider")
             ?? throw new MissingMemberException("NetCord.Gateway.CancellationTokenProvider");
         Reflect.Field(
             state,
@@ -292,15 +287,11 @@ public sealed class AdapterHappyPathAndTeardown
         await using (stack.ConfigureAwait(false))
         {
             using var callerCts = new CancellationTokenSource();
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/loadstream",
-                async (_, _) =>
-                {
-                    callerCts.Cancel();
-                    await Task.Delay(TimeSpan.FromSeconds(80)).ConfigureAwait(false);
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/loadstream", async (_, _) =>
+            {
+                callerCts.Cancel();
+                await Task.Delay(TimeSpan.FromSeconds(80)).ConfigureAwait(false);
+            });
             await Assert
                 .That(async () =>
                     await stack
@@ -346,14 +337,10 @@ public sealed class AdapterHappyPathAndTeardown
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
 
             server.On("GET", PlayerPath, _ => new FakeRestResponse(200, PlayerJson));
-            server.OnRaw(
-                "PATCH",
-                PlayerPath,
-                async (_, raw) =>
-                {
-                    await raw.DisposeAsync().ConfigureAwait(false);
-                }
-            );
+            server.OnRaw("PATCH", PlayerPath, async (_, raw) =>
+            {
+                await raw.DisposeAsync().ConfigureAwait(false);
+            });
 
             await Assert
                 .That(async () => await conn.PauseAsync().ConfigureAwait(false))

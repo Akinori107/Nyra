@@ -198,23 +198,19 @@ public sealed class ReadyAndRegistryRace
         var stack = await StartAsync("rest-premature").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/sessions/fake-session/groups",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-                        + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream
-                        .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the body"))
-                        .ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                    await Task.Delay(700).ConfigureAwait(false);
-                    stream.Close();
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/sessions/fake-session/groups", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                    + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream
+                    .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the body"))
+                    .ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+                await Task.Delay(700).ConfigureAwait(false);
+                stream.Close();
+            });
 
             await Assert
                 .That(async () =>
@@ -243,18 +239,14 @@ public sealed class ReadyAndRegistryRace
         var stack = await StartAsync("stream-cancel").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/loadstream",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
-                        + "Content-Length: 500\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/loadstream", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
+                    + "Content-Length: 500\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+            });
 
             using var cancelled = new CancellationTokenSource();
             cancelled.Cancel();

@@ -791,14 +791,10 @@ internal static class NodeHarness
     public const string PlayerPath = "/v4/sessions/fake-session/players/777";
 
     public static void AcceptPlayerPatch(FakeNodeServer server, ulong guild = 777) =>
-        server.On(
-            "PATCH",
-            $"/v4/sessions/fake-session/players/{guild}",
-            _ => new FakeRestResponse(
-                200,
-                $$$"""{"guildId":"{{{guild}}}","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-            )
-        );
+        server.On("PATCH", $"/v4/sessions/fake-session/players/{guild}", _ => new FakeRestResponse(
+            200,
+            $$$"""{"guildId":"{{{guild}}}","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+        ));
 
     public static async Task<GuildConnection> ConnectGuildAsync(
         FakeBridge bridge,
@@ -913,8 +909,7 @@ internal static class NodeHarness
 
     public static void InjectShards(ShardedGatewayClient sharded, params GatewayClient[] clients)
     {
-        var stateType =
-            typeof(ShardedGatewayClient).GetNestedType("State", BindingFlags.NonPublic)
+        var stateType = typeof(ShardedGatewayClient).GetNestedType("State", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("ShardedGatewayClient.State");
         var state = Activator.CreateInstance(stateType)!;
         stateType.GetProperty("Clients")!.SetValue(state, clients);
@@ -926,8 +921,7 @@ internal static class NodeHarness
 
     public static object NewWsState(bool ready)
     {
-        var stateType =
-            typeof(WebSocketClient).GetNestedType("State", BindingFlags.NonPublic)
+        var stateType = typeof(WebSocketClient).GetNestedType("State", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("WebSocketClient.State");
         var state = Activator.CreateInstance(stateType)!;
         if (ready)

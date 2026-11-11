@@ -16,10 +16,10 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
     > LeaveEchoGuards = [];
 
     private static ConcurrentDictionary<ulong, LeaveEchoGuard> GuardFor(IDiscordBridge client) =>
-        LeaveEchoGuards.GetValue(
-            client,
-            static _ => new ConcurrentDictionary<ulong, LeaveEchoGuard>()
-        );
+        LeaveEchoGuards.GetValue(client, static _ => new ConcurrentDictionary<
+            ulong,
+            LeaveEchoGuard
+        >());
 
     private static LeaveEchoGuard GuardForGuild(
         ConcurrentDictionary<ulong, LeaveEchoGuard> guard,
