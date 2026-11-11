@@ -42,15 +42,6 @@ internal sealed class GuildCommands
         if (urlStart is not null)
             positionMilliseconds = (long)urlStart.Value.TotalMilliseconds;
 
-        if (
-            _node.IsNodeLink
-            && options?.NoReplace != true
-            && GuildConnection.IsSameTrack(_connection.CurrentTrack, track)
-        )
-            await _connection
-                .Patches.UpdateAsync(StopPayload, cancellationToken)
-                .ConfigureAwait(false);
-
         var refusable = options?.NoReplace == true && _connection.CurrentTrack is not null;
 
         var stamps = _connection.Playback.StampPlayRequested();

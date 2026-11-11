@@ -1867,8 +1867,7 @@ public sealed class NodeIntegration
         string? artwork,
         string? isrc,
         string source,
-        long position,
-        byte[]? trailer = null
+        long position
     )
     {
         var message = new List<byte>();
@@ -1888,17 +1887,7 @@ public sealed class NodeIntegration
         }
         WriteJavaUtf(message, source);
         WriteLong(message, position);
-        if (trailer is not null)
-            message.AddRange(trailer);
         return [.. message];
-    }
-
-    private static byte[] LegacyTrailer(bool seekable)
-    {
-        var trailer = new List<byte> { 1, 0, 13 };
-        trailer.AddRange("NLK:seekable"u8.ToArray());
-        trailer.Add((byte)(seekable ? 'Y' : 'N'));
-        return [.. trailer];
     }
 
     private static string EncodedTrackWithAPlus() =>
@@ -2058,31 +2047,6 @@ public sealed class NodeIntegration
             await Assert.That(v3Track.Info.ArtworkUrl).IsEqualTo("https://art");
             await Assert.That(v3Track.Info.Isrc).IsEqualTo("AAA000000001");
             await Assert.That(v3Track.Info.PositionMilliseconds).IsEqualTo(1234);
-        }
-
-        var legacy = EncodeTrackMessage(
-            BuildMessage(
-                version: null,
-                title: "Old",
-                author: "NodeLink",
-                length: 1,
-                identifier: "old",
-                isStream: false,
-                uri: null,
-                artwork: null,
-                isrc: null,
-                source: "youtube",
-                position: 7,
-                trailer: LegacyTrailer(seekable: true)
-            ),
-            versioned: false
-        );
-        var legacyTrack = Track.Decode(legacy);
-        using (Assert.Multiple())
-        {
-            await Assert.That(legacyTrack.Info).IsNotNull();
-            await Assert.That(legacyTrack.Info.Title).IsEqualTo("Old");
-            await Assert.That(legacyTrack.Info.PositionMilliseconds).IsEqualTo(7);
         }
 
         await Assert

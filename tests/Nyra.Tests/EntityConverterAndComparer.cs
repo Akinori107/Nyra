@@ -43,43 +43,6 @@ public sealed class EntityConverterAndComparer
         await Assert.That(escaped?.Id).IsEqualTo(12);
     }
 
-    private sealed class NullableBox
-    {
-        [System.Text.Json.Serialization.JsonPropertyName("flag")]
-        public bool? Flag { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("name")]
-        public string? Name { get; set; }
-    }
-
-    private static readonly JsonSerializerOptions NullableOptions = new()
-    {
-        Converters =
-        {
-            new NullableTolerantBooleanConverter(),
-            new NullableTolerantStringConverter(),
-        },
-    };
-
-    [Test]
-    public async Task NullableAndNullWrites()
-    {
-        var nullFlag = JsonSerializer.Deserialize<NullableBox>(
-            """{"flag":null}""",
-            NullableOptions
-        );
-        await Assert.That(nullFlag?.Flag).IsNull();
-
-        var written = JsonSerializer.Serialize(new NullableBox(), NullableOptions);
-        await Assert.That(written).IsEqualTo("""{"flag":null,"name":null}""");
-
-        var emptyName = JsonSerializer.Serialize(new NullableBox { Name = null }, NullableOptions);
-        await Assert.That(emptyName).IsEqualTo("""{"flag":null,"name":null}""");
-
-        var named = JsonSerializer.Serialize(new NullableBox { Name = "probe" }, NullableOptions);
-        await Assert.That(named).Contains("probe");
-    }
-
     private sealed class NotInTheContext
     {
         public int Value { get; set; }
@@ -131,32 +94,9 @@ public sealed class EntityConverterAndComparer
         await Assert.That(writtenNull).IsEqualTo("""{"message":null}""");
     }
 
-    private sealed class FlagBox
-    {
-        [System.Text.Json.Serialization.JsonPropertyName("flag")]
-        public bool Flag { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("name")]
-        public string? Name { get; set; }
-    }
-
-    private static readonly JsonSerializerOptions TolerantOptions = new()
-    {
-        Converters = { new TolerantBooleanConverter(), new NullableTolerantStringConverter() },
-    };
-
     [Test]
-    public async Task Skipper()
+    public async Task VolumeReadsAsAFloat()
     {
-        var fromNumber = JsonSerializer.Deserialize<FlagBox>("""{"flag":7}""", TolerantOptions);
-        await Assert.That(fromNumber?.Flag).IsTrue();
-
-        var fromZero = JsonSerializer.Deserialize<FlagBox>("""{"flag":0}""", TolerantOptions);
-        await Assert.That(fromZero?.Flag).IsFalse();
-
-        var skipped = JsonSerializer.Deserialize<FlagBox>("""{"name":{"x":1}}""", TolerantOptions);
-        await Assert.That(skipped?.Name).IsNull();
-
         var volume = Parse<FilterChain>("""{"volume":7}""");
         await Assert.That(volume?.Volume).IsEqualTo(7f);
     }
@@ -235,17 +175,6 @@ public sealed class EntityConverterAndComparer
 
         var lines = Parse<SubscribedLyrics>("""{"lines":null}""");
         await Assert.That(lines?.Lines is { Count: 0 }).IsTrue();
-
-        var poisoned = Parse<SponsorBlockSegment>(
-            """{"start":"abc","end":1e40,"votes":1e40,"videoDuration":"soon"}"""
-        );
-        using (Assert.Multiple())
-        {
-            await Assert.That(poisoned?.Start).IsNull();
-            await Assert.That(poisoned?.End).IsNull();
-            await Assert.That(poisoned?.Votes).IsEqualTo(0);
-            await Assert.That(poisoned?.VideoDuration).IsEqualTo(0L);
-        }
 
         var segments = Parse<SponsorBlockSegmentsLoadedEventArgs>("""{"segments":null}""");
         await Assert.That(segments?.Segments.Count).IsEqualTo(0);

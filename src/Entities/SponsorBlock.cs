@@ -22,7 +22,7 @@ public sealed record SponsorBlockSegment
     /// Null when the server did not map one or sent a value that is not a number or beyond the int64 range.
     /// </remarks>
     [JsonPropertyName("start"), JsonInclude]
-    [JsonConverter(typeof(TolerantNullableRoundedInt64Converter))]
+    [JsonConverter(typeof(RoundedInt64Converter))]
     public long? Start { get; init; }
 
     /// <summary>Segment end, in milliseconds.</summary>
@@ -30,7 +30,7 @@ public sealed record SponsorBlockSegment
     /// Null when the server did not map one or sent a value that is not a number or beyond the int64 range.
     /// </remarks>
     [JsonPropertyName("end"), JsonInclude]
-    [JsonConverter(typeof(TolerantNullableRoundedInt64Converter))]
+    [JsonConverter(typeof(RoundedInt64Converter))]
     public long? End { get; init; }
 
     /// <summary>SponsorBlock category, e.g. <c>sponsor</c> or <c>selfpromo</c>.</summary>
@@ -59,12 +59,11 @@ public sealed record SponsorBlockSegment
     /// range reads as zero, it is an informative counter, a failed read would cost the whole state or event.
     /// </remarks>
     [JsonPropertyName("votes"), JsonInclude]
-    [JsonConverter(typeof(TolerantRoundedInt32Converter))]
+    [JsonConverter(typeof(RoundedInt32Converter))]
     public int Votes { get; init; }
 
     /// <summary>Whether the segment is locked in the SponsorBlock database.</summary>
     [JsonPropertyName("locked"), JsonInclude]
-    [JsonConverter(typeof(TolerantBooleanConverter))]
     public bool Locked { get; init; }
 
     /// <summary>Length of the video the segment was submitted for, in milliseconds.</summary>
@@ -73,7 +72,7 @@ public sealed record SponsorBlockSegment
     /// range reads as zero, it is an informative counter, a failed read would cost the whole state or event.
     /// </remarks>
     [JsonPropertyName("videoDuration"), JsonInclude]
-    [JsonConverter(typeof(TolerantRoundedInt64Converter))]
+    [JsonConverter(typeof(RoundedInt64Converter))]
     public long VideoDuration { get; init; }
 
     /// <summary>The description of the segment.</summary>
@@ -90,7 +89,6 @@ public sealed record SponsorBlockState
 {
     /// <summary>Whether the server skips segments.</summary>
     [JsonPropertyName("enabled"), JsonInclude]
-    [JsonConverter(typeof(TolerantBooleanConverter))]
     public bool Enabled { get; internal set; }
 
     /// <summary>The categories the server skips, a null list reads as empty.</summary>
@@ -127,7 +125,7 @@ public sealed record SponsorBlockState
     /// <summary>How long before a segment boundary the server skips, in milliseconds.</summary>
     /// <remarks>A null, a value that is not a number or one beyond the int32 range reads as zero.</remarks>
     [JsonPropertyName("skipMarginMs"), JsonInclude]
-    [JsonConverter(typeof(TolerantRoundedInt32Converter))]
+    [JsonConverter(typeof(RoundedInt32Converter))]
     public int SkipMarginMilliseconds { get; internal set; }
 
     /// <summary>Indicates whether the states carry the same members.</summary>

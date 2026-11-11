@@ -371,15 +371,6 @@ public sealed class RestEdge
                 .That(meaning is { LoadType: MeaningLoadType.Meaning, Data.Title: "ATWA" })
                 .IsTrue();
 
-            server.On("GET", "/v4/meaning", 500, """{"message":"provider down"}""");
-            var failed = await node.Lyrics.LoadMeaningAsync(track).ConfigureAwait(false);
-            await Assert
-                .That(
-                    failed
-                        is { LoadType: MeaningLoadType.Error, Data.ErrorMessage: "provider down" }
-                )
-                .IsTrue();
-
             server.On("GET", "/v4/meaning", 500, "boom");
             var opaque = await Assert
                 .That(async () => await node.Lyrics.LoadMeaningAsync(track).ConfigureAwait(false))

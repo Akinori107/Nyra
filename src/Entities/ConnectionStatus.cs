@@ -55,7 +55,6 @@ public sealed record ConnectionStatus
     /// not a string reads as null instead of failing the whole frame.
     /// </remarks>
     [JsonPropertyName("reason"), JsonInclude]
-    [JsonConverter(typeof(NullableTolerantStringConverter))]
     public string? Reason { get; internal set; }
 
     /// <summary>Indicates whether the statuses report the same quality and reason.</summary>

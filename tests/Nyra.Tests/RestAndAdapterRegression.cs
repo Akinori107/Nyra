@@ -24,18 +24,6 @@ public sealed class RestAndAdapterRegression
             string? S
     );
 
-    private sealed record TolerantStringProbe(
-        [property: JsonPropertyName("s")]
-        [property: JsonConverter(typeof(NullableTolerantStringConverter))]
-            string? S
-    );
-
-    private sealed record TolerantBoolProbe(
-        [property: JsonPropertyName("b")]
-        [property: JsonConverter(typeof(NullableTolerantBooleanConverter))]
-            bool? B
-    );
-
     private static async Task<Stack> StartAsync(FakeNodeServer? server = null)
     {
         server ??= new FakeNodeServer();
@@ -185,53 +173,6 @@ public sealed class RestAndAdapterRegression
         await Assert.That(stringNull?.S).IsNull();
         var stringWritten = JsonSerializer.Serialize(new StringOrNullProbe(null), options);
         await Assert.That(stringWritten).Contains("null");
-
-        var tolerantNull = JsonSerializer.Deserialize<TolerantStringProbe>(
-            """{"s":null}""",
-            options
-        );
-        await Assert.That(tolerantNull?.S).IsNull();
-        var tolerantWritten = JsonSerializer.Serialize(new TolerantStringProbe(null), options);
-        await Assert.That(tolerantWritten).Contains("null");
-
-        var boolWritten = JsonSerializer.Serialize(new TolerantBoolProbe(null), options);
-        await Assert.That(boolWritten).Contains("null");
-        var boolValue = JsonSerializer.Deserialize<TolerantBoolProbe>("""{"b":true}""", options);
-        await Assert.That(boolValue?.B).IsTrue();
-    }
-
-    [Test]
-    public async Task LyricsMissingRoute()
-    {
-        var server = new FakeNodeServer
-        {
-            IsNodeLink = false,
-            Semver = "4.2.0",
-            InfoBody =
-                """{"version":{"semver":"4.2.0"},"plugins":[{"name":"lavalyrics-plugin"}]}""",
-        };
-        var stack = await StartAsync(server).ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var connection = await ConnectGuildAsync(stack.Bridge, stack.Node, server)
-                .ConfigureAwait(false);
-            const string subscribePath = "/v4/sessions/fake-session/players/777/lyrics/subscribe";
-            server.On(
-                "PUT",
-                subscribePath,
-                _ => new FakeRestResponse(404, """{"message":"No endpoint"}""")
-            );
-            server.On(
-                "POST",
-                subscribePath,
-                _ => new FakeRestResponse(404, """{"message":"No endpoint"}""")
-            );
-            var missing = await Assert
-                .That(async () => await connection.Lyrics.SubscribeAsync().ConfigureAwait(false))
-                .Throws<NotSupportedException>();
-            var inner = await Assert.That(missing!.InnerException).IsTypeOf<RestException>();
-            await Assert.That(inner!.StatusCode).IsEqualTo(404);
-        }
     }
 
     [Test]

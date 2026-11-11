@@ -415,11 +415,6 @@ public sealed class GuildConnection
     /// Plays a track, replacing whatever plays unless <see cref="PlayOptions.NoReplace"/> is set, falls back
     /// to <see cref="Track.StartPosition"/> without an explicit start, consumed after the first accepted play.
     /// </summary>
-    /// <remarks>
-    /// The consumption is best-effort on the echo, a play the server ignored (NodeLink drops a re-sent
-    /// identical track) can consume the offset without a restart, the next accepted play then starts from
-    /// zero.
-    /// </remarks>
     /// <param name="track">The track to play.</param>
     /// <param name="options">How to start the track, null starts it plain.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
@@ -757,9 +752,6 @@ public sealed class GuildConnection
     {
         if (_tearingDown)
             return;
-
-        if (Filters.HasPendingFilters)
-            _ = Filters.ResendPendingFiltersAsync();
 
         Playback.OnTrackStart(eventArgs);
 

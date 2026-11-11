@@ -25,7 +25,7 @@ public sealed class JsonEdge
 
     private sealed record RoundedProbe(
         [property: JsonConverter(typeof(RoundedInt64Converter))] long L,
-        [property: JsonConverter(typeof(TolerantRoundedInt64Converter))] long? LN,
+        [property: JsonConverter(typeof(RoundedInt64Converter))] long? LN,
         [property: JsonConverter(typeof(RoundedInt32Converter))] int I
     );
 
@@ -186,14 +186,6 @@ public sealed class JsonEdge
         [property: JsonConverter(typeof(StringOrNumberConverter))] string? X
     );
 
-    private sealed record NullableStringProbe(
-        [property: JsonConverter(typeof(NullableTolerantStringConverter))] string? S
-    );
-
-    private sealed record NullableBooleanProbe(
-        [property: JsonConverter(typeof(NullableTolerantBooleanConverter))] bool? B
-    );
-
     private sealed record FiniteProbe(
         [property: JsonConverter(typeof(FiniteFloatConverter))] float F
     );
@@ -209,18 +201,6 @@ public sealed class JsonEdge
 
         var rawText = JsonSerializer.Deserialize<StringOrNumberProbe>("""{"X":1e400}""", options);
         await Assert.That(rawText?.X).IsEqualTo("1e400");
-
-        var nullAsNull = JsonSerializer.Deserialize<NullableStringProbe>("""{"S":null}""", options);
-        await Assert.That(nullAsNull?.S).IsNull();
-
-        var nullableWritten = JsonSerializer.Serialize(new NullableStringProbe(null), options);
-        await Assert.That(nullableWritten).Contains(""""S":null"""");
-
-        var boolObject = JsonSerializer.Deserialize<NullableBooleanProbe>("""{"B":{}}""", options);
-        await Assert.That(boolObject?.B is false or null).IsTrue();
-
-        var boolWritten = JsonSerializer.Serialize(new NullableBooleanProbe(null), options);
-        await Assert.That(boolWritten).Contains(""""B":null"""");
 
         var intBoundaries = JsonSerializer.Deserialize<RoundedProbe>(
             """{"L":9223372036854775807.5,"LN":null,"I":2.5}""",
@@ -239,22 +219,17 @@ public sealed class JsonEdge
     }
 
     [Test]
-    public async Task JsonToleratedShapes()
+    public async Task JsonShapes()
     {
         var options = new JsonSerializerOptions();
         var entityOptions = NyraJson.OptionsFor(true);
 
-        var toleratedBool = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":[],"categories":[]}""",
-            entityOptions
+        Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<SponsorBlockState>(
+                """{"enabled":[],"categories":[]}""",
+                entityOptions
+            )
         );
-        await Assert.That(toleratedBool?.Enabled).IsFalse();
-
-        var stringless = JsonSerializer.Deserialize<NullableStringProbe>(
-            """{"S":[1,2]}""",
-            options
-        );
-        await Assert.That(stringless?.S).IsNull();
 
         var roundedFromString = JsonSerializer.Deserialize<RoundedProbe>(
             """{"L":"9.5","LN":null,"I":"2.5"}""",

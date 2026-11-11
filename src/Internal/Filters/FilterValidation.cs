@@ -202,12 +202,6 @@ internal static class FilterValidation
                 break;
             case TesseractFilter tesseract:
                 ThrowIfOutOfRange(tesseract.RotationHz, 0.0, null, "tesseract rotationHz");
-                if (tesseract.RotationHz is { } hz && hz > 0.0 && hz <= 0.001)
-                    ThrowOutOfRange(
-                        "tesseract rotationHz",
-                        hz,
-                        "NodeLink leaves anything at or below 0.001 off, use 0.0 to disable or a larger value."
-                    );
                 break;
             case RotationFilter rotation:
                 CheckFinite(rotation.RotationHz, "rotation rotationHz");

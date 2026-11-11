@@ -213,10 +213,6 @@ public sealed record GroupUpdate
     public bool? LoudnessNormalizer { get; init; }
 
     /// <summary>Whether every member runs speaking-detection ducking.</summary>
-    /// <remarks>
-    /// NodeLink 3.9.0 answers this member with a 500, so the whole group update fails against that build. The
-    /// stored configuration survives the failed write.
-    /// </remarks>
     [JsonPropertyName("ducking")]
     public bool? Ducking { get; init; }
 }

@@ -13,7 +13,7 @@ public sealed class PlayerReconnectingEventArgs : System.EventArgs
 {
     /// <summary>The guild the player plays in.</summary>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
     /// <summary>The voice state the player reconnects with, null when the server sent none.</summary>

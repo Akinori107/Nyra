@@ -17,7 +17,6 @@ public sealed class NodeReadyEventArgs : System.EventArgs
     /// </para>
     /// </remarks>
     [JsonPropertyName("resumed"), JsonInclude]
-    [JsonConverter(typeof(NullableTolerantBooleanConverter))]
     public bool? Resumed { get; internal set; }
 
     /// <summary>The resume claim exactly as the server sent it.</summary>
@@ -40,7 +39,6 @@ public sealed class NodeReadyEventArgs : System.EventArgs
     /// </para>
     /// </remarks>
     [JsonPropertyName("sessionId"), JsonInclude]
-    [JsonConverter(typeof(NullableTolerantStringConverter))]
     public string SessionId
     {
         get;

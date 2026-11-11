@@ -31,27 +31,6 @@ public sealed class ConnectorAndTransportEdge
         using (var writer2 = new Utf8JsonWriter(stringStream))
             new StringOrNumberConverter().Write(writer2, null, options);
         await Assert.That(Encoding.UTF8.GetString(stringStream.ToArray())).IsEqualTo("null");
-
-        var tolerantReader = new Utf8JsonReader("null"u8);
-        tolerantReader.Read();
-        await Assert
-            .That(
-                new NullableTolerantStringConverter().Read(
-                    ref tolerantReader,
-                    typeof(string),
-                    options
-                )
-            )
-            .IsNull();
-        using var tolerantStream = new MemoryStream();
-        using (var writer3 = new Utf8JsonWriter(tolerantStream))
-            new NullableTolerantStringConverter().Write(writer3, null, options);
-        await Assert.That(Encoding.UTF8.GetString(tolerantStream.ToArray())).IsEqualTo("null");
-
-        using var boolStream = new MemoryStream();
-        using (var writer4 = new Utf8JsonWriter(boolStream))
-            new NullableTolerantBooleanConverter().Write(writer4, null, options);
-        await Assert.That(Encoding.UTF8.GetString(boolStream.ToArray())).IsEqualTo("null");
     }
 
     [Test]

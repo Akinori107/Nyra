@@ -27,7 +27,6 @@ public sealed record YouTubeAudioTrack
     /// whole list.
     /// </remarks>
     [JsonPropertyName("isDefault"), JsonInclude]
-    [JsonConverter(typeof(TolerantBooleanConverter))]
     public bool IsDefault { get; internal set; }
 
     /// <summary>Whether the track was auto-dubbed by the platform rather than uploaded.</summary>
@@ -36,7 +35,6 @@ public sealed record YouTubeAudioTrack
     /// whole list.
     /// </remarks>
     [JsonPropertyName("isAutoDubbed"), JsonInclude]
-    [JsonConverter(typeof(TolerantBooleanConverter))]
     public bool IsAutoDubbed { get; internal set; }
 }
 

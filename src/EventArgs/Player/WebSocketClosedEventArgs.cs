@@ -13,7 +13,7 @@ public sealed class WebSocketClosedEventArgs : System.EventArgs
 {
     /// <summary>The guild the player plays in.</summary>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
     /// <summary>Discord voice close event code, the 4xxx family signals failures.</summary>

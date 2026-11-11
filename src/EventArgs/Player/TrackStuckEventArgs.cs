@@ -12,7 +12,7 @@ public sealed class TrackStuckEventArgs : System.EventArgs
     /// reads as 0 the same way, one hostile frame must not kill the event or the frame.
     /// </remarks>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
     /// <summary>

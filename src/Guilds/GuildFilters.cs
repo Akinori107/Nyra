@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
-using Nyra.Exceptions;
 using Nyra.Internal;
 
 namespace Nyra;
@@ -107,7 +106,6 @@ public sealed class GuildFilters
     private readonly SemaphoreSlim _filterGate = new(1, 1);
 
     private readonly CancellationTokenSource _filterSendCts = new();
-    private FilterChain? _pendingFilters;
 
     internal GuildFilters(GuildConnection connection)
     {
@@ -124,8 +122,6 @@ public sealed class GuildFilters
     /// pick the change up either, it re-sends from Nyra's own view and replaces the co-client's change.
     /// </remarks>
     public FilterChain Applied { get; private set; } = new();
-
-    internal bool HasPendingFilters => _pendingFilters is not null;
 
     internal async Task DrainAsync(CancellationToken cancellationToken = default)
     {
@@ -349,7 +345,7 @@ public sealed class GuildFilters
             .ConfigureAwait(false);
     }
 
-    private FilterChain DesiredFilters() => _pendingFilters ?? Applied;
+    private FilterChain DesiredFilters() => Applied;
 
     private async Task WriteAsync(Func<FilterChain> compose, CancellationToken cancellationToken)
     {
@@ -371,10 +367,6 @@ public sealed class GuildFilters
     private long _lastWriteTicket;
 
     private long _lastCaptureTicket;
-
-    private const int MaxPendingFilterDivergences = 3;
-
-    private int _pendingFilterDivergences;
 
     internal static long NextTicket() => Interlocked.Increment(ref _ticket);
 
@@ -444,8 +436,7 @@ public sealed class GuildFilters
                 cancellationToken,
                 _filterSendCts.Token
             );
-            await PatchAndLandAsync(desired, countDivergence: false, linked.Token)
-                .ConfigureAwait(false);
+            await PatchAndLandAsync(desired, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
             when (_filterSendCts.IsCancellationRequested
@@ -459,11 +450,7 @@ public sealed class GuildFilters
         }
     }
 
-    private async Task<bool> PatchAndLandAsync(
-        FilterChain desired,
-        bool countDivergence,
-        CancellationToken cancellationToken
-    )
+    private async Task PatchAndLandAsync(FilterChain desired, CancellationToken cancellationToken)
     {
         TimescaleFilter? oldTimescale;
         lock (_connection.PlaybackPositionLock)
@@ -477,35 +464,22 @@ public sealed class GuildFilters
             )
             .ConfigureAwait(false);
 
-        return Land(player, desired, oldTimescale, countDivergence);
+        Land(player, desired, oldTimescale);
     }
 
-    private bool Land(
-        Player player,
-        FilterChain desired,
-        TimescaleFilter? oldTimescale,
-        bool countDivergence
-    )
+    private void Land(Player player, FilterChain desired, TimescaleFilter? oldTimescale)
     {
-        var stillPending =
-            _node.IsNodeLink
-            && player.Filters is { } echoed
-            && !FilterComparer.FiltersEqual(echoed, desired);
-
-        bool gaveUp;
         lock (_connection.PlaybackPositionLock)
         {
             Applied =
                 _node.IsNodeLink && player.Filters is { } effective
                     ? effective
                     : StripConfigDisabledFilters(desired);
-            gaveUp = CommitPendingUnderLock(desired, stillPending, countDivergence);
 
             ReanchorIfPaceChanged(oldTimescale);
         }
 
         _lastWriteTicket = NextTicket();
-        return gaveUp;
     }
 
     private void ReanchorIfPaceChanged(TimescaleFilter? oldTimescale)
@@ -518,95 +492,6 @@ public sealed class GuildFilters
             return;
 
         _connection.ReanchorTimescaleUnderLock(oldTimescale);
-    }
-
-    private static readonly TimeSpan ResendDeadline = TimeSpan.FromSeconds(10);
-
-    private long _resendNotBefore;
-
-    internal async Task ResendPendingFiltersAsync()
-    {
-        if (_node.Time.GetMilliseconds() < Volatile.Read(ref _resendNotBefore))
-            return;
-
-        await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-        try
-        {
-            if (
-                _pendingFilters is not { } desired
-                || !_node.IsReady
-                || !_connection.IsConnected
-                || _connection.IsTearingDown
-            )
-                return;
-
-            using var attemptCts = new TimeoutLink(
-                _node.Time,
-                ResendDeadline,
-                _filterSendCts.Token
-            );
-            if (
-                await PatchAndLandAsync(desired, countDivergence: true, attemptCts.Token)
-                    .ConfigureAwait(false)
-            )
-                _node.HandleError(
-                    new InvalidOperationException(
-                        $"The server of guild {GuildId} keeps echoing a different filter chain after {MaxPendingFilterDivergences} attempts, giving up re-sending it."
-                    )
-                );
-        }
-        catch (OperationCanceledException) when (_filterSendCts.IsCancellationRequested) { }
-        catch (RestException restFailure) when (restFailure.RetryAfter is { } retryAfter)
-        {
-            Volatile.Write(
-                ref _resendNotBefore,
-                _node.Time.GetMilliseconds() + (long)retryAfter.TotalMilliseconds
-            );
-            _node.HandleError(
-                new InvalidOperationException(
-                    $"The server of guild {GuildId} answered the filter re-send with {restFailure.StatusCode}, waiting the retry-after before the next attempt.",
-                    restFailure
-                )
-            );
-        }
-        catch (Exception exception)
-        {
-            bool gaveUp;
-            lock (_connection.PlaybackPositionLock)
-                gaveUp = CountFailedResendUnderLock();
-
-            _node.HandleError(
-                gaveUp
-                    ? new InvalidOperationException(
-                        $"The server of guild {GuildId} keeps failing to re-apply its filters after {MaxPendingFilterDivergences} attempts, giving up re-sending them.",
-                        exception
-                    )
-                    : new InvalidOperationException(
-                        $"Failed to re-apply the filters of guild {GuildId}: {exception.Message}",
-                        exception
-                    )
-            );
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-    }
-
-    private bool CountFailedResendUnderLock()
-    {
-        return _pendingFilters is not null && GiveUpAfterDivergenceUnderLock();
-    }
-
-    private bool GiveUpAfterDivergenceUnderLock()
-    {
-        _pendingFilterDivergences++;
-        if (_pendingFilterDivergences < MaxPendingFilterDivergences)
-            return false;
-
-        _pendingFilters = null;
-        _pendingFilterDivergences = 0;
-        return true;
     }
 
     internal async Task CaptureServerFiltersAsync(
@@ -647,7 +532,7 @@ public sealed class GuildFilters
         await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            Land(player, desired, oldTimescale: null, countDivergence: false);
+            Land(player, desired, oldTimescale: null);
         }
         finally
         {
@@ -660,8 +545,6 @@ public sealed class GuildFilters
         await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            _pendingFilters = null;
-            _pendingFilterDivergences = 0;
             Applied = new();
         }
         finally
@@ -674,31 +557,6 @@ public sealed class GuildFilters
     {
         _filterSendCts.Cancel();
         await ResetForNewSessionAsync().ConfigureAwait(false);
-    }
-
-    private bool CommitPendingUnderLock(
-        FilterChain desired,
-        bool stillPending,
-        bool countDivergence
-    )
-    {
-        if (!stillPending)
-        {
-            _pendingFilters = null;
-            _pendingFilterDivergences = 0;
-            return false;
-        }
-
-        if (countDivergence)
-        {
-            if (GiveUpAfterDivergenceUnderLock())
-                return true;
-        }
-        else
-            _pendingFilterDivergences = 0;
-
-        _pendingFilters = desired;
-        return false;
     }
 
     private void ThrowIfConfigDisabled(FilterChain chain, FilterChain landed)

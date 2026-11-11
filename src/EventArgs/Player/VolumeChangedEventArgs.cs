@@ -8,7 +8,7 @@ public sealed class VolumeChangedEventArgs : System.EventArgs
 {
     /// <summary>The guild the player plays in.</summary>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
     /// <summary>

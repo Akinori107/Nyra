@@ -23,56 +23,6 @@ public sealed class BoundaryToleranceRegression
     }
 
     [Test]
-    public async Task TolerantBooleanStringCase()
-    {
-        var options = NyraJson.SerializerOptions;
-        var fromTrueString = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":"true"}""",
-            options
-        );
-        await Assert.That(fromTrueString?.Enabled).IsTrue();
-
-        var fromFalseString = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":"false"}""",
-            options
-        );
-        await Assert.That(fromFalseString?.Enabled).IsFalse();
-
-        var fromNumber = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":1}""",
-            options
-        );
-        await Assert.That(fromNumber?.Enabled).IsTrue();
-
-        var fromGarbage = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":"x"}""",
-            options
-        );
-        await Assert.That(fromGarbage?.Enabled).IsFalse();
-    }
-
-    [Test]
-    public async Task SponsorBlockNullTolerance()
-    {
-        var options = NyraJson.SerializerOptions;
-        var poisoned = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":null,"skipMarginMs":null}""",
-            options
-        );
-        using (Assert.Multiple())
-        {
-            await Assert.That(poisoned).IsNotNull();
-            await Assert.That(poisoned!.Enabled).IsFalse();
-            await Assert.That(poisoned.SkipMarginMilliseconds).IsEqualTo(0);
-        }
-        var fromStringMargin = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":true,"skipMarginMs":"2500"}""",
-            options
-        );
-        await Assert.That(fromStringMargin?.SkipMarginMilliseconds).IsEqualTo(2500);
-    }
-
-    [Test]
     public async Task BlackHolePatchBoundedByHandshakeTimeout()
     {
         var server = new FakeNodeServer();

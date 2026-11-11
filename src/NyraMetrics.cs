@@ -82,7 +82,7 @@ public static class NyraMetrics
             "cpu-node-load",
             () => ObserveByNode(snapshot => snapshot.Stats?.Cpu.NodeLoad),
             unit: "1",
-            description: "Load of the node process, structurally zero on a single-process NodeLink 3.9.x, watch cpu-system-load there, from the node's stats report."
+            description: "Load of the node process, from the node's stats report."
         );
         Meter.CreateObservableGauge(
             "frames-sent",

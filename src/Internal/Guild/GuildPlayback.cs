@@ -167,8 +167,7 @@ internal sealed class GuildPlayback
         lock (PositionLock)
         {
             pauseHoldsOverStart =
-                !_connection.Node.IsNodeLink
-                && _lastPauseRequestSequence > _lastPlayRequestSequence
+                _lastPauseRequestSequence > _lastPlayRequestSequence
                 && _lastPauseRequestSequence > _lastResumeRequestSequence;
 
             if (!pauseHoldsOverStart)

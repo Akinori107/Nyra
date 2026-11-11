@@ -92,9 +92,8 @@ public sealed record Track
     /// track itself. A track shared between guilds therefore loses the offset for all of them, so clone the
     /// track (record <c>with</c>) per consumer.
     /// <para>
-    /// The consumption is best-effort on the play's echo, a play the server silently ignored (NodeLink drops
-    /// a re-sent identical track) can consume it without a restart, and a NoReplace refusal caused by a
-    /// concurrent same-track play consumes it too. The next accepted play then starts from zero.
+    /// A NoReplace refusal caused by a concurrent same-track play consumes it too. The next accepted play then
+    /// starts from zero.
     /// </para>
     /// </remarks>
     [JsonIgnore]
@@ -177,10 +176,7 @@ public sealed record Track
                     payloadLength: raw.Length
                 );
 
-            var message = TrimLegacyNodeLinkTrailer(
-                raw.AsSpan(4, messageSize),
-                out var nodeLinkSeekable
-            );
+            var message = raw.AsSpan(4, messageSize);
             var reader = new JavaBinaryReader(message);
 
             var canonicalEncoded = Convert.ToBase64String(raw);
@@ -228,7 +224,7 @@ public sealed record Track
                     LengthMilliseconds = length,
                     Identifier = identifier,
                     IsStream = isStream,
-                    IsSeekable = nodeLinkSeekable ?? !isStream,
+                    IsSeekable = !isStream,
                     Uri = uri,
                     ArtworkUrl = artworkUrl,
                     Isrc = isrc,
@@ -248,27 +244,6 @@ public sealed record Track
                 exception
             );
         }
-    }
-
-    private static ReadOnlySpan<byte> TrimLegacyNodeLinkTrailer(
-        ReadOnlySpan<byte> raw,
-        out bool? nodeLinkSeekable
-    )
-    {
-        var marker = "NLK:seekable"u8;
-        nodeLinkSeekable = null;
-
-        if (raw.Length < 16 || raw[^1] is not (byte)'Y' and not (byte)'N')
-            return raw;
-
-        if (!raw.Slice(raw.Length - 13, marker.Length).SequenceEqual(marker))
-            return raw;
-
-        if (raw[^16] != 1 || raw[^15] != 0 || raw[^14] != 13)
-            return raw;
-
-        nodeLinkSeekable = raw[^1] == (byte)'Y';
-        return raw[..^16];
     }
 }
 

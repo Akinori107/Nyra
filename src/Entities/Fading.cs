@@ -80,9 +80,6 @@ public sealed record FadeSection
 /// Configuring this does not by itself enable ducking. The switch is <see cref="GuildEffects.SetDuckingAsync"/>,
 /// which picks up these values, and <see cref="Enabled"/> only travels with the stored configuration.
 /// NodeLink only.
-/// <para>
-/// NodeLink 3.9.0 answers the switch itself with a 500. The stored configuration survives the failed write.
-/// </para>
 /// </remarks>
 public sealed record DuckingOptions
 {

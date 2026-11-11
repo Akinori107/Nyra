@@ -12,7 +12,7 @@ public sealed class MixEndedEventArgs : System.EventArgs
 {
     /// <summary>The guild the player plays in.</summary>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
     /// <summary>The id of the mix layer that ended.</summary>

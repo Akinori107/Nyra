@@ -126,41 +126,6 @@ public sealed class PlayPath
     }
 
     [Test]
-    public async Task SameTrackRestart()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var conn = stack.Node.GetConnection(777)!;
-            var track = Track();
-
-            await conn.PlayAsync(track).ConfigureAwait(false);
-            await Assert.That(conn.CurrentTrack?.Encoded).IsEqualTo(track.Encoded);
-
-            var patches = 0;
-            stack.Server.On(
-                "PATCH",
-                PlayerPath,
-                _ =>
-                {
-                    patches++;
-                    return new FakeRestResponse(200, PlayerWithTrack);
-                }
-            );
-            await conn.PlayAsync(track).ConfigureAwait(false);
-            await Assert.That(patches).IsGreaterThanOrEqualTo(2);
-            var bodies = stack
-                .Server.RestCalls.Where(c => c is { Method: "PATCH", Path: PlayerPath })
-                .Select(c => c.Body ?? string.Empty)
-                .TakeLast(2)
-                .ToArray();
-            await Assert.That(bodies.Length).IsEqualTo(2);
-            await Assert.That(bodies[0]).Contains("\"encoded\":null");
-            await Assert.That(bodies[1]).Contains("QXRsZWFzdA==");
-        }
-    }
-
-    [Test]
     public async Task AmbiguousLanding()
     {
         var stack = await StartAsync().ConfigureAwait(false);

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Exceptions;
 
@@ -102,45 +101,8 @@ public sealed class NodeLyrics
         ArgumentException.ThrowIfNullOrWhiteSpace(track.Encoded);
         await _node.RequireNodeLinkAsync("track meanings", cancellationToken).ConfigureAwait(false);
 
-        try
-        {
-            return await _node
-                .Rest.Lyrics.LoadMeaningAsync(track.Encoded, language, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (RestException exception) when (exception.StatusCode == 500)
-        {
-            var message = TryReadErrorMessage(exception.ResponseBody);
-            if (message is null)
-                throw;
-
-            return new MeaningResult
-            {
-                LoadType = MeaningLoadType.Error,
-                Data = new MeaningData { ErrorMessage = message },
-            };
-        }
-    }
-
-    private static string? TryReadErrorMessage(string? responseBody)
-    {
-        if (string.IsNullOrWhiteSpace(responseBody))
-            return null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(responseBody);
-            return
-                document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("message", out var message)
-                && message.ValueKind == JsonValueKind.String
-                && !string.IsNullOrWhiteSpace(message.GetString())
-                ? message.GetString()
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        return await _node
+            .Rest.Lyrics.LoadMeaningAsync(track.Encoded, language, cancellationToken)
+            .ConfigureAwait(false);
     }
 }

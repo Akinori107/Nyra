@@ -99,7 +99,7 @@ public sealed class LyricsFoundEventArgs : System.EventArgs
 {
     /// <summary>The guild the player plays in.</summary>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
     /// <summary>The lyrics that were loaded.</summary>

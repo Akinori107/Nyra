@@ -63,11 +63,6 @@ public sealed class GuildEffects
     /// Turns speaking-detection ducking on or off, the depth and timing live in <see
     /// cref="FadingOptions.Ducking"/> instead.
     /// </summary>
-    /// <remarks>
-    /// NodeLink 3.9.0 answers this switch with a 500, which surfaces as a <see
-    /// cref="Nyra.Exceptions.RestException"/> against that build. The stored configuration survives the failed
-    /// write.
-    /// </remarks>
     /// <param name="enabled">Whether ducking is on.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when ducking was switched.</returns>

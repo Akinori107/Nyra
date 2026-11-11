@@ -18,6 +18,6 @@ public sealed class PlayerDestroyedEventArgs : System.EventArgs
 {
     /// <summary>The guild the player played in.</summary>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 }
