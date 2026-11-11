@@ -609,6 +609,7 @@ public sealed class GuildConnection
                 Node.Options.RescuePlayback && snapshot is not null && !IsRescueExpired(snapshot)
                     ? ResumeIfSomeoneJoined(snapshot)
                     : null;
+            var resendsTrack = rescue?.Track is not null;
 
             var combined =
                 rescue is not null
@@ -621,7 +622,7 @@ public sealed class GuildConnection
             if (_voiceForward.HasPending || _tearingDown)
                 return false;
 
-            resent = combined && rescue?.Track is not null;
+            resent = combined && resendsTrack;
         }
         finally
         {
