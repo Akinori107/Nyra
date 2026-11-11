@@ -146,6 +146,9 @@ internal sealed record PlayerUpdatePayload
 
     [JsonPropertyName("voice")]
     public PlayerVoiceState? Voice { get; init; }
+
+    [JsonPropertyName("nextTrack")]
+    public PlayerUpdateTrack? NextTrack { get; init; }
 }
 
 internal sealed record EndTimeUpdate

@@ -287,8 +287,8 @@ public sealed class GuildQueue
                 {
                     try
                     {
-                        await Connection
-                            .PlayAsync(play, cancellationToken: cancellationToken)
+                        await _preloader
+                            .PlayAsync(play, after, cancellationToken)
                             .ConfigureAwait(false);
                     }
                     catch
@@ -420,9 +420,7 @@ public sealed class GuildQueue
             if (play is null)
                 return null;
 
-            await Connection
-                .PlayAsync(play, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            await _preloader.PlayAsync(play, after, cancellationToken).ConfigureAwait(false);
             Commit(after, notes);
             notes.Advanced = started = play;
         }
@@ -570,7 +568,9 @@ public sealed class GuildQueue
             {
                 try
                 {
-                    await Connection.PlayAsync(play).ConfigureAwait(false);
+                    await _preloader
+                        .PlayAsync(play, after, CancellationToken.None)
+                        .ConfigureAwait(false);
                 }
                 catch (Exception exception)
                 {
@@ -706,7 +706,7 @@ public sealed class GuildQueue
             _gate.Release();
         }
 
-        _preloader.Forget();
+        _preloader.OnTrackStarted(args.Track);
         await FlushAsync(notes).ConfigureAwait(false);
     }
 

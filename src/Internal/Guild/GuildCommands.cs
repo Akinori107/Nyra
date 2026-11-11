@@ -24,6 +24,7 @@ internal sealed class GuildCommands
     internal async Task PlayAsync(
         Track track,
         PlayOptions? options = null,
+        Track? nextTrack = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -68,6 +69,9 @@ internal sealed class GuildCommands
                     },
                     Position = positionMilliseconds,
                     EndTime = (long?)options?.EndTime?.TotalMilliseconds,
+                    NextTrack = nextTrack is null
+                        ? null
+                        : new PlayerUpdateTrack { Encoded = nextTrack.Encoded },
                 },
                 ct,
                 options?.NoReplace ?? false

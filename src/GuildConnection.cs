@@ -431,7 +431,13 @@ public sealed class GuildConnection
         Track track,
         PlayOptions? options = null,
         CancellationToken cancellationToken = default
-    ) => _commands.PlayAsync(track, options, cancellationToken);
+    ) => _commands.PlayAsync(track, options, cancellationToken: cancellationToken);
+
+    internal Task PlayWithNextAsync(
+        Track track,
+        Track nextTrack,
+        CancellationToken cancellationToken
+    ) => _commands.PlayAsync(track, null, nextTrack, cancellationToken);
 
     /// <summary>
     /// Plays a raw identifier and lets the server load it, search queries and playlists are rejected by both
@@ -603,16 +609,24 @@ public sealed class GuildConnection
             await Filters.ResetForNewSessionAsync().ConfigureAwait(false);
             _voiceForward.ClearPending();
 
-            await _voiceForward.ForwardAsync(CurrentVoice(channelId)).ConfigureAwait(false);
+            var voice = CurrentVoice(channelId);
+            var rescue =
+                Node.Options.RescuePlayback && snapshot is not null && !IsRescueExpired(snapshot)
+                    ? ResumeIfSomeoneJoined(snapshot)
+                    : null;
+
+            var combined =
+                rescue is not null
+                && await _voiceForward
+                    .ForwardWithAsync(voice, () => ResendPlaybackAsync(rescue, voice))
+                    .ConfigureAwait(false);
+            if (!combined)
+                await _voiceForward.ForwardAsync(voice).ConfigureAwait(false);
 
             if (_voiceForward.HasPending || _tearingDown)
                 return false;
 
-            resent =
-                Node.Options.RescuePlayback
-                && snapshot is not null
-                && !IsRescueExpired(snapshot)
-                && await ResendPlaybackAsync(snapshot).ConfigureAwait(false);
+            resent = combined && rescue?.Track is not null;
         }
         finally
         {
@@ -628,17 +642,26 @@ public sealed class GuildConnection
         return true;
     }
 
+    private RestoreSnapshot ResumeIfSomeoneJoined(RestoreSnapshot snapshot)
+    {
+        if (snapshot.Track is null || Listeners is not > 0 || !_pausedWhenAlone)
+            return snapshot;
+
+        _pausedWhenAlone = false;
+        return snapshot with { Paused = false };
+    }
+
     private bool IsRescueExpired(RestoreSnapshot snapshot) =>
         Node.Options.RescueTimeout != Timeout.InfiniteTimeSpan
         && Node.Time.GetMilliseconds() - snapshot.CapturedTick
             > Node.Options.RescueTimeout.TotalMilliseconds;
 
-    private async Task<bool> ResendPlaybackAsync(RestoreSnapshot snapshot)
+    private async Task<bool> ResendPlaybackAsync(RestoreSnapshot snapshot, PlayerVoiceState voice)
     {
         try
         {
-            await ResendInOneUpdateAsync(snapshot).ConfigureAwait(false);
-            return snapshot.Track is not null;
+            await ResendInOneUpdateAsync(snapshot, voice).ConfigureAwait(false);
+            return true;
         }
         catch (Exception exception)
         {
@@ -665,7 +688,7 @@ public sealed class GuildConnection
         return (long)start.TotalMilliseconds;
     }
 
-    private async Task ResendInOneUpdateAsync(RestoreSnapshot snapshot)
+    private async Task ResendInOneUpdateAsync(RestoreSnapshot snapshot, PlayerVoiceState voice)
     {
         var filters = snapshot.HasFilters ? GuildFilters.Normalize(snapshot.Filters) : null;
         int? volume = snapshot.Volume != 100 ? snapshot.Volume : null;
@@ -689,8 +712,6 @@ public sealed class GuildConnection
             if (snapshot.Paused)
                 Playback.StampPauseRequested();
         }
-        else if (volume is null && filters is null)
-            return;
 
         var requestTick = Node.Time.GetMilliseconds();
 
@@ -707,6 +728,7 @@ public sealed class GuildConnection
                             Volume = volume,
                             Paused = trackUpdate is not null && snapshot.Paused ? true : null,
                             Filters = filters,
+                            Voice = voice,
                         },
                         ct
                     ),

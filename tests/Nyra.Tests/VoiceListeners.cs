@@ -55,6 +55,8 @@ public sealed class VoiceListeners
 
         public Action<string>? BeforePatch { get; set; }
 
+        public Action LosePlayer { get; init; } = () => { };
+
         public bool Connected => Node.GetConnection(777) is not null;
 
         public async ValueTask DisposeAsync()
@@ -146,6 +148,11 @@ public sealed class VoiceListeners
             Node = node,
             Connection = connection,
             Time = time,
+            LosePlayer = () =>
+            {
+                current = "null";
+                paused = false;
+            },
         };
         connection.ListenersChanged += (_, e) =>
         {
@@ -444,6 +451,119 @@ public sealed class VoiceListeners
                 )
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(10));
             await Assert.That(errors).IsEqualTo(0);
+        }
+    }
+
+    [Test]
+    public async Task AJoinWhileTheNodeIsDownRestoresThePlaybackInOneUpdate()
+    {
+        var rig = await StartAsync(
+                options =>
+                    options with
+                    {
+                        PauseWhenAlone = true,
+                        RescuePlayback = true,
+                        TimeProvider = TimeProvider.System,
+                        ReconnectDelay = TimeSpan.FromSeconds(1),
+                        MaxReconnectDelay = TimeSpan.FromSeconds(2),
+                    },
+                1
+            )
+            .ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
+            rig.Bridge.Move(1, null);
+            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
+
+            var restored = new TaskCompletionSource();
+            rig.Connection.GuildConnectionRestored += (_, _) =>
+            {
+                restored.TrySetResult();
+                return Task.CompletedTask;
+            };
+            rig.Server.ResumeOnReconnect = false;
+            var before = rig.Server.RestCalls.Count;
+
+            rig.LosePlayer();
+            await rig.Server.DropConnectionAsync(1000, "down").ConfigureAwait(false);
+            await Eventually(() => !rig.Node.IsReady).ConfigureAwait(false);
+            rig.Bridge.Move(2, 555);
+            await restored.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+            var patches = rig
+                .Server.RestCalls.Skip(before)
+                .Where(call =>
+                    call.Method == "PATCH"
+                    && call.Path.EndsWith("/players/777", StringComparison.Ordinal)
+                )
+                .Select(call => call.Body ?? string.Empty)
+                .ToList();
+            await Assert.That(rig.Connection.IsPaused).IsFalse();
+            await Assert.That(patches.Count).IsEqualTo(1);
+            await Assert.That(patches[0]).Contains("\"voice\"");
+            await Assert.That(patches[0]).Contains("\"track\"");
+            await Assert.That(patches[0]).DoesNotContain("\"paused\"");
+        }
+    }
+
+    [Test]
+    public async Task ALeaveWhileTheNodeIsDownPausesAfterTheRestore()
+    {
+        var rig = await StartAsync(
+                options =>
+                    options with
+                    {
+                        PauseWhenAlone = true,
+                        RescuePlayback = true,
+                        TimeProvider = TimeProvider.System,
+                        ReconnectDelay = TimeSpan.FromSeconds(1),
+                        MaxReconnectDelay = TimeSpan.FromSeconds(2),
+                    },
+                1
+            )
+            .ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
+
+            var restored = new TaskCompletionSource();
+            rig.Connection.GuildConnectionRestored += (_, _) =>
+            {
+                restored.TrySetResult();
+                return Task.CompletedTask;
+            };
+            rig.Server.ResumeOnReconnect = false;
+            var before = rig.Server.RestCalls.Count;
+
+            rig.LosePlayer();
+            await rig.Server.DropConnectionAsync(1000, "down").ConfigureAwait(false);
+            await Eventually(() => !rig.Node.IsReady).ConfigureAwait(false);
+            rig.Bridge.Move(1, null);
+            await restored.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
+
+            var patches = rig
+                .Server.RestCalls.Skip(before)
+                .Where(call =>
+                    call.Method == "PATCH"
+                    && call.Path.EndsWith("/players/777", StringComparison.Ordinal)
+                )
+                .Select(call => call.Body ?? string.Empty)
+                .ToList();
+            await Assert.That(patches[0]).Contains("\"voice\"");
+            await Assert.That(patches[0]).Contains("\"track\"");
+            await Assert.That(patches[0]).DoesNotContain("\"paused\"");
+            await Assert
+                .That(
+                    patches
+                        .Skip(1)
+                        .Any(body => body.Contains("\"paused\":true", StringComparison.Ordinal))
+                )
+                .IsTrue();
+
+            rig.Bridge.Move(2, 555);
+            await Eventually(() => !rig.Connection.IsPaused).ConfigureAwait(false);
         }
     }
 
