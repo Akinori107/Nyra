@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -770,7 +771,7 @@ public sealed class GenerationStormAndPlayback
                 return Task.CompletedTask;
             };
             var seen = 0L;
-            var sink = new List<string>();
+            var sink = new ConcurrentQueue<string>();
             rig.Bridge.Logger = new ListLogger(sink);
             rig.Extension.NodeDisconnected += (_, _) =>
             {
@@ -877,7 +878,7 @@ public sealed class GenerationStormAndPlayback
         ) => Task.FromResult(new ClientInformation(1UL));
     }
 
-    private sealed class ListLogger(List<string> sink) : ILogger
+    private sealed class ListLogger(ConcurrentQueue<string> sink) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
@@ -895,7 +896,7 @@ public sealed class GenerationStormAndPlayback
             var text = formatter(state, exception);
             if (exception is not null)
                 text += " " + exception.GetType().Name + " " + exception.Message;
-            sink.Add(text);
+            sink.Enqueue(text);
         }
     }
 
@@ -952,7 +953,7 @@ public sealed class GenerationStormAndPlayback
     [Test]
     public async Task DisposeFailure()
     {
-        var loudSink = new List<string>();
+        var loudSink = new ConcurrentQueue<string>();
         var loud = new NyraExtension(new LoudBridge { Logger = new ListLogger(loudSink) });
         await Assert
             .That(async () =>
@@ -1036,7 +1037,7 @@ public sealed class GenerationStormAndPlayback
     [Test]
     public async Task SyncDispose()
     {
-        var loudSink = new List<string>();
+        var loudSink = new ConcurrentQueue<string>();
         var loud = new NyraExtension(new LoudBridge { Logger = new ListLogger(loudSink) });
         await Assert
             .That(loud.Dispose)
@@ -1044,7 +1045,7 @@ public sealed class GenerationStormAndPlayback
             .WithMessageContaining("generation storm: the loud bridge dies");
         await Assert.That(loudSink.Count).IsEqualTo(0);
 
-        var asyncSink = new List<string>();
+        var asyncSink = new ConcurrentQueue<string>();
         var asyncThrower = new NyraExtension(
             new AsyncThrowerBridge { Logger = new ListLogger(asyncSink) }
         );
