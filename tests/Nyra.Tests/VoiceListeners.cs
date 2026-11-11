@@ -229,6 +229,37 @@ public sealed class VoiceListeners
     }
 
     [Test]
+    public async Task SomeoneJoiningDuringTheAloneHandlerKeepsTheBot()
+    {
+        var rig = await StartAsync(Leave).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var handled = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Connection.AloneTimedOut += (_, _) =>
+            {
+                rig.Bridge.Move(1, 555);
+                handled.TrySetResult();
+                return Task.CompletedTask;
+            };
+
+            var raised = await AdvanceUntilAsync(
+                    rig.Time,
+                    () => handled.Task.IsCompleted,
+                    TimeSpan.FromMinutes(6)
+                )
+                .ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            await Assert.That(raised).IsTrue();
+            await Assert.That(rig.Connected).IsTrue();
+            await Assert.That(rig.Connection.Listeners).IsEqualTo(1);
+            await Assert.That(rig.Bridge.VoiceSends.Contains((777, null))).IsFalse();
+        }
+    }
+
+    [Test]
     public async Task SomeoneJoiningStopsTheCount()
     {
         var rig = await StartAsync(Leave).ConfigureAwait(false);

@@ -271,4 +271,41 @@ public sealed class QueueTransitions
         await Assert.That(state.NextToPreload(Off)?.Info.Identifier).IsEqualTo("b");
         await Assert.That(state.NextToPreload(new QueuePolicy(LoopMode.Track, 20))).IsNull();
     }
+
+    [Test]
+    public async Task AdvanceWithoutACurrentTrackChangesNothing()
+    {
+        var before = QueueState.Empty.Enqueue([Make("a")], next: false);
+        var (state, play) = before.Advance(failed: false, Off);
+
+        await Assert.That(play).IsNull();
+        await Assert.That(state).IsSameReferenceAs(before);
+    }
+
+    [Test]
+    public async Task MoveToTheSamePositionKeepsTheState()
+    {
+        var before = Playing("a", "b", "c");
+        var (state, moved) = before.Move(1, 1);
+
+        await Assert.That(moved).IsTrue();
+        await Assert.That(state).IsSameReferenceAs(before);
+    }
+
+    [Test]
+    public async Task ShuffleOfASingleTrackKeepsTheState()
+    {
+        var before = Playing("a", "b");
+
+        await Assert.That(before.Shuffled(new Random(7))).IsSameReferenceAs(before);
+    }
+
+    [Test]
+    public async Task ReconcileOfAnUnknownTrackRequeuesTheCurrent()
+    {
+        var after = Playing("a", "b").Reconcile(Make("z"));
+
+        await Assert.That(after.Current?.Info.Identifier).IsEqualTo("z");
+        await Assert.That(Ids(after.Upcoming)).IsEqualTo("a,b");
+    }
 }

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using Nyra.Entities;
 using Nyra.Exceptions;
 using Nyra.Queue;
@@ -72,7 +73,11 @@ public sealed class QueuePlayback
             NyraJson.SerializerOptions
         )!;
 
-    private static async Task<Rig> StartAsync(bool resume = true, bool rescue = false)
+    private static async Task<Rig> StartAsync(
+        bool resume = true,
+        bool rescue = false,
+        TimeProvider? time = null
+    )
     {
         var server = new FakeNodeServer { ResumeOnReconnect = resume };
         var bridge = new FakeBridge();
@@ -83,6 +88,7 @@ public sealed class QueuePlayback
             new NodeOptions
             {
                 Name = "queue",
+                TimeProvider = time ?? TimeProvider.System,
                 RescuePlayback = rescue,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
@@ -158,6 +164,11 @@ public sealed class QueuePlayback
     private static Task PushStuckAsync(Rig rig, string id) =>
         rig.Server.PushAsync(
             $$$"""{"op":"event","guildId":"777","type":"TrackStuckEvent","track":{{{TrackJson(id)}}},"thresholdMs":300}"""
+        );
+
+    private static Task PushStartAsync(Rig rig, string id) =>
+        rig.Server.PushAsync(
+            $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{TrackJson(id)}}}"""
         );
 
     private static string Ids(IEnumerable<Track> tracks) =>
@@ -628,6 +639,257 @@ public sealed class QueuePlayback
 
             await Eventually(() => rig.Log.Contains("ended")).ConfigureAwait(false);
             await Assert.That(rig.Queue.Loop).IsEqualTo(LoopMode.Off);
+        }
+    }
+
+    [Test]
+    public async Task PreviousPlaysTheLastTrackAgain()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            await rig.Queue.SkipAsync().ConfigureAwait(false);
+            var previous = await rig.Queue.PreviousAsync().ConfigureAwait(false);
+
+            await Assert.That(previous?.Info.Identifier).IsEqualTo("a");
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
+            await Assert.That(rig.Queue.History.Count).IsEqualTo(0);
+            await Assert.That(rig.Played).IsEqualTo("a,b,a");
+        }
+    }
+
+    [Test]
+    public async Task PreviousWithoutHistoryPlaysNothing()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            var previous = await rig.Queue.PreviousAsync().ConfigureAwait(false);
+
+            await Assert.That(previous).IsNull();
+            await Assert.That(rig.CurrentId).IsEqualTo("a");
+            await Assert.That(rig.Played).IsEqualTo("a");
+        }
+    }
+
+    [Test]
+    public async Task MoveReordersTheUpcomingTracks()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b", "c", "d").ConfigureAwait(false);
+
+            await Assert.That(await rig.Queue.MoveAsync(2, 0).ConfigureAwait(false)).IsTrue();
+            await Assert.That(await rig.Queue.MoveAsync(0, 9).ConfigureAwait(false)).IsFalse();
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("d,b,c");
+        }
+    }
+
+    [Test]
+    public async Task ClearKeepsTheCurrentTrack()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b", "c").ConfigureAwait(false);
+            await rig.Queue.ClearAsync().ConfigureAwait(false);
+
+            await Assert.That(rig.CurrentId).IsEqualTo("a");
+            await Assert.That(rig.Queue.Upcoming.Count).IsEqualTo(0);
+            await Assert.That(rig.Log.Contains("next:none")).IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task ShuffleKeepsTheSameTracks()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b", "c", "d", "e").ConfigureAwait(false);
+            await rig.Queue.ShuffleAsync().ConfigureAwait(false);
+
+            await Assert.That(rig.CurrentId).IsEqualTo("a");
+            await Assert
+                .That(Ids(rig.Queue.Upcoming.OrderBy(track => track.Info.Identifier)))
+                .IsEqualTo("b,c,d,e");
+        }
+    }
+
+    [Test]
+    public async Task EnqueueOfNoTracksChangesNothing()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var started = await rig.Queue.EnqueueAsync([]).ConfigureAwait(false);
+
+            await Assert.That(started).IsNull();
+            await Assert.That(rig.Queue.Current).IsNull();
+            await Assert.That(rig.Played).IsEmpty();
+        }
+    }
+
+    [Test]
+    public async Task RemoveAllWithoutAMatchRemovesNothing()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            var removed = await rig
+                .Queue.RemoveAllAsync(track => track.Info.Identifier == "z")
+                .ConfigureAwait(false);
+
+            await Assert.That(removed).IsEqualTo(0);
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
+        }
+    }
+
+    [Test]
+    public async Task TheLimitsKeepTheValuesSetAndRejectInvalidOnes()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.MaxLength = 3;
+            rig.Queue.HistoryLimit = 0;
+
+            await Assert.That(rig.Queue.MaxLength).IsEqualTo(3);
+            await Assert.That(rig.Queue.HistoryLimit).IsEqualTo(0);
+            await Assert
+                .That(() => rig.Queue.HistoryLimit = -1)
+                .Throws<ArgumentOutOfRangeException>();
+        }
+    }
+
+    [Test]
+    public async Task TimeUntilAddsWhatPlaysBefore()
+    {
+        var time = new FakeTimeProvider();
+        var rig = await StartAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig
+                .Queue.EnqueueAsync([
+                    Make("a", 90000),
+                    Make("b", 60000),
+                    Make("s", 500000, stream: true),
+                    Make("c", 40000),
+                ])
+                .ConfigureAwait(false);
+
+            using (Assert.Multiple())
+            {
+                await Assert.That(rig.Queue.TimeUntil(0)).IsEqualTo(TimeSpan.FromSeconds(90));
+                await Assert.That(rig.Queue.TimeUntil(2)).IsEqualTo(TimeSpan.FromSeconds(150));
+                await Assert.That(rig.Queue.TimeUntil(3)).IsNull();
+                await Assert.That(rig.Queue.TimeUntil(-1)).IsNull();
+            }
+
+            time.Advance(TimeSpan.FromMinutes(2));
+            await Assert.That(rig.Queue.TimeUntil(1)).IsEqualTo(TimeSpan.FromSeconds(60));
+
+            rig.Queue.Loop = LoopMode.Track;
+            await Assert.That(rig.Queue.TimeUntil(0)).IsNull();
+        }
+    }
+
+    [Test]
+    public async Task AStuckLastTrackStopsThePlayer()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a").ConfigureAwait(false);
+            await PushStuckAsync(rig, "a").ConfigureAwait(false);
+
+            await Eventually(() =>
+                    rig.Server.RestCalls.Any(call =>
+                        call.Body?.Contains(
+                            "\"track\":{\"encoded\":null}",
+                            StringComparison.Ordinal
+                        ) == true
+                    )
+                )
+                .ConfigureAwait(false);
+            await Assert.That(rig.Log.Contains("failed:a")).IsTrue();
+            await Assert.That(rig.Queue.Current).IsNull();
+        }
+    }
+
+    [Test]
+    public async Task AGaplessEndMovesTheQueueWithoutPlaying()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b", "c").ConfigureAwait(false);
+            await PushEndAsync(rig, "a", "gapless").ConfigureAwait(false);
+
+            await Eventually(() => rig.Log.Contains("advanced:b")).ConfigureAwait(false);
+            await Assert.That(rig.CurrentId).IsEqualTo("b");
+            await Assert.That(Ids(rig.Queue.History)).IsEqualTo("a");
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("c");
+            await Assert.That(rig.Played).IsEqualTo("a");
+        }
+    }
+
+    [Test]
+    public async Task AnUpcomingTrackStartingAfterAGaplessEndIsAdopted()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b", "c").ConfigureAwait(false);
+            await PushEndAsync(rig, "a", "crossfading").ConfigureAwait(false);
+            await Eventually(() => rig.CurrentId == "b").ConfigureAwait(false);
+            await PushStartAsync(rig, "c").ConfigureAwait(false);
+
+            await Eventually(() => rig.CurrentId == "c").ConfigureAwait(false);
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
+            await Assert.That(rig.Log.Contains("advanced:c")).IsTrue();
+            await Assert.That(rig.Played).IsEqualTo("a");
+        }
+    }
+
+    [Test]
+    public async Task ThePreloadFollowsTheHeadAndIsSentAgainAfterAnotherTrackStarts()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.PreloadNext = true;
+            await rig.EnqueueAsync("a", "b", "c").ConfigureAwait(false);
+            await rig.Queue.MoveAsync(1, 0).ConfigureAwait(false);
+
+            int PreloadsOfC() =>
+                rig.Server.RestCalls.Count(call =>
+                    call.Method == "PATCH"
+                    && call.Body?.Contains(
+                        "\"nextTrack\":{\"encoded\":\"enc-c\"",
+                        StringComparison.Ordinal
+                    ) == true
+                );
+
+            await Assert.That(PreloadsOfC()).IsEqualTo(1);
+
+            var started = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Connection.TrackStarted += (_, _) =>
+            {
+                started.TrySetResult();
+                return Task.CompletedTask;
+            };
+            await PushStartAsync(rig, "z").ConfigureAwait(false);
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            rig.Queue.Loop = LoopMode.Off;
+
+            await Eventually(() => PreloadsOfC() == 2).ConfigureAwait(false);
         }
     }
 }

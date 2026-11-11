@@ -262,4 +262,56 @@ public sealed class QueueAutoplay
             await Assert.That(rig.Loads).IsEmpty();
         }
     }
+
+    [Test]
+    [Arguments("search")]
+    [Arguments("track")]
+    public async Task PlaysARecommendationFromAnyResultKind(string kind)
+    {
+        var data = kind == "search" ? $"[{TrackJson("b")}]" : TrackJson("b");
+        var rig = await StartAsync(() =>
+                new FakeRestResponse(200, $$"""{"loadType":"{{kind}}","data":{{data}}}""")
+            )
+            .ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.Queue.EnqueueAsync(Make("a")).ConfigureAwait(false);
+            await PushEndAsync(rig, "a").ConfigureAwait(false);
+
+            await Eventually(() => rig.Queue.Current?.Info.Identifier == "b").ConfigureAwait(false);
+            await Assert.That(rig.Log.Contains("ended")).IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task EndsWhenTheResultHasNoTracks()
+    {
+        var rig = await StartAsync(() =>
+                new FakeRestResponse(200, """{"loadType":"empty","data":{}}""")
+            )
+            .ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.Queue.EnqueueAsync(Make("a")).ConfigureAwait(false);
+            await PushEndAsync(rig, "a").ConfigureAwait(false);
+
+            await Eventually(() => rig.Log.Contains("ended")).ConfigureAwait(false);
+            await Assert.That(Queried(rig, "ytrec:a")).IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task ATrackWithoutAnIdentifierEndsWithoutLoading()
+    {
+        var rig = await StartAsync(() => new FakeRestResponse(200, Playlist("b")))
+            .ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.Queue.EnqueueAsync(Make("")).ConfigureAwait(false);
+            await PushEndAsync(rig, "").ConfigureAwait(false);
+
+            await Eventually(() => rig.Log.Contains("ended")).ConfigureAwait(false);
+            await Assert.That(rig.Loads).IsEmpty();
+        }
+    }
 }

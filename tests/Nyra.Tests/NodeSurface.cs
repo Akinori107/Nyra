@@ -86,6 +86,14 @@ public sealed class NodeSurface
             "a zero ready timeout"
         );
         yield return Case(
+            new NodeOptions { Name = "x", RescueTimeout = TimeSpan.Zero },
+            "a zero rescue timeout"
+        );
+        yield return Case(
+            new NodeOptions { Name = "x", RescueTimeout = TimeSpan.FromSeconds(-1) },
+            "a negative rescue timeout"
+        );
+        yield return Case(
             new NodeOptions { Name = "x", ReadyTimeout = TimeSpan.FromDays(41) },
             "a ready timeout past the ceiling"
         );

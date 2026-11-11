@@ -1638,6 +1638,9 @@ public sealed class NodeIntegration
             await Assert
                 .That(await status.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
                 .IsTrue();
+            await Assert
+                .That(stack.Node.ConnectionStatus?.Status)
+                .IsEqualTo(ConnectionQuality.Good);
         }
     }
 
@@ -1814,6 +1817,52 @@ public sealed class NodeIntegration
             ),
             versioned: false
         );
+
+    [Test]
+    public async Task DecodeRejectsATrackWithoutItsPosition()
+    {
+        var message = BuildMessage(
+            version: null,
+            title: "x",
+            author: "y",
+            length: 1,
+            identifier: "z",
+            isStream: false,
+            uri: null,
+            artwork: null,
+            isrc: null,
+            source: "s",
+            position: 0
+        );
+        var encoded = EncodeTrackMessage(message[..^8], versioned: false);
+
+        await Assert.That(() => Track.Decode(encoded)).Throws<InvalidTrackException>();
+    }
+
+    [Test]
+    public async Task DecodeRejectsMalformedModifiedUtf8()
+    {
+        var message = BuildMessage(
+            version: null,
+            title: "xy",
+            author: "a",
+            length: 1,
+            identifier: "z",
+            isStream: false,
+            uri: null,
+            artwork: null,
+            isrc: null,
+            source: "s",
+            position: 0
+        );
+        message[2] = 0xC3;
+        var encoded = EncodeTrackMessage(message, versioned: false);
+
+        var exception = await Assert
+            .That(() => Track.Decode(encoded))
+            .Throws<InvalidTrackException>();
+        await Assert.That(exception!.InnerException).IsTypeOf<InvalidDataException>();
+    }
 
     [Test]
     public async Task ADecodedQueryStringStillDecodes()
