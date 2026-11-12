@@ -451,7 +451,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         );
         if (connection.Position is { } position)
             embed.AddField("Position", FormatPosition(position), inline: true);
-        await RespondAsync(embed: embed.Build()).ConfigureAwait(false);
+        await RespondAsync(embed: embed.Build(), ephemeral: true).ConfigureAwait(false);
     }
 
     [SlashCommand("filter", "Change how the music sounds")]
