@@ -1,9 +1,8 @@
-using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 
 namespace Nyra.Internal;
 
-internal sealed class EventPump
+internal sealed class EventPump(string owner, ILogger? logger, EventId category)
 {
     private const int BacklogWarnThreshold = 64;
 
@@ -13,17 +12,21 @@ internal sealed class EventPump
 
     private static readonly ErrorThrottle Errors = new();
 
-    private readonly Channel<Func<Task>> _queue = Channel.CreateUnbounded<Func<Task>>(
-        new UnboundedChannelOptions { SingleReader = true }
-    );
+    private readonly Queue<Func<Task>> _queue = new();
+
+    private readonly Lock _gate = new();
 
     private int _queuedItemCount;
 
-    private readonly Task _consumer;
-    private readonly string _owner;
-    private readonly EventId _category;
+    private bool _draining;
 
-    private volatile ILogger? _logger;
+    private bool _completed;
+
+    private Task _consumer = Task.CompletedTask;
+    private readonly string _owner = owner;
+    private readonly EventId _category = category;
+
+    private volatile ILogger? _logger = logger;
     private int _backlogged;
     private int _dropWarned;
 
@@ -33,24 +36,6 @@ internal sealed class EventPump
     {
         get => _logger;
         set => _logger = value;
-    }
-
-    public EventPump(string owner, ILogger? logger, EventId category)
-    {
-        _owner = owner;
-        _logger = logger;
-        _category = category;
-        var suppressFlow = !ExecutionContext.IsFlowSuppressed();
-        var flow = suppressFlow ? ExecutionContext.SuppressFlow() : default;
-        try
-        {
-            _consumer = Task.Run(ConsumeAsync);
-        }
-        finally
-        {
-            if (suppressFlow)
-                flow.Undo();
-        }
     }
 
     public bool TryDispatch(Func<Task> work, bool droppable = false)
@@ -63,10 +48,20 @@ internal sealed class EventPump
             return false;
         }
 
-        if (!_queue.Writer.TryWrite(work))
+        lock (_gate)
         {
-            Interlocked.Decrement(ref _queuedItemCount);
-            return false;
+            if (_completed)
+            {
+                Interlocked.Decrement(ref _queuedItemCount);
+                return false;
+            }
+
+            _queue.Enqueue(work);
+            if (!_draining)
+            {
+                _draining = true;
+                _consumer = StartConsumer();
+            }
         }
 
         if (depth > BacklogWarnThreshold)
@@ -119,15 +114,20 @@ internal sealed class EventPump
 
     public async Task CompleteAsync(TimeSpan drainTimeout)
     {
-        _queue.Writer.TryComplete();
+        Task consumer;
+        lock (_gate)
+        {
+            _completed = true;
+            consumer = _consumer;
+        }
 
         if (ReferenceEquals(CurrentConsumer.Value, this))
             return;
 
-        await _consumer
+        await consumer
             .WaitAsync(drainTimeout)
             .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        if (!_consumer.IsCompleted)
+        if (!consumer.IsCompleted)
             try
             {
                 _logger?.LogWarning(
@@ -141,10 +141,35 @@ internal sealed class EventPump
             catch { }
     }
 
+    private Task StartConsumer()
+    {
+        var suppressFlow = !ExecutionContext.IsFlowSuppressed();
+        var flow = suppressFlow ? ExecutionContext.SuppressFlow() : default;
+        try
+        {
+            return Task.Run(ConsumeAsync);
+        }
+        finally
+        {
+            if (suppressFlow)
+                flow.Undo();
+        }
+    }
+
     private async Task ConsumeAsync()
     {
         CurrentConsumer.Value = this;
-        await foreach (var work in _queue.Reader.ReadAllAsync().ConfigureAwait(false))
+        while (true)
+        {
+            Func<Task>? work;
+            lock (_gate)
+                if (!_queue.TryDequeue(out work))
+                {
+                    _queue.TrimExcess();
+                    _draining = false;
+                    return;
+                }
+
             try
             {
                 await work().ConfigureAwait(false);
@@ -171,5 +196,6 @@ internal sealed class EventPump
                     Volatile.Write(ref _dropWarned, 0);
                 }
             }
+        }
     }
 }
