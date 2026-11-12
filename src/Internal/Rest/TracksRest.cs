@@ -192,7 +192,7 @@ internal sealed class TracksRest
                 (body, bodyUnreadable) = await RestClient
                     .ReadErrorBodyAsync(response.Content, tailCts.Token)
                     .ConfigureAwait(false);
-                retryAfter = RestClient.ReadRetryAfter(response);
+                retryAfter = RestClient.ReadRetryAfter(response, _rest.Node.Time);
             }
             catch (OperationCanceledException)
                 when (headerCts.IsCancellationRequested

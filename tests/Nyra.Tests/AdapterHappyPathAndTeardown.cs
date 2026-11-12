@@ -276,7 +276,7 @@ public sealed class AdapterHappyPathAndTeardown
         response.Headers.RetryAfter = new RetryConditionHeaderValue(
             DateTimeOffset.UtcNow - TimeSpan.FromHours(1)
         );
-        var read = Internal.RestClient.ReadRetryAfter(response);
+        var read = Internal.RestClient.ReadRetryAfter(response, TimeProvider.System);
         await Assert.That(read).IsNull();
     }
 

@@ -224,13 +224,22 @@ public sealed class ReadyAndRegistryRace
     }
 
     [Test]
-    public async Task RetryAfterPastDate()
+    public async Task RetryAfterDateFollowsTheNodeClock()
     {
-        var response = new HttpResponseMessage();
-        response.Headers.RetryAfter = new RetryConditionHeaderValue(
-            DateTimeOffset.UtcNow - TimeSpan.FromHours(1)
+        var time = new FakeTimeProvider();
+        using var past = new HttpResponseMessage();
+        past.Headers.RetryAfter = new RetryConditionHeaderValue(
+            time.GetUtcNow() - TimeSpan.FromHours(1)
         );
-        await Assert.That(RestClient.ReadRetryAfter(response)).IsNull();
+        using var future = new HttpResponseMessage();
+        future.Headers.RetryAfter = new RetryConditionHeaderValue(
+            time.GetUtcNow() + TimeSpan.FromSeconds(30)
+        );
+
+        await Assert.That(RestClient.ReadRetryAfter(past, time)).IsNull();
+        await Assert
+            .That(RestClient.ReadRetryAfter(future, time))
+            .IsEqualTo(TimeSpan.FromSeconds(30));
     }
 
     [Test]

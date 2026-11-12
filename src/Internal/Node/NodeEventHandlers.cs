@@ -8,7 +8,7 @@ internal sealed class NodeEventHandlers
 {
     private readonly Node _node;
 
-    private Timer? _readyWatchdog;
+    private ITimer? _readyWatchdog;
 
     private int _connectionEpoch;
 
@@ -68,7 +68,7 @@ internal sealed class NodeEventHandlers
             if (!_node.Connection.IsCurrentGeneration(generation))
                 return;
 
-            var timer = new Timer(
+            var timer = _node.Time.CreateTimer(
                 static state =>
                 {
                     var (events, token) = ((NodeEventHandlers, int))state!;

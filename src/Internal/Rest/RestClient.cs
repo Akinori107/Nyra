@@ -269,7 +269,7 @@ internal sealed class RestClient
 
             if (!response.IsSuccessStatusCode)
             {
-                var retryAfter = ReadRetryAfter(response);
+                var retryAfter = ReadRetryAfter(response, Node.Time);
                 var (body, bodyUnreadable) = await ReadErrorBodyAsync(
                         response.Content,
                         bodyCts.Token
@@ -382,7 +382,7 @@ internal sealed class RestClient
         return request;
     }
 
-    internal static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+    internal static TimeSpan? ReadRetryAfter(HttpResponseMessage response, TimeProvider time)
     {
         var value = response.Headers.RetryAfter;
         if (value is null)
@@ -391,7 +391,7 @@ internal sealed class RestClient
             return delta < MaxRetryAfter ? delta : MaxRetryAfter;
         if (value.Date is { } date)
         {
-            var span = date - DateTimeOffset.UtcNow;
+            var span = date - time.GetUtcNow();
             return span > TimeSpan.Zero ? (span < MaxRetryAfter ? span : MaxRetryAfter) : null;
         }
         return null;
