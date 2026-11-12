@@ -19,6 +19,10 @@ public sealed class GuildConnection
     private readonly Func<Exception, System.EventArgs?, Task> _handlerError;
     private volatile bool _tearingDown;
     private volatile bool _restoring;
+
+    private readonly Lock _restoreLock = new();
+
+    private bool _restoreAgain;
     private RestoreSnapshot? _restoreSnapshot;
     private readonly GuildTimer _idleTimer;
     private readonly GuildTimer _aloneTimer;
@@ -590,43 +594,102 @@ public sealed class GuildConnection
     internal async Task<bool> TryRestoreAsync()
     {
         var snapshot = Interlocked.Exchange(ref _restoreSnapshot, null);
-        if (_tearingDown || _restoring || ChannelId is not { } channelId)
+        if (_tearingDown || ChannelId is null)
             return false;
 
+        lock (_restoreLock)
+        {
+            if (_restoring)
+            {
+                if (snapshot is not null)
+                    Interlocked.CompareExchange(ref _restoreSnapshot, snapshot, null);
+                _restoreAgain = true;
+                return true;
+            }
+
+            _restoring = true;
+            snapshot = TakeNewerSnapshot(snapshot);
+        }
+
+        ulong channelId;
         bool resent;
-        _restoring = true;
+        var released = false;
         try
         {
-            await _voiceForward.DrainAsync().ConfigureAwait(false);
-            await Patches.DrainAsync().ConfigureAwait(false);
+            while (true)
+            {
+                if (_tearingDown || ChannelId is not { } current)
+                    return false;
+                channelId = current;
+                var epoch = Node.EventHandlers.ConnectionEpoch;
 
-            ResetPlayerState();
-            await Filters.ResetForNewSessionAsync().ConfigureAwait(false);
-            _voiceForward.ClearPending();
+                await _voiceForward.DrainAsync().ConfigureAwait(false);
+                await Patches.DrainAsync().ConfigureAwait(false);
 
-            var voice = CurrentVoice(channelId);
-            var rescue =
-                Node.Options.RescuePlayback && snapshot is not null && !IsRescueExpired(snapshot)
-                    ? ResumeIfSomeoneJoined(snapshot)
-                    : null;
-            var resendsTrack = rescue?.Track is not null;
+                ResetPlayerState();
+                await Filters.ResetForNewSessionAsync().ConfigureAwait(false);
+                _voiceForward.ClearPending();
 
-            var combined =
-                rescue is not null
-                && await _voiceForward
-                    .ForwardWithAsync(voice, () => ResendPlaybackAsync(rescue, voice))
-                    .ConfigureAwait(false);
-            if (!combined)
-                await _voiceForward.ForwardAsync(voice).ConfigureAwait(false);
+                var voice = CurrentVoice(channelId);
+                var rescue =
+                    Node.Options.RescuePlayback
+                    && snapshot is not null
+                    && !IsRescueExpired(snapshot)
+                        ? ResumeIfSomeoneJoined(snapshot)
+                        : null;
+                var resendsTrack = rescue?.Track is not null;
 
-            if (_voiceForward.HasPending || _tearingDown)
-                return false;
+                var combined =
+                    rescue is not null
+                    && await _voiceForward
+                        .ForwardWithAsync(voice, () => ResendPlaybackAsync(rescue, voice))
+                        .ConfigureAwait(false);
+                if (!combined)
+                    await _voiceForward.ForwardAsync(voice).ConfigureAwait(false);
 
-            resent = combined && resendsTrack;
+                bool stalled;
+                bool movedOn;
+                lock (_restoreLock)
+                {
+                    var again = _restoreAgain && !_tearingDown;
+                    _restoreAgain = false;
+                    if (again)
+                    {
+                        snapshot = TakeNewerSnapshot(snapshot);
+                        continue;
+                    }
+
+                    stalled = _voiceForward.HasPending;
+                    movedOn = Node.EventHandlers.ConnectionEpoch != epoch;
+                    if (
+                        stalled
+                        && movedOn
+                        && !_tearingDown
+                        && TakeNewerSnapshot(snapshot) is { } kept
+                    )
+                        Interlocked.CompareExchange(ref _restoreSnapshot, kept, null);
+                    _restoring = false;
+                    released = true;
+                }
+
+                if (_tearingDown)
+                    return false;
+
+                if (stalled)
+                    return movedOn;
+
+                resent = combined && resendsTrack;
+                break;
+            }
         }
         finally
         {
-            _restoring = false;
+            if (!released)
+                lock (_restoreLock)
+                {
+                    _restoring = false;
+                    _restoreAgain = false;
+                }
         }
 
         ReapplyListeners();
@@ -636,6 +699,16 @@ public sealed class GuildConnection
             new GuildConnectionRestoredEventArgs(GuildId, channelId, resent)
         );
         return true;
+    }
+
+    private RestoreSnapshot? TakeNewerSnapshot(RestoreSnapshot? current)
+    {
+        var next = Interlocked.Exchange(ref _restoreSnapshot, null);
+        if (next is null || current is null)
+            return next ?? current;
+        if (next.Track is null != current.Track is null)
+            return next.Track is null ? current : next;
+        return next.CapturedTick >= current.CapturedTick ? next : current;
     }
 
     private RestoreSnapshot ResumeIfSomeoneJoined(RestoreSnapshot snapshot)
@@ -661,7 +734,7 @@ public sealed class GuildConnection
         }
         catch (Exception exception)
         {
-            if (_tearingDown)
+            if (_tearingDown || (exception is OperationCanceledException && !Node.IsReady))
                 return false;
 
             Node.HandleError(

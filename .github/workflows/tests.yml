@@ -29,7 +29,7 @@ jobs:
       - run: dotnet build --configuration Release -f ${{ matrix.framework }}
       - run: >-
           dotnet run --project tests/Nyra.Tests --configuration Release --no-build -f ${{ matrix.framework }} --
-          --fail-fast --timeout 5m --maximum-parallel-tests 16 --minimum-expected-tests 679
+          --fail-fast --timeout 5m --maximum-parallel-tests 16 --minimum-expected-tests 681
           --results-directory results --coverage --coverage-output-format cobertura
           --coverage-output results.xml
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7

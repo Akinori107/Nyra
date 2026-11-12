@@ -12,6 +12,15 @@ internal sealed class NodeEventHandlers
 
     private int _connectionEpoch;
 
+    internal int ConnectionEpoch
+    {
+        get
+        {
+            lock (_node.EventsLock)
+                return _connectionEpoch;
+        }
+    }
+
     private int _readyAbortClaimedEpoch = -1;
 
     private bool _readyEpilogueRunning;
