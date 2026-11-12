@@ -264,7 +264,7 @@ internal sealed class FakeNodeServer : IDisposable
     public FakeNodeServer()
     {
         _listener = new TcpListener(IPAddress.Loopback, 0);
-        _listener.Start(16);
+        _listener.Start(511);
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = Task.Run(AcceptLoopAsync);
     }
@@ -469,14 +469,15 @@ internal sealed class FakeNodeServer : IDisposable
                     )
                     + "Content-Length: "
                     + sent.Length
-                    + "\r\n"
-                    + "Connection: close\r\n\r\n";
+                    + "\r\n\r\n";
                 await stream
                     .WriteAsync(Encoding.UTF8.GetBytes(headBack), _cts.Token)
                     .ConfigureAwait(false);
                 await stream.WriteAsync(sent, _cts.Token).ConfigureAwait(false);
                 await stream.FlushAsync(_cts.Token).ConfigureAwait(false);
-                return;
+                Buffer.BlockCopy(buffer, total, buffer, 0, carried - total);
+                carried -= total;
+                continue;
             }
         }
         catch (Exception) { }

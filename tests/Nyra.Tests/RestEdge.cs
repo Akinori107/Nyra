@@ -1,7 +1,9 @@
+using System.Text;
 using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
 using Nyra.Exceptions;
+using Nyra.Internal;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -815,6 +817,53 @@ public sealed class RestEdge
                 junk = exception;
             }
             await Assert.That(junk?.RetryAfter).IsNull();
+        }
+    }
+
+    [Test]
+    public async Task RequestsBeyondTheConnectionCapWaitForAFreeConnection()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var (node, server) = (stack.Node, stack.Server);
+            var cap = RestClient.MaxConnectionsPerNode;
+            var inFlight = 0;
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var body = Encoding.UTF8.GetBytes("""{"loadType":"empty","data":{}}""");
+            var head = Encoding.UTF8.GetBytes(
+                $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"
+            );
+            server.OnRaw("GET", "/v4/loadtracks", async (_, stream) =>
+            {
+                Interlocked.Increment(ref inFlight);
+                await release.Task.ConfigureAwait(false);
+                Interlocked.Decrement(ref inFlight);
+                await stream.WriteAsync(head).ConfigureAwait(false);
+                await stream.WriteAsync(body).ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+            });
+
+            var loads = Enumerable
+                .Range(0, cap + 44)
+                .Select(i => node.LoadTracksAsync($"atwa {i}"))
+                .ToArray();
+            await Assert
+                .That(() => Volatile.Read(ref inFlight))
+                .WaitsFor(assert => assert.IsGreaterThanOrEqualTo(cap), TimeSpan.FromSeconds(15));
+            await Task.Delay(TimeSpan.FromMilliseconds(300)).ConfigureAwait(false);
+            await Assert.That(Volatile.Read(ref inFlight)).IsEqualTo(cap);
+
+            release.SetResult();
+            var results = await Task.WhenAll(loads)
+                .WaitAsync(TimeSpan.FromSeconds(15))
+                .ConfigureAwait(false);
+            await Assert.That(results.All(r => r is NoMatches)).IsTrue();
+            await Assert
+                .That(server.RestCalls.Count(c => c.Path == "/v4/loadtracks"))
+                .IsEqualTo(cap + 44);
         }
     }
 }

@@ -11,12 +11,15 @@ internal sealed class RestClient
 {
     internal const int MaxBodyBytes = 64 * 1024 * 1024;
 
+    internal const int MaxConnectionsPerNode = 256;
+
     private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromHours(1);
 
     private static readonly SocketsHttpHandler SharedHandler = new()
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         ConnectTimeout = TimeSpan.FromSeconds(10),
+        MaxConnectionsPerServer = MaxConnectionsPerNode,
     };
 
     internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(60);
