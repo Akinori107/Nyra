@@ -128,9 +128,9 @@ public sealed class QueueAutoplay
             await rig.Queue.EnqueueAsync(Make("a")).ConfigureAwait(false);
             await PushEndAsync(rig, "a").ConfigureAwait(false);
 
-            await Eventually(() => rig.Queue.Current?.Info.Identifier == "b").ConfigureAwait(false);
+            await Eventually(() => rig.Log.Contains("advanced:b")).ConfigureAwait(false);
+            await Assert.That(rig.Queue.Current?.Info.Identifier).IsEqualTo("b");
             await Assert.That(Queried(rig, "ytrec:a")).IsTrue();
-            await Assert.That(rig.Log.Contains("advanced:b")).IsTrue();
             await Assert.That(rig.Log.Contains("ended")).IsFalse();
         }
     }

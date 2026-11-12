@@ -285,9 +285,9 @@ public sealed class QueuePlayback
             await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
             await PushEndAsync(rig, "a", "finished").ConfigureAwait(false);
 
-            await Eventually(() => rig.CurrentId == "b").ConfigureAwait(false);
+            await Eventually(() => rig.Log.Contains("advanced:b")).ConfigureAwait(false);
+            await Assert.That(rig.CurrentId).IsEqualTo("b");
             await Assert.That(rig.Played).IsEqualTo("a,b");
-            await Assert.That(rig.Log.Contains("advanced:b")).IsTrue();
         }
     }
 
@@ -849,9 +849,9 @@ public sealed class QueuePlayback
             await Eventually(() => rig.CurrentId == "b").ConfigureAwait(false);
             await PushStartAsync(rig, "c").ConfigureAwait(false);
 
-            await Eventually(() => rig.CurrentId == "c").ConfigureAwait(false);
+            await Eventually(() => rig.Log.Contains("advanced:c")).ConfigureAwait(false);
+            await Assert.That(rig.CurrentId).IsEqualTo("c");
             await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
-            await Assert.That(rig.Log.Contains("advanced:c")).IsTrue();
             await Assert.That(rig.Played).IsEqualTo("a");
         }
     }
