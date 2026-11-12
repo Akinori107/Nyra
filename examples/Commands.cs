@@ -236,12 +236,24 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
     }
 
     [SlashCommand("shuffle", "Shuffle the songs that are next")]
-    public async Task ShuffleAsync()
+    public async Task ShuffleAsync(
+        [Summary("continuous", "Keep picking at random, songs added later included")]
+            bool? continuous = null
+    )
     {
         if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
             return;
 
-        await connection.UseQueue().ShuffleAsync().ConfigureAwait(false);
+        var queue = connection.UseQueue();
+        if (continuous is { } enabled)
+        {
+            queue.Shuffle = enabled;
+            await RespondAsync(enabled ? "Shuffle is on." : "Shuffle is off.")
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await queue.ShuffleAsync().ConfigureAwait(false);
         await RespondAsync("Shuffled the queue.").ConfigureAwait(false);
     }
 

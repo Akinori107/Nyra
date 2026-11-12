@@ -48,14 +48,18 @@ public sealed class QueuePlayback
         }
     }
 
-    private static string? PlayedId(string? body)
+    private static string? PlayedId(string? body) => EncodedId(body, "track");
+
+    private static string? PreloadedId(string? body) => EncodedId(body, "nextTrack");
+
+    private static string? EncodedId(string? body, string member)
     {
         if (body is null)
             return null;
 
         using var document = JsonDocument.Parse(body);
         return
-            document.RootElement.TryGetProperty("track", out var track)
+            document.RootElement.TryGetProperty(member, out var track)
             && track.ValueKind == JsonValueKind.Object
             && track.TryGetProperty("encoded", out var encoded)
             && encoded.GetString() is { } value
@@ -890,6 +894,88 @@ public sealed class QueuePlayback
             rig.Queue.Loop = LoopMode.Off;
 
             await Eventually(() => PreloadsOfC() == 2).ConfigureAwait(false);
+        }
+    }
+
+    [Test]
+    public async Task ShufflePlaysEveryTrackOnce()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.Shuffle = true;
+            await rig.EnqueueAsync("a", "b", "c", "d", "e").ConfigureAwait(false);
+            for (var played = 1; played < 5; played++)
+            {
+                var current = rig.CurrentId;
+                await PushEndAsync(rig, current!, "finished").ConfigureAwait(false);
+                await Eventually(() => rig.CurrentId != current).ConfigureAwait(false);
+            }
+
+            var order = rig.Played.Split(',');
+            await Assert.That(order.Length).IsEqualTo(5);
+            await Assert.That(string.Join(",", order.Order())).IsEqualTo("a,b,c,d,e");
+        }
+    }
+
+    [Test]
+    public async Task ShufflePlaysTheTrackItPreloaded()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.Shuffle = true;
+            rig.Queue.PreloadNext = true;
+            await rig.EnqueueAsync("a", "b", "c", "d", "e").ConfigureAwait(false);
+
+            string? LastPreloaded() =>
+                rig
+                    .Server.RestCalls.Where(call => call.Method == "PATCH")
+                    .Select(call => PreloadedId(call.Body))
+                    .LastOrDefault(id => id is not null);
+
+            for (var played = 1; played < 5; played++)
+            {
+                await Eventually(() =>
+                        LastPreloaded() is { } preloaded
+                        && preloaded == rig.Queue.Upcoming[0].Info.Identifier
+                    )
+                    .ConfigureAwait(false);
+                var next = LastPreloaded();
+                var current = rig.CurrentId;
+                await PushEndAsync(rig, current!, "finished").ConfigureAwait(false);
+                await Eventually(() => rig.CurrentId != current).ConfigureAwait(false);
+
+                await Assert.That(rig.CurrentId).IsEqualTo(next);
+            }
+        }
+    }
+
+    [Test]
+    public async Task ShuffleKnowsOnlyTheTimeUntilTheNextTrack()
+    {
+        var rig = await StartAsync(time: new FakeTimeProvider()).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.Shuffle = true;
+            await rig.EnqueueAsync("a", "b", "c").ConfigureAwait(false);
+
+            await Assert.That(rig.Queue.TimeUntil(0)).IsEqualTo(TimeSpan.FromSeconds(100));
+            await Assert.That(rig.Queue.TimeUntil(1)).IsNull();
+        }
+    }
+
+    [Test]
+    public async Task ShuffleStaysOnAfterAStop()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.Shuffle = true;
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            await rig.Queue.StopAsync().ConfigureAwait(false);
+
+            await Assert.That(rig.Queue.Shuffle).IsTrue();
         }
     }
 }

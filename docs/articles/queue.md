@@ -15,6 +15,14 @@ queue.Loop = LoopMode.Queue;
 
 `EnqueueAsync` plays the first track right away when nothing is playing. Positions in `Upcoming` start at zero, and `SkipAsync(3)` plays the third upcoming track and the two before it stay in the queue.
 
+`ShuffleAsync` shuffles the queue once. With `Shuffle` on, every next track is picked at random, tracks added later included:
+
+```csharp
+queue.Shuffle = true;
+```
+
+The next track is picked ahead, so `Upcoming[0]` is always what plays next and what `PreloadNext` sends. The rest keep their order, and `TimeUntil` only knows the next track.
+
 - `RemoveAllAsync(track => ...)` removes every upcoming track that matches.
 - `TotalDuration` is the length of the upcoming tracks, streams not counted.
 - `TimeUntil(index)` is the time left on the current track plus the tracks before `index`.

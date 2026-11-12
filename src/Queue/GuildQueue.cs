@@ -112,13 +112,19 @@ public sealed class GuildQueue
     /// <remarks>Streams are left out, they have no length.</remarks>
     /// <param name="index">The position of the track in <see cref="Upcoming"/>, 0 plays next.</param>
     /// <returns>
-    /// The time until the track starts, null when there is no track at the index or when
-    /// <see cref="LoopMode.Track"/> repeats the current track, so no track after it starts.
+    /// The time until the track starts, null when there is no track at the index, when
+    /// <see cref="LoopMode.Track"/> repeats the current track, so no track after it starts, or when
+    /// <see cref="Shuffle"/> is on and the index is past the next track, whose order is not known yet.
     /// </returns>
     public TimeSpan? TimeUntil(int index)
     {
         var state = _state;
-        if (_loop == LoopMode.Track || index < 0 || index >= state.Upcoming.Length)
+        if (
+            _loop == LoopMode.Track
+            || index < 0
+            || index >= state.Upcoming.Length
+            || (Shuffle && index > 0)
+        )
             return null;
 
         var wait = TimeSpan.Zero;
@@ -193,6 +199,15 @@ public sealed class GuildQueue
             _ = _preloader.RefreshAsync();
         }
     }
+
+    /// <summary>Gets or sets whether each next track is picked at random from the queue, off by default.</summary>
+    /// <remarks>
+    /// The next track is picked ahead, so it is always the first of <see cref="Upcoming"/> and the rest keep
+    /// their order. Unlike <see cref="ShuffleAsync"/>, tracks added later are picked too. Turning it on keeps the
+    /// track that is already next. A track enqueued as next or moved to the top plays next, and moving the next
+    /// track away picks a new one. It stays on when the queue stops or ends.
+    /// </remarks>
+    public bool Shuffle { get; set; }
 
     /// <summary>Gets or sets whether the queue keeps playing recommendations when it runs out, off by default.</summary>
     /// <remarks>
@@ -277,7 +292,7 @@ public sealed class GuildQueue
                 );
 
             var previous = _state;
-            var queued = previous.Enqueue(copies, next);
+            var queued = previous.Enqueue(copies, next, Policy);
             Commit(queued, notes);
 
             if (idle)
@@ -333,7 +348,7 @@ public sealed class GuildQueue
     /// <param name="cancellationToken">A token to cancel the call.</param>
     /// <returns>The removed track, null when the position does not exist.</returns>
     public Task<Track?> RemoveAsync(int index, CancellationToken cancellationToken = default) =>
-        ChangeAsync(state => state.Remove(index), cancellationToken);
+        ChangeAsync(state => state.Remove(index, Policy), cancellationToken);
 
     /// <summary>Removes every upcoming track that matches.</summary>
     /// <remarks>
@@ -358,7 +373,7 @@ public sealed class GuildQueue
         if (doomed.Count == 0)
             return 0;
 
-        return await ChangeAsync(state => state.RemoveAll(doomed), cancellationToken)
+        return await ChangeAsync(state => state.RemoveAll(doomed, Policy), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -368,7 +383,7 @@ public sealed class GuildQueue
     /// <param name="cancellationToken">A token to cancel the call.</param>
     /// <returns>Whether both positions exist.</returns>
     public Task<bool> MoveAsync(int from, int to, CancellationToken cancellationToken = default) =>
-        ChangeAsync(state => state.Move(from, to), cancellationToken);
+        ChangeAsync(state => state.Move(from, to, Policy), cancellationToken);
 
     /// <summary>Removes every upcoming track, the current track keeps playing.</summary>
     /// <param name="cancellationToken">A token to cancel the call.</param>
@@ -376,7 +391,9 @@ public sealed class GuildQueue
     public Task ClearAsync(CancellationToken cancellationToken = default) =>
         ChangeAsync(state => (state.Clear(), true), cancellationToken);
 
-    /// <summary>Shuffles the upcoming tracks once, tracks added later are not shuffled.</summary>
+    /// <summary>
+    /// Shuffles the upcoming tracks once. <see cref="Shuffle"/> also shuffles the tracks added later.
+    /// </summary>
     /// <param name="cancellationToken">A token to cancel the call.</param>
     /// <returns>A task that completes when the queue was shuffled.</returns>
     public Task ShuffleAsync(CancellationToken cancellationToken = default) =>
@@ -514,7 +531,7 @@ public sealed class GuildQueue
             Task.CompletedTask
         );
 
-    internal QueuePolicy Policy => new(_loop, _historyLimit);
+    internal QueuePolicy Policy => new(_loop, _historyLimit, Shuffle ? Random.Shared : null);
 
     private bool Matches(QueueState state, Track? ended) =>
         state.Current is { } current

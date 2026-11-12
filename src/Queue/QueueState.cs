@@ -3,7 +3,11 @@ using Nyra.Entities;
 
 namespace Nyra.Queue;
 
-internal readonly record struct QueuePolicy(LoopMode Loop, int HistoryLimit);
+internal readonly record struct QueuePolicy(
+    LoopMode Loop,
+    int HistoryLimit,
+    Random? Shuffle = null
+);
 
 internal sealed record QueueState(
     Track? Current,
@@ -18,14 +22,17 @@ internal sealed record QueueState(
     internal Track? NextToPreload(QueuePolicy policy) =>
         policy.Loop == LoopMode.Track ? null : Head;
 
-    internal QueueState Enqueue(IReadOnlyList<Track> tracks, bool next) =>
-        this with
-        {
-            Upcoming = next ? Upcoming.InsertRange(0, tracks) : Upcoming.AddRange(tracks),
-        };
+    internal QueueState Enqueue(IReadOnlyList<Track> tracks, bool next, QueuePolicy policy)
+    {
+        if (next)
+            return this with { Upcoming = Upcoming.InsertRange(0, tracks) };
+
+        var after = this with { Upcoming = Upcoming.AddRange(tracks) };
+        return Upcoming.IsEmpty ? after.Pick(policy) : after;
+    }
 
     internal (QueueState State, Track? Play) Start(QueuePolicy policy) =>
-        Retire(failed: false, policy).Take();
+        Retire(failed: false, policy).Take(policy);
 
     internal (QueueState State, Track? Play) Advance(bool failed, QueuePolicy policy)
     {
@@ -35,7 +42,7 @@ internal sealed record QueueState(
         if (!failed && policy.Loop == LoopMode.Track)
             return (this, Current);
 
-        return Retire(failed, policy).Take();
+        return Retire(failed, policy).Take(policy);
     }
 
     internal (QueueState State, Track? Play) Skip(int position, QueuePolicy policy)
@@ -45,7 +52,8 @@ internal sealed record QueueState(
 
         var target = Upcoming[position - 1];
         var rest = this with { Upcoming = Upcoming.RemoveAt(position - 1) };
-        return (rest.Retire(failed: false, policy) with { Current = target }, target);
+        var after = rest.Retire(failed: false, policy) with { Current = target };
+        return (position == 1 ? after.Pick(policy) : after, target);
     }
 
     internal (QueueState State, Track? Play) Previous()
@@ -66,7 +74,7 @@ internal sealed record QueueState(
     }
 
     internal QueueState ServerAdvanced(QueuePolicy policy) =>
-        Retire(failed: false, policy).Take().State;
+        Retire(failed: false, policy).Take(policy).State;
 
     internal QueueState Reconcile(Track started)
     {
@@ -91,18 +99,26 @@ internal sealed record QueueState(
         };
     }
 
-    internal (QueueState State, Track? Removed) Remove(int index) =>
-        index < 0 || index >= Upcoming.Length
-            ? (this, null)
-            : (this with { Upcoming = Upcoming.RemoveAt(index) }, Upcoming[index]);
-
-    internal (QueueState State, int Removed) RemoveAll(HashSet<Track> doomed)
+    internal (QueueState State, Track? Removed) Remove(int index, QueuePolicy policy)
     {
-        var kept = Upcoming.RemoveAll(doomed.Contains);
-        return (this with { Upcoming = kept }, Upcoming.Length - kept.Length);
+        if (index < 0 || index >= Upcoming.Length)
+            return (this, null);
+
+        var after = this with { Upcoming = Upcoming.RemoveAt(index) };
+        return (index == 0 ? after.Pick(policy) : after, Upcoming[index]);
     }
 
-    internal (QueueState State, bool Moved) Move(int from, int to)
+    internal (QueueState State, int Removed) RemoveAll(HashSet<Track> doomed, QueuePolicy policy)
+    {
+        var kept = Upcoming.RemoveAll(doomed.Contains);
+        var after = this with { Upcoming = kept };
+        return (
+            Head is { } head && doomed.Contains(head) ? after.Pick(policy) : after,
+            Upcoming.Length - kept.Length
+        );
+    }
+
+    internal (QueueState State, bool Moved) Move(int from, int to, QueuePolicy policy)
     {
         if (from < 0 || from >= Upcoming.Length || to < 0 || to >= Upcoming.Length)
             return (this, false);
@@ -111,7 +127,8 @@ internal sealed record QueueState(
             return (this, true);
 
         var track = Upcoming[from];
-        return (this with { Upcoming = Upcoming.RemoveAt(from).Insert(to, track) }, true);
+        var after = this with { Upcoming = Upcoming.RemoveAt(from).Insert(to, track) };
+        return (from == 0 ? after.Pick(policy) : after, true);
     }
 
     internal QueueState Clear() => this with { Upcoming = [] };
@@ -134,10 +151,28 @@ internal sealed record QueueState(
         };
     }
 
-    private (QueueState State, Track? Play) Take() =>
+    private (QueueState State, Track? Play) Take(QueuePolicy policy) =>
         Upcoming.IsEmpty
             ? (this, null)
-            : (this with { Current = Upcoming[0], Upcoming = Upcoming.RemoveAt(0) }, Upcoming[0]);
+            : (
+                (this with { Current = Upcoming[0], Upcoming = Upcoming.RemoveAt(0) }).Pick(policy),
+                Upcoming[0]
+            );
+
+    private QueueState Pick(QueuePolicy policy)
+    {
+        if (policy.Shuffle is not { } random || Upcoming.Length < 2)
+            return this;
+
+        var picked = random.Next(Upcoming.Length);
+        if (picked == 0)
+            return this;
+
+        return this with
+        {
+            Upcoming = Upcoming.RemoveAt(picked).Insert(0, Upcoming[picked]),
+        };
+    }
 
     internal QueueState Retire(bool failed, QueuePolicy policy)
     {

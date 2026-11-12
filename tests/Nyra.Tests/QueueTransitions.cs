@@ -8,6 +8,13 @@ public sealed class QueueTransitions
 {
     private static readonly QueuePolicy Off = new(LoopMode.Off, 20);
 
+    private static readonly QueuePolicy Shuffled = new(LoopMode.Off, 20, new LastPick());
+
+    private sealed class LastPick : Random
+    {
+        public override int Next(int maxValue) => maxValue - 1;
+    }
+
     private static Track Make(string id) =>
         JsonSerializer.Deserialize<Track>(
             $$$"""{"encoded":"enc-{{{id}}}","info":{"identifier":"{{{id}}}","author":"a","title":"{{{id}}}","length":100000,"isStream":false,"isSeekable":true,"position":0}}""",
@@ -24,7 +31,7 @@ public sealed class QueueTransitions
     public async Task StartTakesTheHead()
     {
         var (state, play) = QueueState
-            .Empty.Enqueue([Make("a"), Make("b")], next: false)
+            .Empty.Enqueue([Make("a"), Make("b")], next: false, Off)
             .Start(Off);
 
         await Assert.That(play?.Info.Identifier).IsEqualTo("a");
@@ -35,7 +42,7 @@ public sealed class QueueTransitions
     [Test]
     public async Task EnqueueNextGoesToTheFront()
     {
-        var state = Playing("a", "b").Enqueue([Make("c")], next: true);
+        var state = Playing("a", "b").Enqueue([Make("c")], next: true, Off);
 
         await Assert.That(Ids(state.Upcoming)).IsEqualTo("c,b");
     }
@@ -170,7 +177,7 @@ public sealed class QueueTransitions
     [Test]
     public async Task MoveReordersTheUpcomingTracks()
     {
-        var (state, moved) = Playing("a", "b", "c", "d").Move(2, 0);
+        var (state, moved) = Playing("a", "b", "c", "d").Move(2, 0, Off);
 
         await Assert.That(moved).IsTrue();
         await Assert.That(Ids(state.Upcoming)).IsEqualTo("d,b,c");
@@ -180,7 +187,7 @@ public sealed class QueueTransitions
     public async Task MoveOutOfRangeChangesNothing()
     {
         var before = Playing("a", "b", "c");
-        var (state, moved) = before.Move(5, 0);
+        var (state, moved) = before.Move(5, 0, Off);
 
         await Assert.That(moved).IsFalse();
         await Assert.That(state).IsSameReferenceAs(before);
@@ -189,7 +196,7 @@ public sealed class QueueTransitions
     [Test]
     public async Task RemoveTakesOutOneTrack()
     {
-        var (state, removed) = Playing("a", "b", "c").Remove(0);
+        var (state, removed) = Playing("a", "b", "c").Remove(0, Off);
 
         await Assert.That(removed?.Info.Identifier).IsEqualTo("b");
         await Assert.That(Ids(state.Upcoming)).IsEqualTo("c");
@@ -198,7 +205,7 @@ public sealed class QueueTransitions
     [Test]
     public async Task RemoveOutOfRangeReturnsNull()
     {
-        var (_, removed) = Playing("a", "b").Remove(3);
+        var (_, removed) = Playing("a", "b").Remove(3, Off);
 
         await Assert.That(removed).IsNull();
     }
@@ -208,7 +215,7 @@ public sealed class QueueTransitions
     {
         var state = Playing("a", "b", "c", "d");
         var doomed = new HashSet<Track> { state.Upcoming[0], state.Upcoming[2] };
-        var (after, removed) = state.RemoveAll(doomed);
+        var (after, removed) = state.RemoveAll(doomed, Off);
 
         await Assert.That(removed).IsEqualTo(2);
         await Assert.That(Ids(after.Upcoming)).IsEqualTo("c");
@@ -275,7 +282,7 @@ public sealed class QueueTransitions
     [Test]
     public async Task AdvanceWithoutACurrentTrackChangesNothing()
     {
-        var before = QueueState.Empty.Enqueue([Make("a")], next: false);
+        var before = QueueState.Empty.Enqueue([Make("a")], next: false, Off);
         var (state, play) = before.Advance(failed: false, Off);
 
         await Assert.That(play).IsNull();
@@ -286,7 +293,7 @@ public sealed class QueueTransitions
     public async Task MoveToTheSamePositionKeepsTheState()
     {
         var before = Playing("a", "b", "c");
-        var (state, moved) = before.Move(1, 1);
+        var (state, moved) = before.Move(1, 1, Off);
 
         await Assert.That(moved).IsTrue();
         await Assert.That(state).IsSameReferenceAs(before);
@@ -307,5 +314,86 @@ public sealed class QueueTransitions
 
         await Assert.That(after.Current?.Info.Identifier).IsEqualTo("z");
         await Assert.That(Ids(after.Upcoming)).IsEqualTo("a,b");
+    }
+
+    [Test]
+    public async Task ShuffleBringsAPickedTrackUpAfterEachAdvance()
+    {
+        var (state, play) = Playing("a", "b", "c", "d").Advance(failed: false, Shuffled);
+
+        await Assert.That(play?.Info.Identifier).IsEqualTo("b");
+        await Assert.That(Ids(state.Upcoming)).IsEqualTo("d,c");
+    }
+
+    [Test]
+    public async Task ShufflePicksTheFirstTrackOfAnEmptyQueue()
+    {
+        var state = QueueState.Empty.Enqueue(
+            [Make("a"), Make("b"), Make("c")],
+            next: false,
+            Shuffled
+        );
+
+        await Assert.That(Ids(state.Upcoming)).IsEqualTo("c,a,b");
+    }
+
+    [Test]
+    public async Task ShuffleKeepsTheNextTrackWhenMoreAreAdded()
+    {
+        var state = Playing("a", "b").Enqueue([Make("c"), Make("d")], next: false, Shuffled);
+
+        await Assert.That(Ids(state.Upcoming)).IsEqualTo("b,c,d");
+    }
+
+    [Test]
+    public async Task ShuffleKeepsATrackEnqueuedAsNext()
+    {
+        var state = Playing("a", "b", "c").Enqueue([Make("d")], next: true, Shuffled);
+
+        await Assert.That(Ids(state.Upcoming)).IsEqualTo("d,b,c");
+    }
+
+    [Test]
+    public async Task ShufflePicksAgainWhenTheNextTrackIsTakenOut()
+    {
+        var (removed, _) = Playing("a", "b", "c", "d").Remove(0, Shuffled);
+        var (skipped, _) = Playing("a", "b", "c", "d").Skip(1, Shuffled);
+        var playing = Playing("a", "b", "c", "d");
+        var (cleared, _) = playing.RemoveAll([playing.Upcoming[0]], Shuffled);
+
+        using (Assert.Multiple())
+        {
+            await Assert.That(Ids(removed.Upcoming)).IsEqualTo("d,c");
+            await Assert.That(Ids(skipped.Upcoming)).IsEqualTo("d,c");
+            await Assert.That(Ids(cleared.Upcoming)).IsEqualTo("d,c");
+        }
+    }
+
+    [Test]
+    public async Task ShuffleKeepsTheNextTrackWhenAnotherIsTakenOut()
+    {
+        var (removed, _) = Playing("a", "b", "c", "d").Remove(1, Shuffled);
+        var (skipped, _) = Playing("a", "b", "c", "d").Skip(2, Shuffled);
+
+        await Assert.That(Ids(removed.Upcoming)).IsEqualTo("b,d");
+        await Assert.That(Ids(skipped.Upcoming)).IsEqualTo("b,d");
+    }
+
+    [Test]
+    public async Task ShufflePicksAfterAServerAdvance()
+    {
+        var state = Playing("a", "b", "c", "d").ServerAdvanced(Shuffled);
+
+        await Assert.That(state.Current?.Info.Identifier).IsEqualTo("b");
+        await Assert.That(Ids(state.Upcoming)).IsEqualTo("d,c");
+    }
+
+    [Test]
+    public async Task ShufflePicksAgainWhenTheNextTrackIsMovedAway()
+    {
+        var (state, moved) = Playing("a", "b", "c", "d").Move(0, 1, Shuffled);
+
+        await Assert.That(moved).IsTrue();
+        await Assert.That(Ids(state.Upcoming)).IsEqualTo("d,c,b");
     }
 }
