@@ -37,7 +37,7 @@ public sealed class NodeGroups
     /// <returns>The created group.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="groupId"/> is null or blank.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes.
     /// </exception>
     /// <exception cref="RestException">A group with the id already exists, the server answers 409.</exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
@@ -75,7 +75,7 @@ public sealed class NodeGroups
     /// <returns>The group, null when it does not exist.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="groupId"/> is null or blank.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes.
     /// </exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
     /// <exception cref="IncompatibleServerException">The server's /v4/info version is not supported.</exception>
@@ -93,10 +93,10 @@ public sealed class NodeGroups
 
     /// <summary>
     /// Applies an update to a group, membership changes first, then the track and player state on every
-    /// member, 35 ms per guild.
+    /// member.
     /// </summary>
     /// <remarks>
-    /// The server answers 200 even when individual guilds fail, always check the result's errors list.
+    /// The update succeeds even when some guilds fail, so check the result's errors.
     /// NodeLink only.
     /// </remarks>
     /// <param name="groupId">The group id.</param>
@@ -143,7 +143,7 @@ public sealed class NodeGroups
     /// <returns>A task that completes when the group was deleted.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="groupId"/> is null or blank.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes.
     /// </exception>
     /// <exception cref="RestException">The group does not exist, the server answers 404.</exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
@@ -172,8 +172,8 @@ public sealed class NodeGroups
     /// <paramref name="groupId"/> is null or blank, or <paramref name="track"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address, or <paramref
-    /// name="track"/> carries a null or blank encoded, the wire stop form.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes, or <paramref
+    /// name="track"/> has a null or blank encoded track.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="position"/> is negative, or <paramref name="endTime"/> is not greater than zero.
@@ -222,7 +222,7 @@ public sealed class NodeGroups
     /// <returns>The update result, check its errors list.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="groupId"/> is null or blank.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes.
     /// </exception>
     /// <exception cref="RestException">The group does not exist, the server answers 404.</exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
@@ -239,7 +239,7 @@ public sealed class NodeGroups
     /// <returns>The update result, check its errors list.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="groupId"/> is null or blank.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes.
     /// </exception>
     /// <exception cref="RestException">The group does not exist, the server answers 404.</exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
@@ -256,7 +256,7 @@ public sealed class NodeGroups
     /// <returns>The update result, check its errors list.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="groupId"/> is null or blank.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes.
     /// </exception>
     /// <exception cref="RestException">The group does not exist, the server answers 404.</exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
@@ -274,7 +274,7 @@ public sealed class NodeGroups
     /// <returns>The update result, check its errors list.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="groupId"/> is null or blank.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="volume"/> is outside 0-1000.</exception>
     /// <exception cref="RestException">The group does not exist, the server answers 404.</exception>
@@ -296,7 +296,7 @@ public sealed class NodeGroups
     /// <paramref name="groupId"/> is null or blank, or <paramref name="guildIds"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes.
     /// </exception>
     /// <exception cref="RestException">The group does not exist, the server answers 404.</exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
@@ -331,7 +331,7 @@ public sealed class NodeGroups
     /// <paramref name="groupId"/> is null or blank, or <paramref name="guildIds"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="groupId"/> carries characters the group routes cannot address.
+    /// <paramref name="groupId"/> has characters other than letters, digits, underscores and dashes.
     /// </exception>
     /// <exception cref="RestException">The group does not exist, the server answers 404.</exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>

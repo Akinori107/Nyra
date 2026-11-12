@@ -9,9 +9,7 @@ public sealed record YouTubeAudioTrack
 {
     /// <summary>Identifier to pass as <see cref="PlayOptions.AudioTrackId"/>.</summary>
     /// <remarks>
-    /// An entry whose <c>id</c> is an explicit wire null is dropped from the list, an entry with no <c>id</c>
-    /// member carries an empty one, empty also when every entry was dropped. Do not pass an empty one on,
-    /// the play options guard rejects it.
+    /// Can be empty, do not pass an empty id on.
     /// </remarks>
     [JsonPropertyName("id"), JsonInclude]
     public string Id { get; internal set; } = string.Empty;
@@ -22,18 +20,12 @@ public sealed record YouTubeAudioTrack
     public string? Name { get; internal set; }
 
     /// <summary>Whether the track plays when none is selected.</summary>
-    /// <remarks>
-    /// A null (a hostile or broken entry) reads as false, the entry survives, a failed read would cost the
-    /// whole list.
-    /// </remarks>
+    /// <remarks>A null reads as false.</remarks>
     [JsonPropertyName("isDefault"), JsonInclude]
     public bool IsDefault { get; internal set; }
 
     /// <summary>Whether the track was auto-dubbed by the platform rather than uploaded.</summary>
-    /// <remarks>
-    /// A null (a hostile or broken entry) reads as false, the entry survives, a failed read would cost the
-    /// whole list.
-    /// </remarks>
+    /// <remarks>A null reads as false.</remarks>
     [JsonPropertyName("isAutoDubbed"), JsonInclude]
     public bool IsAutoDubbed { get; internal set; }
 }
@@ -46,14 +38,12 @@ public static class YouTubeTrackExtensions
     /// cref="Track.PluginInfo"/>.
     /// </summary>
     /// <remarks>
-    /// Null when there is nothing to read (e.g. the track is not from YouTube), empty when the video has no
+    /// Null when there is nothing to read (like the track is not from YouTube), empty when the video has no
     /// alternate audio tracks.
-    /// <para>Null also when the embedded JSON is malformed or the member is not a string.</para>
     /// </remarks>
     /// <param name="track">The track to read the audio tracks from.</param>
     /// <returns>
-    /// The video's alternate audio tracks, null when the track carries no readable audio tracks, tracks from
-    /// Lavalink, locally decoded tracks and server echoes carry none.
+    /// The video's alternate audio tracks, null when the track has none to read.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="track"/> is null.</exception>
     public static IReadOnlyList<YouTubeAudioTrack>? GetYouTubeAudioTracks(this Track track)

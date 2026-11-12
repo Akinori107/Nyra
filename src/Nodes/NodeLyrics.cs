@@ -23,9 +23,7 @@ public sealed class NodeLyrics
     /// <param name="skipTrackSource">Whether to skip the track's source as a provider.</param>
     /// <param name="source">
     /// The lyrics provider to force, such as <c>lrclib</c> or <c>musixmatch</c>, null lets the server pick.
-    /// Only the NodeLink route carries it, honored by recent NodeLink dev builds, the server forces the
-    /// provider and answers an unknown one with a dedicated error. The LavaLyrics route has no such
-    /// parameter.
+    /// NodeLink only.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The lyrics result of the track.</returns>

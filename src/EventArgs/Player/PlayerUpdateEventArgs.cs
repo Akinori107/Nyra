@@ -14,10 +14,7 @@ public sealed class PlayerUpdateEventArgs : System.EventArgs
     private PlayerState? _state;
 
     /// <summary>The state the server reported.</summary>
-    /// <remarks>
-    /// Absorbs a null or missing state, the getter materializes a fresh instance, so handlers never read null
-    /// but cannot tell a fabricated empty state from a server-reported one.
-    /// </remarks>
+    /// <remarks>Never null, a missing value reads as an empty instance.</remarks>
     [JsonPropertyName("state"), JsonInclude]
     public PlayerState State
     {

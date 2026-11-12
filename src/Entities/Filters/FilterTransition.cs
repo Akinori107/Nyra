@@ -3,24 +3,15 @@ using System.Text.Json.Serialization;
 
 namespace Nyra.Entities.Filters;
 
-/// <summary>Fades a filter in or out (a wet/dry blend) instead of stepping, NodeLink only.</summary>
-/// <remarks>
-/// Parameter changes animate them towards the new values on the filters whose parameters the server
-/// animates, the rest accept the transition but step their parameters. Which filters animate is the
-/// server's to decide per release, this library sends the transition uniformly. A removal never carries
-/// a transition, it snaps.
-/// </remarks>
+/// <summary>Fades a filter change instead of switching at once, NodeLink only.</summary>
+/// <remarks>Removing a filter always switches at once.</remarks>
 /// <param name="DurationMilliseconds">
-/// How long the transition takes, in milliseconds. There is no client-side guard, the value is the server's to
-/// judge. A non-positive one makes the change snap instantly or is rejected with 400. A null still writes an
-/// explicit zero, an omitted member (a third-party form) leaves the transition unable to animate, the change
-/// snaps.
+/// How long the transition takes, in milliseconds. Zero or less switches at once or is rejected by the server,
+/// null is sent as 0.
 /// </param>
 /// <param name="Curve">
-/// Transition curve by name, <c>linear</c>, <c>exponential</c> or <c>sinusoidal</c>, case-sensitive. The server
-/// replaces any other name with sinusoidal or rejects it with 400. A null curve is an omitted member on the
-/// wire, it never travels as a JSON null, so a fresh apply lands on the server's default (sinusoidal) and a
-/// server that merges the previous transition retains the earlier curve.
+/// Transition curve, <c>linear</c>, <c>exponential</c> or <c>sinusoidal</c>, case-sensitive. Null uses the
+/// server default.
 /// </param>
 public sealed record FilterTransition(
     [property: JsonPropertyName("durationMs")]

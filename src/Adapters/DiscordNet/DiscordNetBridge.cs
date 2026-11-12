@@ -7,10 +7,6 @@ using Nyra.Abstractions;
 namespace Nyra.DiscordNet;
 
 /// <summary>Wraps a <see cref="DiscordSocketClient"/> or <see cref="DiscordShardedClient"/> for Nyra.</summary>
-/// <remarks>
-/// The voice state update goes through Discord.Net's public external-audio route, so the bridge keeps the
-/// audio channel of each guild to disconnect from later.
-/// </remarks>
 public sealed class DiscordNetBridge
     : IDiscordBridge,
         IGuildRemovalSource,
@@ -45,7 +41,7 @@ public sealed class DiscordNetBridge
 
     /// <summary>Wraps a <see cref="DiscordSocketClient"/>, forwarding its voice events.</summary>
     /// <param name="client">The client to wrap.</param>
-    /// <param name="logger">The logger to write the library's messages through, Discord.Net ships no logger.</param>
+    /// <param name="logger">The logger to write Nyra's messages to, Discord.Net has no ILogger.</param>
     public DiscordNetBridge(DiscordSocketClient client, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -65,7 +61,7 @@ public sealed class DiscordNetBridge
 
     /// <summary>Wraps a <see cref="DiscordShardedClient"/>, forwarding the voice events of every shard.</summary>
     /// <param name="client">The sharded client to wrap.</param>
-    /// <param name="logger">The logger to write the library's messages through, Discord.Net ships no logger.</param>
+    /// <param name="logger">The logger to write Nyra's messages to, Discord.Net has no ILogger.</param>
     public DiscordNetBridge(DiscordShardedClient client, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(client);

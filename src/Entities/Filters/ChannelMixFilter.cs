@@ -7,8 +7,7 @@ namespace Nyra.Entities.Filters;
 /// carry the same audio.
 /// </summary>
 /// <remarks>
-/// Defaults, leftToLeft/rightToRight 1.0, leftToRight/rightToLeft 0.0. The NodeLink-only transition fades the
-/// filter in or out, and the mix factors themselves animate towards the new values.
+/// Defaults, leftToLeft/rightToRight 1.0, leftToRight/rightToLeft 0.0.
 /// </remarks>
 /// <param name="LeftToLeft">
 /// How much of the left channel stays in the left output, 0.0-1.0, the default 1.0 keeps it independent.
@@ -22,7 +21,7 @@ namespace Nyra.Entities.Filters;
 /// <param name="RightToRight">
 /// How much of the right channel stays in the right output, 0.0-1.0, the default 1.0 keeps it independent.
 /// </param>
-/// <param name="Transition">NodeLink only, fades the filter in or out instead of stepping it.</param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record ChannelMixFilter(
     [property: JsonPropertyName("leftToLeft")] float? LeftToLeft = null,
     [property: JsonPropertyName("leftToRight")] float? LeftToRight = null,

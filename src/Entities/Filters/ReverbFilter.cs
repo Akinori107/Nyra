@@ -4,30 +4,22 @@ namespace Nyra.Entities.Filters;
 
 /// <summary>Simulates a room's reflections.</summary>
 /// <remarks>
-/// NodeLink only. An instance with every member null is not a no-op, the mix defaults to 0.5, an audible
-/// reverb, so send explicit values to pin the sound you intend.
-/// <para>
-/// A co-client's custom delays and gains state survives every write of this record. RoomSize and Damping only
-/// reach the server while the custom state is absent, remove and re-add the filter to clear it.
-/// </para>
+/// NodeLink only. With every member null the mix is 0.5, so the reverb is audible. Set explicit values to get
+/// the sound you want.
 /// </remarks>
 /// <param name="RoomSize">Room size, 0.0-1.0, null is sent as 0.5.</param>
 /// <param name="Damping">How much the room absorbs, 0.0-1.0, null is sent as 0.5.</param>
 /// <param name="WetLevel">
-/// Reverb loudness, 0.0-1.0. NodeLink ignores it (the wet level comes from the mix) and just echoes it back,
-/// null is sent as 0.5.
+/// Reverb loudness, 0.0-1.0, null is sent as 0.5. NodeLink uses <paramref name="Mix"/> instead.
 /// </param>
 /// <param name="DryLevel">
-/// Original-signal loudness, 0.0-1.0. NodeLink ignores it (the dry level comes from the mix) and just echoes it
-/// back, null is sent as 0.5.
+/// Original-signal loudness, 0.0-1.0, null is sent as 0.5. NodeLink uses <paramref name="Mix"/> instead.
 /// </param>
 /// <param name="Width">Stereo width of the reverb, 0.0-1.0, null is sent as 1.0.</param>
 /// <param name="Mix">
-/// Overall reverb mix, 0.0-1.0. 0.0 leaves the block inactive, null is sent as the audible 0.5 server default.
+/// Overall reverb mix, 0.0-1.0. 0.0 turns the reverb off, null is sent as 0.5.
 /// </param>
-/// <param name="Transition">
-/// NodeLink currently accepts but ignores this transition, the change always snaps instantly.
-/// </param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record ReverbFilter(
     [property: JsonPropertyName("roomSize")] float? RoomSize = null,
     [property: JsonPropertyName("damping")] float? Damping = null,

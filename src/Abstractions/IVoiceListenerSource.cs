@@ -2,14 +2,8 @@ namespace Nyra.Abstractions;
 
 /// <summary>Optional bridge capability, reports who is in a voice channel with the bot.</summary>
 /// <remarks>
-/// Lets a connection count its <see cref="GuildConnection.Listeners"/>, the users in its voice channel who are
-/// not bots. Implemented by the built-in bridges from the library's cache, consumed opportunistically. A user
-/// whose member the cache does not hold counts as a listener on NetCord and DSharpPlus, so a gap in the cache
-/// keeps the bot in its channel. Discord.Net only sees the users its cache holds.
-/// <para>
-/// Handlers run inline on the library's gateway dispatch thread, the same as
-/// <see cref="IGuildRemovalSource.GuildRemoved"/>.
-/// </para>
+/// Lets a connection count its <see cref="GuildConnection.Listeners"/>. The built-in bridges implement it from
+/// the library's cache. Handlers run on the gateway thread, so keep them fast.
 /// </remarks>
 public interface IVoiceListenerSource
 {

@@ -5,7 +5,7 @@ namespace Nyra.Entities;
 
 /// <summary>Strategy for resolving a track query on <see cref="Node.LoadTracksAsync"/>.</summary>
 /// <remarks>
-/// Direct http(s) and <c>ftts</c> URLs are always sent as-is, since prefixing a URL is never valid.
+/// Direct http(s) and <c>ftts</c> URLs are always sent as-is.
 /// </remarks>
 public enum SearchType
 {
@@ -29,10 +29,7 @@ public enum SearchType
     Spotify,
 
     /// <summary>Prefixes the query with <c>sprec</c>.</summary>
-    /// <remarks>
-    /// NodeLink, or Lavalink with the LavaSrc plugin. NodeLink's Audius source registers the same prefix, so
-    /// with both enabled either may answer.
-    /// </remarks>
+    /// <remarks>NodeLink, or Lavalink with the LavaSrc plugin.</remarks>
     SpotifyRecommendations,
 
     /// <summary>
@@ -216,9 +213,7 @@ public enum LoadType
 
     /// <summary>Not a server value.</summary>
     /// <remarks>
-    /// Nyra's fallback for a load type the library does not recognize. The load path itself degrades unknown
-    /// types into <see cref="LoadFailed"/> instead, this member only exists so a future payload
-    /// that deserializes the enum directly degrades the same way instead of throwing mid-parse.
+    /// A load type Nyra does not know. Loads with one come back as <see cref="LoadType.Error"/>.
     /// </remarks>
     Unknown,
 }
@@ -273,8 +268,7 @@ public sealed record PlaylistInfo
 
     /// <summary>Zero-based index of the selected track, or -1 when none is selected.</summary>
     /// <remarks>
-    /// The index is whatever the server reported, no bounds against the playlist's track count are guaranteed,
-    /// guard the upper bound before indexing with it.
+    /// Check it against the track count before indexing.
     /// </remarks>
     [JsonPropertyName("selectedTrack"), JsonInclude]
     public int SelectedTrack { get; internal set; } = -1;

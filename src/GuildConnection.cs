@@ -184,9 +184,8 @@ public sealed class GuildConnection
 
     /// <summary>The track currently loaded, or null when nothing is playing.</summary>
     /// <remarks>
-    /// A server-side destroy by another actor (a co-client) only raises <see cref="PlayerDestroyed"/>, it does
-    /// not clear this, the stale track lives on until the next play or a teardown resets it, and a later
-    /// PlayAsync re-creates the player.
+    /// A destroy by another client only raises <see cref="PlayerDestroyed"/> and keeps this track until the
+    /// next play or a teardown. A later PlayAsync creates the player again.
     /// </remarks>
     public Track? CurrentTrack
     {
@@ -219,23 +218,15 @@ public sealed class GuildConnection
     public bool IsPaused { get; internal set; }
 
     /// <summary>
-    /// The player volume (0-1000), as last confirmed by the server, 100 is the default. The server enforces
-    /// the range, the read does not clamp.
+    /// The player volume (0-1000), as last confirmed by the server, 100 is the default.
     /// </summary>
     public int Volume { get; internal set; } = 100;
 
     /// <summary>
-    /// Estimated position, the last server report advanced by elapsed wall time while playing, scaled by the
-    /// applied timescale until the next report lands.
+    /// Estimated position, moved forward from the last server report while playing.
     /// </summary>
     /// <remarks>
-    /// The sustained pace follows the raw reports, which differ per server kind. NodeLink reports already
-    /// carry the timescale, Lavalink reports advance at wall time under one, so a timescale speed other than
-    /// one leaves the Lavalink estimate at wall pace. Reports arrive on the server's player update interval.
-    /// <para>
-    /// Null before the first report and after a disconnect, freezes at the final position after a natural
-    /// end.
-    /// </para>
+    /// Null before the first report and after a disconnect, and it stops at the end of a track that finished.
     /// </remarks>
     public TimeSpan? Position => Playback.Position;
 
@@ -243,9 +234,7 @@ public sealed class GuildConnection
     public event AsyncEventHandler<TrackStartedEventArgs>? TrackStarted;
 
     /// <summary>
-    /// Raised when the current track ended, <see cref="TrackFinishedEventArgs.EndReason"/> says why, a null
-    /// <see cref="TrackFinishedEventArgs.Track"/> (NodeLink) may report a reset of an earlier playthrough,
-    /// see the remarks of that property.
+    /// Raised when the current track ended, <see cref="TrackFinishedEventArgs.EndReason"/> says why.
     /// </summary>
     public event AsyncEventHandler<TrackFinishedEventArgs>? TrackFinished;
 
@@ -259,18 +248,15 @@ public sealed class GuildConnection
 
     /// <summary>Raised on every position report of the player.</summary>
     /// <remarks>
-    /// Reports are skipped while the connection's event queue is more than 512 events behind (a stuck or slow
-    /// handler), the latest state is always available through <see cref="State"/> and <see cref="Position"/>.
+    /// Skipped while handlers are far behind, <see cref="State"/> and <see cref="Position"/> always hold the
+    /// latest.
     /// </remarks>
     public event AsyncEventHandler<PlayerUpdateEventArgs>? PlayerUpdated;
 
     /// <summary>Raised when the node's Discord voice websocket for this guild was closed.</summary>
     /// <remarks>
-    /// For NodeLink this also reports synthetic voice deaths (worker failure, UDP/IP-discovery loss) that
-    /// never closed a Discord websocket (see <see cref="WebSocketClosedEventArgs.Code"/>). NodeLink also
-    /// emits deaths that never came from Discord wearing Discord codes, for example 4015 when its voice
-    /// library gives up reconnecting and 4014 when the voice server endpoint is null. Do not attribute 4xxx to
-    /// Discord on NodeLink without checking the reason.
+    /// On NodeLink a close here does not always come from Discord, even with a 4xxx code. Check
+    /// <see cref="WebSocketClosedEventArgs.Reason"/> before blaming Discord.
     /// </remarks>
     public event AsyncEventHandler<WebSocketClosedEventArgs>? WebSocketClosed;
 
@@ -286,8 +272,7 @@ public sealed class GuildConnection
 
     /// <summary>Raised for every lyrics line that becomes current during playback.</summary>
     /// <remarks>
-    /// Lines are skipped while the connection's event queue is more than 512 events behind (a stuck or slow
-    /// handler).
+    /// Skipped while handlers are far behind.
     /// </remarks>
     public event AsyncEventHandler<LyricsLineEventArgs>? LyricsLine;
 
@@ -305,8 +290,7 @@ public sealed class GuildConnection
 
     /// <summary>Raised when a mix layer ended.</summary>
     /// <remarks>
-    /// NodeLink only. The FINISHED and MAIN_ENDED reasons only arrive when the server's mix auto-cleanup is
-    /// enabled, a layer that plays through with it off ends through the mixer's teardown instead.
+    /// NodeLink only. Some reasons only arrive when the server's mix auto-cleanup is on.
     /// </remarks>
     public event AsyncEventHandler<MixEndedEventArgs>? MixEnded;
 
@@ -330,9 +314,9 @@ public sealed class GuildConnection
 
     /// <summary>Raised when the server created the player.</summary>
     /// <remarks>
-    /// NodeLink only. The creation this connection's own join caused races the return of the connect and
-    /// usually fires before any handler can subscribe, so treat the connect's completion as the creation
-    /// signal. This event only reports creations by other actors (a co-client, a re-creation after a resume).
+    /// NodeLink only. The player created by the join usually fires before a handler can subscribe, so treat the
+    /// end of the connect as the creation. This event reports the other creations, like another client or a
+    /// re-creation after a resume.
     /// </remarks>
     public event AsyncEventHandler<PlayerCreatedEventArgs>? PlayerCreated;
 
@@ -341,10 +325,8 @@ public sealed class GuildConnection
     /// connection's own REST teardown (DisconnectAsync).
     /// </summary>
     /// <remarks>
-    /// A destroy frame queued by a kick or pass can still drain through this connection, and a successor
-    /// connection of the same guild can observe a stale frame of a predecessor's teardown. The destroy is a
-    /// notification only, the connection's playback half (track, position estimate, filters) keeps its last
-    /// state until the next play or a teardown resets it. NodeLink only.
+    /// NodeLink only. A new connection of the same guild can still get a late destroy from the one before it.
+    /// The destroy is only a notice, the track, position and filters stay until the next play or a teardown.
     /// </remarks>
     public event AsyncEventHandler<PlayerDestroyedEventArgs>? PlayerDestroyed;
 
@@ -360,7 +342,7 @@ public sealed class GuildConnection
     /// the bot stays in its voice channel.
     /// </summary>
     /// <remarks>
-    /// The new player is empty, the track, the volume and the filters are gone, start playing again. Calls made
+    /// The new player is empty unless <see cref="NodeOptions.RescuePlayback"/> sent the track again. Calls made
     /// while the restore runs throw <see cref="InvalidOperationException"/>.
     /// </remarks>
     public event AsyncEventHandler<GuildConnectionRestoredEventArgs>? GuildConnectionRestored;
@@ -384,16 +366,14 @@ public sealed class GuildConnection
 
     /// <summary>The voice connection dropped and is being re-established.</summary>
     /// <remarks>
-    /// NodeLink only. The server dispatches this per re-establishment attempt, one reconnect with an
-    /// intermediate failure can carry more than one raise.
+    /// NodeLink only. Raised once per retry.
     /// </remarks>
     public event AsyncEventHandler<PlayerReconnectingEventArgs>? PlayerReconnecting;
 
     /// <summary>The voice connection became established.</summary>
     /// <remarks>
-    /// NodeLink only. The establishment of the join itself can dispatch before a handler can attach (the
-    /// connect's roundtrip races the voice websocket), the reliable signal for the first join is the connect
-    /// completing, reconnect cycles raise this while subscribed.
+    /// NodeLink only. The first connection usually fires before a handler can subscribe, so treat the end of the
+    /// connect as that one.
     /// </remarks>
     public event AsyncEventHandler<PlayerConnectedEventArgs>? PlayerConnected;
 
@@ -402,8 +382,7 @@ public sealed class GuildConnection
     public event AsyncEventHandler<StreamMetadataUpdatedEventArgs>? StreamMetadataUpdated;
 
     /// <summary>
-    /// Raised when the node reports EternalBox context for the playing track, whenever the server signals the
-    /// track start.
+    /// Raised when a track with EternalBox info starts.
     /// </summary>
     /// <remarks>NodeLink only.</remarks>
     public event AsyncEventHandler<EternalBoxInfoUpdatedEventArgs>? EternalBoxInfoUpdated;
@@ -416,8 +395,7 @@ public sealed class GuildConnection
     public event AsyncEventHandler<HandlerErrorEventArgs>? HandlerError;
 
     /// <summary>
-    /// Plays a track, replacing whatever plays unless <see cref="PlayOptions.NoReplace"/> is set, falls back
-    /// to <see cref="Track.StartPosition"/> without an explicit start, consumed after the first accepted play.
+    /// Plays a track, replacing whatever plays unless <see cref="PlayOptions.NoReplace"/> is set.
     /// </summary>
     /// <param name="track">The track to play.</param>
     /// <param name="options">How to start the track, null starts it plain.</param>
@@ -455,24 +433,14 @@ public sealed class GuildConnection
     ) => _commands.PlayIdentifierAsync(identifier, options, cancellationToken);
 
     /// <summary>
-    /// Moves the end time marker mid-track, honored by Lavalink, accepted but not applied by NodeLink, set it
-    /// through <see cref="PlayOptions.EndTime"/> there.
+    /// Changes where the current track stops.
     /// </summary>
     /// <remarks>
-    /// On Lavalink the marker fires and the end reports as a natural finish. A null <paramref name="endTime"/>
-    /// does not clear it, the server skips the marker block for a null value, play the track again without an
-    /// end time to clear it.
-    /// <para>
-    /// On NodeLink an end time that travels with a play works on every source, but a marker moved mid-track
-    /// only applies on the native seek paths (SABR sources like YouTube and the legacy path), plain http
-    /// sources drop the value on the re-seek. A replay without an end time clears an applied marker, and the
-    /// update is silently dropped while the position still reads zero (voice startup, the first second or so).
-    /// </para>
+    /// The track then ends as if it finished. On NodeLink a change mid-track does not work on every source, so
+    /// prefer <see cref="PlayOptions.EndTime"/> there. To clear the end time, play the track again without one,
+    /// since a null does not clear it on Lavalink.
     /// </remarks>
-    /// <param name="endTime">
-    /// The marker to stop the track at. On NodeLink a null value is sent as-is, on Lavalink it is a no-op (the
-    /// marker stays armed, see remarks).
-    /// </param>
+    /// <param name="endTime">Where to stop the track.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the end time was updated.</returns>
     public Task SetEndTimeAsync(TimeSpan? endTime, CancellationToken cancellationToken = default) =>
@@ -486,9 +454,8 @@ public sealed class GuildConnection
 
     /// <summary>Pauses playback.</summary>
     /// <remarks>
-    /// NodeLink rate-limits requests per guild and answers 429, which surfaces as an <see
-    /// cref="Exceptions.RestException"/> with status 429. The limits are set on the server and cover any
-    /// request for the guild. Lavalink applies no such limit.
+    /// NodeLink can rate-limit requests per guild, which throws a <see cref="Exceptions.RestException"/> with
+    /// status 429.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the player was paused.</returns>
@@ -534,10 +501,6 @@ public sealed class GuildConnection
     /// Fetches the player as the server sees it, takes its state in and returns it, useful to re-sync after a
     /// resumed reconnect or an out-of-band change.
     /// </summary>
-    /// <remarks>
-    /// After a session loss the new player is empty, see <see cref="GuildConnectionRestored"/>, a refresh only
-    /// returns what the server holds now.
-    /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The fetched player, now the connection's state.</returns>
     public Task<Player> RefreshAsync(CancellationToken cancellationToken = default) =>
@@ -545,23 +508,12 @@ public sealed class GuildConnection
 
     /// <summary>Disconnects the bot from the voice channel and destroys the player on the server.</summary>
     /// <remarks>
-    /// A cancellation during the teardown leaves the connection marked as tearing down. The registry removal
-    /// runs inside the destroy, so a cancellation before it leaves the connection registered, one after it
-    /// leaves it removed but unwiped. Either way it accepts no operations until another disconnect completes
-    /// the cleanup or a new connect takes the guild over.
+    /// If the call is cancelled or the server fails the destroy, the connection takes no more operations until
+    /// another disconnect finishes the job or a new connect takes the guild over.
     /// <para>
-    /// The state wipe only runs when the destroy settled. The event pump retires with the teardown attempt
-    /// either way, since a dying connection has no reader left for events.
-    /// </para>
-    /// <para>
-    /// A destroy the server failed is not swallowed and throws to the caller. The connection stays unwiped and
-    /// accepts no operations until a retry or a takeover cleans it up.
-    /// </para>
-    /// <para>
-    /// A connect right after disconnecting a bot that was already out of voice can fail with a <see
-    /// cref="Exceptions.VoiceHandshakeException"/> until <see cref="NodeOptions.VoiceHandshakeTimeout"/>
-    /// passes. The library ignores the guild's voice state updates while it waits for the leave echo, and none
-    /// comes if the bot was not in voice.
+    /// Connecting again right after disconnecting a bot that was already out of voice can throw a
+    /// <see cref="Exceptions.VoiceHandshakeException"/> until <see cref="NodeOptions.VoiceHandshakeTimeout"/>
+    /// passes.
     /// </para>
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>

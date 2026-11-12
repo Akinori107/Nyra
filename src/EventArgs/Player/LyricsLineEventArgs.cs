@@ -11,19 +11,13 @@ public sealed class LyricsLineEventArgs : System.EventArgs
     public ulong GuildId { get; internal set; }
 
     /// <summary>
-    /// The index of the line in the lyrics, counting the lines exactly as the server's array carries them, a
-    /// null entry the wire carried does not shift it, while <see cref="LyricsFoundEventArgs"/> drops null
-    /// entries from the list it exposes, so the index only addresses that filtered list when the wire carried
-    /// no nulls.
+    /// The index of the line in the lyrics.
     /// </summary>
     [JsonPropertyName("lineIndex"), JsonInclude]
     public int LineIndex { get; internal set; }
 
     /// <summary>The line that became current.</summary>
-    /// <remarks>
-    /// Absorbs a null the server sends, the getter materializes an empty line, the event reaches user handlers
-    /// even when the frame carries none.
-    /// </remarks>
+    /// <remarks>Never null, a missing value reads as an empty instance.</remarks>
     [JsonPropertyName("line"), JsonInclude]
     public SyncedLyricsLine Line
     {
@@ -32,9 +26,7 @@ public sealed class LyricsLineEventArgs : System.EventArgs
     }
 
     /// <summary>
-    /// True when the line is out of step with playback, the event was emitted after the line's timestamp had
-    /// already passed, or the playback position jumped past earlier lines (a seek, or the subscription
-    /// starting mid-track).
+    /// True when the line came late, like after a seek or a subscription that started mid-track.
     /// </summary>
     [JsonPropertyName("skipped"), JsonInclude]
     public bool Skipped { get; internal set; }

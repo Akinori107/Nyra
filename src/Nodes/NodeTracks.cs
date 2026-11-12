@@ -176,7 +176,7 @@ public sealed class NodeTracks
     /// <param name="filters">The filter chain applied to the stream, null streams unfiltered.</param>
     /// <param name="format">
     /// The container format of the stream, raw PCM by default. Only <see cref="LoadStreamFormat.Raw"/> and
-    /// <see cref="LoadStreamFormat.Wav"/> are valid, any other value is rejected before the first request.
+    /// <see cref="LoadStreamFormat.Wav"/> are valid.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The audio stream of the track, the caller must dispose it.</returns>

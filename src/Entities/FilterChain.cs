@@ -25,9 +25,7 @@ public sealed record FilterChain
 
     /// <summary>Animates equalizer changes instead of stepping them.</summary>
     /// <remarks>
-    /// NodeLink only. It travels inside the bands object as "transition", Lavalink parses the bare band array
-    /// and knows no transition. The chain's converter reads and writes it, so serializing the chain with other
-    /// options does not emit it as a member of its own.
+    /// NodeLink only.
     /// </remarks>
     [JsonIgnore]
     public FilterTransition? EqualizerTransition { get; init; }
@@ -95,7 +93,7 @@ public sealed record FilterChain
     public FlangerFilter? Flanger { get; init; }
 
     /// <summary>Places the audio at a point in space around the listener.</summary>
-    /// <remarks>NodeLink only, it ignores the three position members, they round-trip through the API.</remarks>
+    /// <remarks>NodeLink only.</remarks>
     [JsonPropertyName("spatial")]
     public SpatialFilter? Spatial { get; init; }
 
@@ -116,8 +114,7 @@ public sealed record FilterChain
 
     /// <summary>Plugin-provided filters, keyed by plugin name.</summary>
     /// <remarks>
-    /// Lavalink applies them through its plugin system, NodeLink has none and echoes the block back as sent,
-    /// without applying it.
+    /// Lavalink only, NodeLink ignores them.
     /// </remarks>
     [JsonPropertyName("pluginFilters")]
     public IReadOnlyDictionary<string, JsonElement>? PluginFilters { get; init; }

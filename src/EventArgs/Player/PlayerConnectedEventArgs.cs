@@ -5,9 +5,8 @@ namespace Nyra.EventArgs;
 
 /// <summary>The voice connection of the guild's player became established.</summary>
 /// <remarks>
-/// NodeLink only. The initial establishment races the connect itself, the frame can dispatch before any
-/// handler can subscribe to the connection, the reliable signal for the first join is the connect completing
-/// (play and filter commands work from that completion). Reconnect cycles raise this while subscribed.
+/// NodeLink only. The first connection usually fires before a handler can subscribe, so treat the end of the
+/// connect as that one.
 /// </remarks>
 public sealed class PlayerConnectedEventArgs : System.EventArgs
 {

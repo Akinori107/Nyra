@@ -75,10 +75,8 @@ public static class DiscordClientExtensions
     /// Disposes the client's Nyra extension and forgets it, the Discord client itself is left running.
     /// </summary>
     /// <remarks>
-    /// A stop of the sharded client destroys its shard objects without disposing their extensions. The
-    /// orphaned fleet stays alive on the dead shards, and a later <c>StartAsync</c> builds fresh shards whose
-    /// extensions know nothing of it, so a second UseNyra there races the old fleet's node sessions. Call this
-    /// per shard before stopping or recycling a sharded client, or dispose the extensions UseNyra returned.
+    /// Call it on every shard before stopping or restarting a sharded client, stopping it does not dispose
+    /// the extensions.
     /// </remarks>
     /// <param name="client">The client whose Nyra extension to remove.</param>
     public static void RemoveNyra(this DiscordClient client)
@@ -89,9 +87,7 @@ public static class DiscordClientExtensions
 
     /// <summary>Removes the client's Nyra extension and disposes it without blocking the caller.</summary>
     /// <remarks>
-    /// The awaitable counterpart of <see cref="RemoveNyra(DiscordClient)"/>, the dispose tears every node
-    /// down in parallel instead of blocking a sync caller for the whole bound, prefer it on shutdown paths
-    /// that can await.
+    /// Prefer it over the blocking RemoveNyra where you can await.
     /// </remarks>
     /// <param name="client">The client whose Nyra extension to remove.</param>
     /// <returns>A task that completes when the extension was removed and disposed.</returns>
@@ -127,15 +123,8 @@ public static class DiscordClientExtensions
 
     /// <summary>Enables Nyra on every shard of the sharded client.</summary>
     /// <remarks>
-    /// A shard already enabled on its own keeps it, but without the sharded total it cannot reject foreign
-    /// guilds and is flagged with a warning.
-    /// <para>
-    /// Stopping the sharded client destroys its shard objects without disposing these extensions. The orphaned
-    /// fleet stays alive on the dead shards, GetNyraAsync on the restarted client reports nothing, and a second
-    /// UseNyraAsync builds a new fleet whose nodes fight the old one's sessions for the same user id. Call
-    /// RemoveNyra (or dispose the extensions this returns) on every shard before stopping or recycling the
-    /// client.
-    /// </para>
+    /// Call RemoveNyra, or dispose the returned extensions, before stopping or restarting the sharded client.
+    /// Stopping it does not dispose them, and enabling Nyra again would run two sets of nodes for the same bot.
     /// </remarks>
     /// <param name="client">The sharded client to enable Nyra on, one extension per shard.</param>
     /// <returns>The extensions of the shards, keyed by shard id.</returns>
@@ -157,9 +146,7 @@ public static class DiscordClientExtensions
 
     /// <summary>Gets the Nyra extensions of all initialized shards.</summary>
     /// <remarks>
-    /// This is not a pure read, an uninitialized sharded client initializes here, which does gateway I/O, can
-    /// throw the library's raw auth error on a bad token and can hang on rate limits. Call it on an already
-    /// started client for a pure read.
+    /// On a client that was not started yet this connects to the gateway first.
     /// </remarks>
     /// <param name="client">The sharded client to read the extensions of.</param>
     /// <returns>The extensions of the initialized shards, keyed by shard id.</returns>

@@ -6,8 +6,7 @@ namespace Nyra.NetCord;
 
 /// <summary>Wraps a <see cref="GatewayClient"/> or <see cref="ShardedGatewayClient"/> for Nyra.</summary>
 /// <remarks>
-/// NetCord logs through its own <c>IGatewayLogger</c>, configured only at client creation and not exposed
-/// afterwards, so the logger here is one the caller provides.
+/// Nyra logs through the logger you pass, not through NetCord's.
 /// </remarks>
 public sealed class NetCordBridge
     : IDiscordBridge,

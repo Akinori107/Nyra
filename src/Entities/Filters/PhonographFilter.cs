@@ -4,21 +4,18 @@ namespace Nyra.Entities.Filters;
 
 /// <summary>Degrades the audio like a record player.</summary>
 /// <remarks>
-/// NodeLink only. An instance with every member null is not a no-op, the server applies its own defaults, an
-/// audible vinyl degradation. Send explicit values to pin the sound you intend and remove the filter to turn
-/// the effect off. Explicit zeros still run the static EQ (a telephone-grade curve), only the modulated
-/// stages go quiet.
+/// NodeLink only. With every member null the server defaults apply, so the effect is audible. Set explicit
+/// values to get the sound you want, and remove the filter to turn it off, since zeros still leave a
+/// telephone-like EQ.
 /// </remarks>
-/// <param name="Frequency">Pitch-modulation (wow) frequency in Hz. The only member NodeLink does not clamp.</param>
+/// <param name="Frequency">Pitch-modulation (wow) frequency in Hz.</param>
 /// <param name="Depth">Pitch-modulation intensity, 0.0-1.0.</param>
 /// <param name="Crackle">Surface noise amount, 0.0-1.0.</param>
 /// <param name="Flutter">Rapid pitch jitter, 0.0-1.0.</param>
 /// <param name="Room">Room ambience simulation, 0.0-1.0.</param>
 /// <param name="MicAgc">Microphone gain-control simulation, 0.0-1.0.</param>
 /// <param name="Drive">Mechanical saturation, 0.0-1.0.</param>
-/// <param name="Transition">
-/// NodeLink currently accepts but ignores this transition, the change always snaps instantly.
-/// </param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record PhonographFilter(
     [property: JsonPropertyName("frequency")] float? Frequency = null,
     [property: JsonPropertyName("depth")] float? Depth = null,

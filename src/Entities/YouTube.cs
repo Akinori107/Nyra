@@ -65,8 +65,7 @@ public sealed record YouTubeConfigUpdate
 
 /// <summary>An access token the YouTube OAuth route issued for a refresh token.</summary>
 /// <remarks>
-/// The relay echoes the token endpoint's answer verbatim, and only the four modeled members survive the parse,
-/// anything else the provider appends (e.g. a rotated refresh token) is dropped.
+/// Other fields the provider sends are dropped.
 /// </remarks>
 public sealed record YouTubeToken
 {
@@ -86,7 +85,7 @@ public sealed record YouTubeToken
     [JsonPropertyName("scope"), JsonInclude]
     public string? Scope { get; internal set; }
 
-    /// <summary>The token type, e.g. <c>Bearer</c>.</summary>
+    /// <summary>The token type, like <c>Bearer</c>.</summary>
     [JsonPropertyName("token_type"), JsonInclude]
     public string? TokenType { get; internal set; }
 }

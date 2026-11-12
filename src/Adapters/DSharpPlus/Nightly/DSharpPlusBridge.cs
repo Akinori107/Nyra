@@ -14,16 +14,11 @@ namespace Nyra.DSharpPlus.Nightly;
 /// raw gateway voice state update.
 /// </summary>
 /// <remarks>
-/// The DSharpPlus nightly line (5.0.0-nightly-*) removed the C# events from the built client, subscriptions
-/// happen through <c>DiscordClientBuilder.ConfigureEventHandlers</c> at build time only. This bridge is
-/// therefore created empty, wired into the builder by <see cref="DiscordClientBuilderExtensions.UseNyra"/>,
-/// and bound to the built client on the first dispatched event.
+/// DSharpPlus nightly only takes event handlers at build time, so this bridge is added to the builder by
+/// <see cref="DiscordClientBuilderExtensions.UseNyra"/> and binds to the client on its first event.
 /// <para>
-/// Sharded clients built with <c>CreateSharded</c> are plain <see cref="DiscordClient"/>s whose
-/// <c>IShardOrchestrator</c> routes guild-scoped payloads by the guild's shard slot internally, so one
-/// bridge covers plain and sharded setups alike. The slot math carries no shard offset, so a guild outside
-/// this process's shard set throws (KeyNotFoundException or ArgumentOutOfRangeException, depending on the
-/// shard id) and, with a nonzero stride, a guild inside the set can be routed to the wrong shard.
+/// One bridge covers plain and sharded clients. With only part of the shards in this process, a guild can throw
+/// or reach the wrong shard.
 /// </para>
 /// </remarks>
 public sealed class DSharpPlusBridge

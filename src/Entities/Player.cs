@@ -5,13 +5,8 @@ namespace Nyra.Entities;
 
 /// <summary>Discord voice state of a player.</summary>
 /// <remarks>
-/// When sent, <see cref="Token"/>, <see cref="Endpoint"/>, <see cref="SessionId"/> and <see
-/// cref="ChannelId"/> must go together. Lavalink rejects the update without a channel id, NodeLink only
-/// requires the first three.
-/// <para>
-/// That pairing is the write model only. Read back, on the player events, the same record mirrors the
-/// server's report member by member, with nulls wherever the server sent none.
-/// </para>
+/// When sent, <see cref="Token"/>, <see cref="Endpoint"/>, <see cref="SessionId"/> and
+/// <see cref="ChannelId"/> must go together.
 /// </remarks>
 public sealed record PlayerVoiceState
 {
@@ -27,7 +22,7 @@ public sealed record PlayerVoiceState
     [JsonPropertyName("sessionId"), JsonInclude]
     public string? SessionId { get; internal set; }
 
-    /// <summary>Sent by Lavalink v4.2.0+ and NodeLink, older servers omit it.</summary>
+    /// <summary>The voice channel the server has for the player.</summary>
     [JsonPropertyName("channelId"), JsonInclude]
     public ulong? ChannelId { get; internal set; }
 }
@@ -41,9 +36,7 @@ public sealed record PlayerState
 
     /// <summary>When the server reported the state.</summary>
     /// <remarks>
-    /// <see cref="DateTimeOffset.MinValue"/> when the epoch value is out of the convertible range. The
-    /// degenerate in-range value <see cref="UnixTime.MinMilliseconds"/> converts to exactly <see
-    /// cref="DateTimeOffset.MinValue"/> too, so the sentinel cannot be told apart from it.
+    /// <see cref="DateTimeOffset.MinValue"/> when the value is out of range.
     /// </remarks>
     [JsonIgnore]
     public DateTimeOffset Time => UnixTime.ToDateTimeOffset(TimeMilliseconds);
@@ -69,7 +62,7 @@ public sealed record PlayerState
     public bool Connected { get; internal set; }
 
     /// <summary>Voice gateway latency in milliseconds.</summary>
-    /// <remarks>Lavalink reports -1 and NodeLink 0 when not connected.</remarks>
+    /// <remarks>-1 or 0 when not connected.</remarks>
     [JsonPropertyName("ping"), JsonInclude]
     public long Ping { get; internal set; } = -1;
 }
@@ -183,7 +176,7 @@ public sealed record Player
     [JsonPropertyName("paused"), JsonInclude]
     public bool IsPaused { get; internal set; }
 
-    /// <summary>Always sent by every reachable server, nullable only as tolerance for malformed responses.</summary>
+    /// <summary>The player state, null only on a broken response.</summary>
     [JsonPropertyName("state"), JsonInclude]
     public PlayerState? State { get; internal set; }
 
@@ -192,9 +185,7 @@ public sealed record Player
     public PlayerVoiceState? Voice { get; internal set; }
 
     /// <summary>
-    /// Only the filters that were explicitly configured, with one exception, a NodeLink server retains inert
-    /// filter blocks in its state, so a non-null block here is not proof the filter is audible, only that the
-    /// server remembers it.
+    /// Only the filters that were set. On NodeLink a filter listed here may not be audible.
     /// </summary>
     [JsonPropertyName("filters"), JsonInclude]
     public FilterChain? Filters { get; internal set; }

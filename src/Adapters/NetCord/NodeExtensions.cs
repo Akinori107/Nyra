@@ -7,14 +7,13 @@ public static class NodeExtensions
 {
     /// <summary>Creates the guild connection on the node and joins the bot to the voice channel.</summary>
     /// <remarks>
-    /// A stage channel joins the bot as audience, Nyra sends no request to speak, so audio only reaches it once
-    /// a stage moderator unsuppresses the bot. A join for a channel with a live connection returns that
-    /// connection, one racing a disconnect takes over the dying connection and returns a fresh one.
+    /// On a stage channel the bot joins as audience, so it is heard only after a moderator lets it speak. Joining
+    /// a channel the guild is already connected to returns that connection.
     /// </remarks>
     /// <param name="node">The node to connect through.</param>
     /// <param name="channel">The voice channel to join. A stage channel joins as audience.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The guild connection of the join, the existing one when its registry entry is still live.</returns>
+    /// <returns>The guild connection, the existing one when there is one.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="node"/> or <paramref name="channel"/> is null.
     /// </exception>

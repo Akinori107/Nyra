@@ -3,9 +3,8 @@ using System.Net.WebSockets;
 namespace Nyra.EventArgs;
 
 /// <summary>
-/// A node's websocket disconnected, or a startup that never connected gave up, or the supervision loop
-/// itself failed (the node stops reconnecting on its own, restart it manually), the same event covers all
-/// three, a manual stop raises no event.
+/// A node's websocket disconnected, a first connect gave up, or the reconnect loop failed. A manual stop
+/// raises no event.
 /// </summary>
 /// <param name="closeStatus">The status the websocket closed with, null when none.</param>
 /// <param name="closeDescription">The description the websocket closed with.</param>
@@ -22,39 +21,28 @@ public sealed class NodeDisconnectedEventArgs(
 {
     /// <summary>The close status the websocket reported, null when none.</summary>
     /// <remarks>
-    /// The raw close code may not be a named member of <see cref="WebSocketCloseStatus"/>, servers and
-    /// proxies may close with application-defined codes (4000-4999). On a <see cref="Final"/> disconnect it
-    /// still describes the last websocket drop, not the reconnect failures that led the node to give up,
-    /// <see cref="Exception"/> carries those.
+    /// May be a code outside <see cref="WebSocketCloseStatus"/>. On a <see cref="Final"/> disconnect it is the
+    /// last drop, <see cref="Exception"/> has the reconnect failure.
     /// </remarks>
     public WebSocketCloseStatus? CloseStatus { get; } = closeStatus;
 
     /// <summary>The close description the websocket reported.</summary>
     /// <remarks>
-    /// On a <see cref="Final"/> disconnect it still describes the last websocket drop, not the reconnect
-    /// failures that led the node to give up, <see cref="Exception"/> carries those.
-    /// <para>
-    /// May carry a library-generated abort reason instead (e.g. <c>ready timeout</c>) when the connection was
-    /// torn down locally, no server sent it.
-    /// </para>
+    /// On a <see cref="Final"/> disconnect it is the last drop. When Nyra closed the connection itself, like on a
+    /// ready timeout, it is Nyra's reason.
     /// </remarks>
     public string? CloseDescription { get; } = closeDescription;
 
     /// <summary>
-    /// True when the node stopped reconnecting and is no longer connected, the last event of a reconnect
-    /// give-up, of a failed startup, or of a supervision loop that failed.
+    /// True when the node stopped reconnecting.
     /// </summary>
     /// <remarks>
-    /// Not absolute, the slot is free and a manual restart reconnects, and a manual stop during the backoff
-    /// can end the reconnect loop without a final event.
+    /// Connecting the node again still works. A manual stop can end the loop without a final event.
     /// </remarks>
     public bool Final { get; } = final;
 
     /// <summary>
-    /// The exception that best describes the disconnect, the websocket layer's for the drop, the library's
-    /// ready-timeout when it tore the connection down locally (see <see cref="CloseDescription"/>), or the
-    /// failure of the last reconnect attempt, the initial connect's when none ran, on a <see cref="Final"/>
-    /// disconnect.
+    /// The exception behind the disconnect, the last reconnect failure on a <see cref="Final"/> one.
     /// </summary>
     /// <remarks>Null when the websocket closed cleanly and no attempt failed.</remarks>
     public Exception? Exception { get; } = exception;

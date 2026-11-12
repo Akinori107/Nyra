@@ -4,11 +4,9 @@ namespace Nyra.Entities.Filters;
 
 /// <summary>Rotates the audio through four dimensions, an evolution of the rotation filter, NodeLink only.</summary>
 /// <param name="RotationHz">
-/// Rotation speed in Hz, NodeLink leaves anything at or below 0.001 off (0.0 is the conventional disable).
+/// Rotation speed in Hz, 0.0 turns it off.
 /// </param>
-/// <param name="Transition">
-/// NodeLink currently accepts but ignores this transition, the change always snaps instantly.
-/// </param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record TesseractFilter(
     [property: JsonPropertyName("rotationHz")] double? RotationHz = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null

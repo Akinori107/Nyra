@@ -5,9 +5,8 @@ namespace Nyra.EventArgs;
 /// it, the bot never left the voice channel.
 /// </summary>
 /// <remarks>
-/// Nyra sent the voice credentials it kept to the new session, so the player is new and empty, the track, the
-/// position, the volume and the filters of the old session are gone, start playing again. When the restore
-/// fails the connection is invalidated instead, see <see cref="GuildConnection.GuildConnectionInvalidated"/>.
+/// The new player is empty unless <see cref="NodeOptions.RescuePlayback"/> sent the track again. When the
+/// restore fails, <see cref="GuildConnection.GuildConnectionInvalidated"/> is raised instead.
 /// </remarks>
 /// <param name="guildId">The guild whose connection was restored.</param>
 /// <param name="channelId">The voice channel the connection stayed in.</param>

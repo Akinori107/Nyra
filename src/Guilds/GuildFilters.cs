@@ -117,9 +117,8 @@ public sealed class GuildFilters
 
     /// <summary>The filter chain as last written or refreshed.</summary>
     /// <remarks>
-    /// An out-of-band change by a co-client only reaches this surface through the next refresh, the server
-    /// confirms those through the websocket event, which this surface does not ingest. A filter write does not
-    /// pick the change up either, it re-sends from Nyra's own view and replaces the co-client's change.
+    /// A change made by another client on the same node only shows up here after a refresh. The next filter
+    /// write from Nyra replaces it.
     /// </remarks>
     public FilterChain Applied { get; private set; } = new();
 
@@ -136,13 +135,10 @@ public sealed class GuildFilters
     /// <returns>A task that completes when the filter was applied.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="filter"/> is null.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="filter"/> is a user-defined implementation of <see cref="IFilter"/>, the supported set
-    /// is limited to this library's sealed filter records.
+    /// <paramref name="filter"/> is your own implementation of <see cref="IFilter"/>.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// A member of the filter is outside the bounds the record documents, is not a finite number, or a no-op
-    /// form (every gating member null) of the rate-guarded filters (echo, chorus, phaser, flanger) was
-    /// sent.
+    /// A member is out of bounds or not a finite number, or a filter that needs values was sent with none.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The node is not NodeLink, for the filter kinds and transitions it alone supports, or the filter is
@@ -257,8 +253,7 @@ public sealed class GuildFilters
 
     /// <summary>Sets the equalizer bands, replacing the previous ones, an empty list clears the equalizer.</summary>
     /// <param name="bands">
-    /// The bands to apply, null clears the equalizer. Band ids are map keys, a list carrying the same id twice
-    /// sends both entries, the server collapses them, the last one wins.
+    /// The bands to apply, null clears the equalizer. With the same band twice, the last one wins.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the equalizer was applied.</returns>
@@ -309,8 +304,7 @@ public sealed class GuildFilters
     /// <returns>A task that completes when the chain was applied.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="filters"/> is null.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// A member of the chain is outside the bounds the record documents, is not a finite number, or a no-op
-    /// form (every gating member null) was sent.
+    /// A member is out of bounds or not a finite number, or a filter that needs values was sent with none.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The node is not NodeLink, for the filter kinds and transitions it alone supports, or a member of the

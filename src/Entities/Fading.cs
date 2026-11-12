@@ -20,10 +20,7 @@ public enum FadeType
     Both,
 
     /// <summary>A fade type the library does not know, reported by a newer server.</summary>
-    /// <remarks>
-    /// Sent back, a stock build ignores it and the section keeps the volume type, one running the validation
-    /// patches rejects it with 400.
-    /// </remarks>
+    /// <remarks>Sent back as is.</remarks>
     Unknown,
 }
 
@@ -32,12 +29,8 @@ public sealed record FadeSection
 {
     /// <summary>Fade duration in milliseconds, 0 disables this fade.</summary>
     /// <remarks>
-    /// A null still writes an explicit zero, an omitted member would fall into the server's own default
-    /// handling instead, the explicit form is the one both behaved with.
-    /// <para>
-    /// A duration a co-client stored outside the int32 range clamps to the nearest bound on read, a
-    /// non-finite one reads as null, the echo of another client's write must not kill the session read.
-    /// </para>
+    /// A null is sent as 0. A duration past the int32 range reads as the nearest bound, a non-finite one reads
+    /// as null.
     /// </remarks>
     [JsonPropertyName("duration")]
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
@@ -46,18 +39,9 @@ public sealed record FadeSection
 
     /// <summary>Fade curve by name, case-sensitive.</summary>
     /// <remarks>
-    /// Allowed curves per type: volume takes linear, exponential, logarithmic or s-curve, tape takes linear,
-    /// exponential or sinusoidal, and both takes only the shared linear and exponential.
-    /// <para>
-    /// Scratch reuses this field as a style instead: wash, backspin, baby, start, stop or random on
-    /// trackStart, and wash, backspin, baby or stop on the other running fades. Seek and resume always run
-    /// start and never read this field.
-    /// </para>
-    /// <para>
-    /// A null curve is stored as "linear". For scratch that runs as a plain ramp on trackStart and as wash on
-    /// the other stages, and an empty string reaches the random default. The explicit linear is written
-    /// because an omitted member would fall into the server's own default instead.
-    /// </para>
+    /// Volume takes linear, exponential, logarithmic or s-curve, tape takes linear, exponential or sinusoidal,
+    /// and both takes linear or exponential. Scratch reads it as a style, like wash, backspin or baby. A null is
+    /// sent as linear.
     /// </remarks>
     [JsonPropertyName("curve")]
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
@@ -65,10 +49,6 @@ public sealed record FadeSection
     public string? Curve { get; init; }
 
     /// <summary>What the fade changes, null fades the volume.</summary>
-    /// <remarks>
-    /// A null still writes an explicit volume, an omitted member would fall into the server's own default and
-    /// merge.
-    /// </remarks>
     [JsonPropertyName("type")]
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     [JsonConverter(typeof(FadeTypeConverter))]
@@ -77,8 +57,7 @@ public sealed record FadeSection
 
 /// <summary>Depth and timing of speaking-detection ducking, part of <see cref="FadingOptions"/>.</summary>
 /// <remarks>
-/// Configuring this does not by itself enable ducking. The switch is <see cref="GuildEffects.SetDuckingAsync"/>,
-/// which picks up these values, and <see cref="Enabled"/> only travels with the stored configuration.
+/// Setting this does not turn ducking on, <see cref="GuildEffects.SetDuckingAsync"/> does.
 /// NodeLink only.
 /// </remarks>
 public sealed record DuckingOptions
@@ -89,8 +68,7 @@ public sealed record DuckingOptions
 
     /// <summary>How long the ducking takes, in milliseconds, the server default is 500.</summary>
     /// <remarks>
-    /// A duration a co-client stored outside the int32 range clamps to the nearest bound on read, a
-    /// non-finite one reads as null, the echo of another client's write must not kill the player read.
+    /// A duration past the int32 range reads as the nearest bound, a non-finite one reads as null.
     /// </remarks>
     [JsonPropertyName("duration")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -98,7 +76,6 @@ public sealed record DuckingOptions
     public int? DurationMilliseconds { get; init; }
 
     /// <summary>Volume to duck to, 0-1, the server default is 0.3.</summary>
-    /// <remarks>The converter fails an out-of-range echo inside the read (1e40 reads back non-finite).</remarks>
     [JsonPropertyName("targetVolume")]
     [JsonConverter(typeof(FiniteFloatConverter))]
     public float? TargetVolume { get; init; }
@@ -118,8 +95,7 @@ public sealed record FadingOptions
 {
     /// <summary>Whether the fade chain is active.</summary>
     /// <remarks>
-    /// Left null, the server stores the sections but keeps the chain disabled, only trackEnd still runs
-    /// (scheduled before the enabled check), everything else is silently ignored. Set true to activate.
+    /// Left null the chain stays off, set it to true.
     /// </remarks>
     [JsonPropertyName("enabled")]
     public bool? Enabled { get; init; }

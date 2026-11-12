@@ -125,10 +125,8 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
     /// <summary>Removes a node and disconnects it, guild connections living on it are left untouched.</summary>
     /// <remarks>
-    /// The disconnect unwires the node's Discord events, so the guild connections left on the removed node
-    /// lose the Discord-side tracking (a kick, a move, a voice server re-target) until the node is connected
-    /// again, a removal that lands during the dormancy finds no subscriber, and the connection stays
-    /// registered until then (see <see cref="Node.DisconnectAsync"/> for the same rule on a plain stop).
+    /// Like <see cref="Node.DisconnectAsync"/>, those connections stop following Discord changes until the node
+    /// connects again.
     /// </remarks>
     /// <param name="node">The node to remove.</param>
     /// <param name="cancellationToken">A token to cancel the node's teardown.</param>
@@ -183,10 +181,8 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
     /// logger.
     /// </summary>
     /// <remarks>
-    /// Skipped is not stopped, a node whose initial connect failed keeps retrying in the background and
-    /// connects by itself once its server is reachable again, only <see cref="Node.DisconnectAsync"/> (or
-    /// removing and disposing the node) stops it. Calling this again while that node is still unreachable
-    /// skips it again right away, it does not wait for the node.
+    /// A skipped node keeps retrying in the background until it connects or <see cref="Node.DisconnectAsync"/>
+    /// stops it.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when every node settled.</returns>
@@ -330,8 +326,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
     /// <summary>Disconnects and disposes every node of the extension and the bridge it routes through.</summary>
     /// <remarks>
-    /// Blocks on the guild teardown roundtrips of every node at once (each bounded by the HTTP timeout),
-    /// prefer <see cref="DisposeAsync"/> wherever the caller can await.
+    /// Blocks until every node is torn down, prefer <see cref="DisposeAsync"/> where you can await.
     /// </remarks>
     public void Dispose()
     {

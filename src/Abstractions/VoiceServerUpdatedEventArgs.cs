@@ -2,9 +2,8 @@ namespace Nyra.Abstractions;
 
 /// <summary>The voice server of a guild was allocated or re-targeted.</summary>
 /// <remarks>
-/// The contract is a complete update, the bridge raises it only with both the token and the endpoint present,
-/// a partial update (the undocumented null or blank variants) is discarded by the core instead of completing a
-/// handshake. The endpoint is the bare host Discord reports, with no scheme or port.
+/// Bridges raise it only with both the token and the endpoint. The endpoint is the bare host Discord reports,
+/// with no scheme or port.
 /// </remarks>
 /// <param name="guildId">The id of the guild the voice server belongs to.</param>
 /// <param name="voiceServer">The new voice server credentials, a complete token and endpoint pair.</param>

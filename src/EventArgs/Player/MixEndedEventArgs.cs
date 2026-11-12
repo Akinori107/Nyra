@@ -5,8 +5,7 @@ namespace Nyra.EventArgs;
 
 /// <summary>Raised when a mix layer ended.</summary>
 /// <remarks>
-/// NodeLink only. The FINISHED and MAIN_ENDED reasons only arrive when the server's mix auto-cleanup is
-/// enabled, a layer that plays through with it off ends through the mixer's teardown instead.
+/// NodeLink only. Some reasons only arrive when the server's mix auto-cleanup is on.
 /// </remarks>
 public sealed class MixEndedEventArgs : System.EventArgs
 {
@@ -16,10 +15,7 @@ public sealed class MixEndedEventArgs : System.EventArgs
     public ulong GuildId { get; internal set; }
 
     /// <summary>The id of the mix layer that ended.</summary>
-    /// <remarks>
-    /// Absorbs a null the server sends, the getter never hands out null, a missing or nulled id reads as the
-    /// empty string.
-    /// </remarks>
+    /// <remarks>Never null, a missing value reads as an empty string.</remarks>
     [JsonPropertyName("mixId"), JsonInclude]
     public string MixId
     {
@@ -29,8 +25,7 @@ public sealed class MixEndedEventArgs : System.EventArgs
 
     /// <summary>Why the layer ended.</summary>
     /// <remarks>
-    /// Defaults to <see cref="MixEndReason.Unknown"/>, a frame without a reason must not read as a natural
-    /// finish.
+    /// <see cref="MixEndReason.Unknown"/> when the server sent none.
     /// </remarks>
     [JsonPropertyName("reason"), JsonInclude]
     public MixEndReason EndReason { get; internal set; } = MixEndReason.Unknown;

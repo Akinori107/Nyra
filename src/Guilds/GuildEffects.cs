@@ -88,7 +88,6 @@ public sealed class GuildEffects
     /// <summary>
     /// Preloads the next track for a gapless/crossfaded transition when the current one ends, null clears it.
     /// </summary>
-    /// <remarks>The encoded track is self-contained on the wire, no node pairing is required or enforced.</remarks>
     /// <param name="nextTrack">The track to crossfade into, null clears it.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the next track was set.</returns>

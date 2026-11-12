@@ -38,10 +38,6 @@ public sealed class DSharpPlusBridge
     public event EventHandler<ListenerVoiceStateUpdatedEventArgs>? ListenerVoiceStateUpdated;
 
     /// <summary>Wraps a single <see cref="DiscordClient"/>.</summary>
-    /// <remarks>
-    /// <see cref="DiscordClient.ShardCount"/> reports the configured count before the first connect, then the
-    /// count Discord recommends once connected, never the count the gateway routes by.
-    /// </remarks>
     /// <param name="client">The client to wrap.</param>
     /// <param name="shardCount">
     /// The shard count the gateway routes by. Pass it when the client is one shard of a sharded setup so the

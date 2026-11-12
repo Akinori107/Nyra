@@ -6,8 +6,7 @@ namespace Nyra.EventArgs;
 /// No timed lyrics for the track, no provider had any, or the provider returned text-only lyrics (LavaLyrics).
 /// </summary>
 /// <remarks>
-/// NodeLink answers it when nothing was found or the lyrics load failed (its REST surface reports the same
-/// case as an error).
+/// NodeLink sends it when nothing was found or the lyrics load failed.
 /// </remarks>
 public sealed class LyricsNotFoundEventArgs : System.EventArgs
 {

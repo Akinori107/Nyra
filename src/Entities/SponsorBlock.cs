@@ -19,7 +19,7 @@ public sealed record SponsorBlockSegment
 
     /// <summary>Segment start, in milliseconds.</summary>
     /// <remarks>
-    /// Null when the server did not map one or sent a value that is not a number or beyond the int64 range.
+    /// Null when unknown.
     /// </remarks>
     [JsonPropertyName("start"), JsonInclude]
     [JsonConverter(typeof(RoundedInt64Converter))]
@@ -27,13 +27,13 @@ public sealed record SponsorBlockSegment
 
     /// <summary>Segment end, in milliseconds.</summary>
     /// <remarks>
-    /// Null when the server did not map one or sent a value that is not a number or beyond the int64 range.
+    /// Null when unknown.
     /// </remarks>
     [JsonPropertyName("end"), JsonInclude]
     [JsonConverter(typeof(RoundedInt64Converter))]
     public long? End { get; init; }
 
-    /// <summary>SponsorBlock category, e.g. <c>sponsor</c> or <c>selfpromo</c>.</summary>
+    /// <summary>SponsorBlock category, like <c>sponsor</c> or <c>selfpromo</c>.</summary>
     [JsonPropertyName("category"), JsonInclude]
     public string Category
     {
@@ -41,10 +41,10 @@ public sealed record SponsorBlockSegment
         init => field = value ?? string.Empty;
     } = string.Empty;
 
-    /// <summary>SponsorBlock action type of the segment, e.g. <c>skip</c> or <c>mute</c>.</summary>
+    /// <summary>SponsorBlock action type of the segment, like <c>skip</c> or <c>mute</c>.</summary>
     /// <remarks>
-    /// The node only ever skips matched segments and never mutes them. Absorbs a null the server sends,
-    /// readers see the empty string.
+    /// The node only ever skips matched segments and never mutes them. Never null, a missing value reads as an empty
+    /// string.
     /// </remarks>
     [JsonPropertyName("actionType"), JsonInclude]
     public string ActionType
@@ -55,8 +55,7 @@ public sealed record SponsorBlockSegment
 
     /// <summary>The votes the segment has in the SponsorBlock database.</summary>
     /// <remarks>
-    /// A null vote count (a co-client that writes one), a value that is not a number or one beyond the int32
-    /// range reads as zero, it is an informative counter, a failed read would cost the whole state or event.
+    /// A null, a value that is not a number or one past the int32 range reads as zero.
     /// </remarks>
     [JsonPropertyName("votes"), JsonInclude]
     [JsonConverter(typeof(RoundedInt32Converter))]
@@ -68,8 +67,7 @@ public sealed record SponsorBlockSegment
 
     /// <summary>Length of the video the segment was submitted for, in milliseconds.</summary>
     /// <remarks>
-    /// A null duration (a co-client that writes one), a value that is not a number or one beyond the int64
-    /// range reads as zero, it is an informative counter, a failed read would cost the whole state or event.
+    /// A null, a value that is not a number or one past the int64 range reads as zero.
     /// </remarks>
     [JsonPropertyName("videoDuration"), JsonInclude]
     [JsonConverter(typeof(RoundedInt64Converter))]

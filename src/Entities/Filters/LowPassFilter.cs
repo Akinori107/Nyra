@@ -4,27 +4,18 @@ namespace Nyra.Entities.Filters;
 
 /// <summary>Suppresses higher frequencies.</summary>
 /// <remarks>
-/// An unset smoothing is sent as 20 (the protocol default, an active filter).
-/// <para>
-/// NodeLink disables the filter at a smoothing of 1.0 or less. Lavalink removes it only when no other filter is
-/// active, otherwise it still runs and only exactly 1.0 is a passthrough, lower values break the filter. Use
-/// <see cref="GuildFilters.RemoveAsync(IFilter, CancellationToken)"/> to keep the filter off, never a smoothing
-/// below 1.0.
-/// </para>
+/// An unset smoothing is sent as 20, which is audible. To turn the filter off, remove it with
+/// <see cref="GuildFilters.RemoveAsync(IFilter, CancellationToken)"/>. On Lavalink a smoothing of 1.0 or less
+/// still runs while another filter is on.
 /// </remarks>
 /// <param name="Smoothing">Smoothing factor, 20 when unset. See the remarks for the values to avoid.</param>
 /// <param name="TargetAlpha">
-/// Direct coefficient override in the settings schema, but NodeLink ignores it (its DSP has no alpha, the
-/// cutoff comes from log10(smoothing)), the server just echoes it back.
+/// Direct coefficient override. NodeLink ignores it.
 /// </param>
 /// <param name="LogSmoothing">
-/// Logarithmic smoothing in the settings schema, ignored like <paramref name="TargetAlpha"/>, the server just
-/// echoes it back.
+/// Logarithmic smoothing. NodeLink ignores it.
 /// </param>
-/// <param name="Transition">
-/// Fades the filter in or out instead of stepping, NodeLink only. A smoothing change sent with a transition
-/// animates the cutoff too.
-/// </param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record LowPassFilter(
     [property: JsonPropertyName("smoothing")] float? Smoothing = null,
     [property: JsonPropertyName("targetAlpha")] float? TargetAlpha = null,

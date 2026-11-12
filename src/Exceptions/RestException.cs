@@ -21,17 +21,13 @@ public sealed class RestException(
 {
     /// <summary>The HTTP status the server replied with.</summary>
     /// <remarks>
-    /// A failure raised on the client side (a body that did not parse) carries a synthetic 2xx, standing for
-    /// the reply the server gave before its body failed the read. Only a real server reply carries its own
-    /// status, including the route planner's empty 204, a success reported through the same type.
+    /// When the body could not be read, this is the success status the server sent with it.
     /// </remarks>
     public int StatusCode { get; } = statusCode;
 
     /// <summary>The body the server replied with, null when it sent none.</summary>
     /// <remarks>
-    /// A client-side parse failure carries the client's diagnostic instead of the body, a reply the server
-    /// null-ed reads as null, the diagnostic is what the client kept. A body beyond the read bound is dropped,
-    /// it reads as an empty string.
+    /// When the body could not be read, Nyra's reason. A body too large reads as an empty string.
     /// </remarks>
     public string? ResponseBody { get; } = responseBody;
 
@@ -42,8 +38,7 @@ public sealed class RestException(
 
     /// <summary>The retry delay the server asked for, null when it sent none.</summary>
     /// <remarks>
-    /// NodeLink's admission control answers 429 with this header, so the caller knows how long to wait before
-    /// retrying. A delay beyond one hour reads as one hour.
+    /// Set on a 429, capped at one hour.
     /// </remarks>
     public TimeSpan? RetryAfter { get; } = retryAfter;
 

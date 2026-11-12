@@ -9,13 +9,9 @@ using Nyra.Internal;
 namespace Nyra;
 
 /// <summary>
-/// A connection to a Lavalink v4.2+ or NodeLink v3.9+ server. The kind is detected at connect (GET /v4/info)
-/// and probed again by the first query after a disconnect drops the detection. A server below the floors
-/// throws <see cref="IncompatibleServerException"/> from the query surface.
+/// A connection to a Lavalink v4.2+ or NodeLink v3.9+ server, which one is detected at connect. An older
+/// server makes the queries throw <see cref="IncompatibleServerException"/>.
 /// </summary>
-/// <remarks>
-/// Owns the websocket, the REST client, the voice handshake and the guild connections created through it.
-/// </remarks>
 public sealed class Node : IAsyncDisposable, IDisposable
 {
     private readonly NodeQueries _queries;
@@ -151,21 +147,14 @@ public sealed class Node : IAsyncDisposable, IDisposable
     public string Name => Options.Name;
 
     /// <summary>
-    /// Detected at connect, true when the server is NodeLink, false when it is Lavalink or no detection is
-    /// held.
+    /// True when the server is NodeLink, false on Lavalink or before the first connect.
     /// </summary>
     public bool IsNodeLink => ServerInfo?.IsNodeLink ?? false;
 
-    /// <summary>Server-reported version, e.g. <c>3.9.0</c>.</summary>
+    /// <summary>Server-reported version, like <c>3.9.0</c>.</summary>
     /// <remarks>
-    /// Null while no detection is held (before the first connect, and after a disconnect until a query
-    /// re-probes the server) and on Lavalink dev builds (commit hash, not semver). NodeLink dev pre-release
-    /// tags parse as their base version.
-    /// <para>
-    /// Null means always current by policy (dev builds skip the version floors), so write
-    /// <c>node.Version is { } v</c> and compare the bound variable, a lifted relational operator on the null
-    /// answers false and would invert the meaning.
-    /// </para>
+    /// Null before the first connect, after a disconnect until the next query, and on Lavalink dev builds. A
+    /// NodeLink dev build reads as its base version.
     /// </remarks>
     public NodeVersion? Version => ServerInfo?.Version;
 
@@ -174,7 +163,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// alike.
     /// </summary>
     /// <param name="name">The plugin to check for, for example lavasrc-plugin, matched case-insensitively.</param>
-    /// <returns>Whether the plugin is loaded, false until the first connect and while no detection is held.</returns>
+    /// <returns>Whether the plugin is loaded, false before the first connect.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is null.</exception>
     public bool HasPlugin(string name)
     {
@@ -255,8 +244,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>Last reported outbound connection status, or null before the first event.</summary>
     /// <remarks>
-    /// NodeLink only, and only while the node's session holds at least one player, a playerless session
-    /// receives no pushes, <see cref="GetConnectionStatusAsync"/> works without one.
+    /// NodeLink only, and only pushed while the session has a player.
     /// </remarks>
     public ConnectionStatus? ConnectionStatus
     {
@@ -381,30 +369,21 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>Raised for internal client errors, see <see cref="NodeErrorEventArgs"/> for the categories.</summary>
     /// <remarks>
-    /// Reconnect failures log separately, playback errors surface through the guild connection, a throwing
-    /// handler is caught and logged. Errors of the same kind are reported five times per thirty seconds, the
-    /// rest of the window is counted in one log line, so a malformed frame repeated for every player cannot
-    /// flood the log or the event queue.
+    /// Reconnect failures are only logged, playback errors come through the guild connection, and a handler that
+    /// throws is caught and logged. Each kind of error is raised at most five times per thirty seconds, the
+    /// rest are counted in one log line.
     /// </remarks>
     public event AsyncEventHandler<NodeErrorEventArgs>? Error;
 
     /// <summary>
     /// Raised when the server reports its statistics, the latest report is also <see cref="Stats"/>.
     /// </summary>
-    /// <remarks>
-    /// Frames landing while a ready's final phase runs collapse into the one raise after <see cref="Ready"/>.
-    /// </remarks>
     public event AsyncEventHandler<NodeStatsEventArgs>? StatsUpdated;
 
     /// <summary>Raised on every <c>ConnectionStatusEvent</c>.</summary>
     /// <remarks>
-    /// The args carry the snapshot <see cref="ConnectionStatus"/> held when the raise was queued, a newer
-    /// push may have replaced the property by handler time. NodeLink only. The event's guildId is node-wide
-    /// data delivered inside a guild-scoped payload, not exposed here.
-    /// <para>
-    /// An update queued before a stop or a disconnect can still run after it returns, a slow handler ahead of
-    /// it in the queue holds it back. The dispose drains what is left with a bounded wait.
-    /// </para>
+    /// NodeLink only. <see cref="ConnectionStatus"/> may already be newer than the args when the handler runs,
+    /// and an update can still arrive right after a stop.
     /// </remarks>
     public event AsyncEventHandler<NodeConnectionStatusEventArgs>? ConnectionStatusUpdated;
 
@@ -417,9 +396,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>Stops the websocket connection, active guild connections are left untouched.</summary>
     /// <remarks>
-    /// The Discord events are unwired by the stop, so the guild connections left behind lose the Discord-side
-    /// tracking (a kick, a move, a voice server re-target) until the node is connected again, a removal that
-    /// lands during the dormancy finds no subscriber and the connection stays registered until then.
+    /// Until the node connects again, those connections stop following Discord changes like a kick or a move.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the websocket was stopped.</returns>
@@ -460,8 +437,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>Stops the node synchronously, the guild connections are torn down over the network.</summary>
     /// <remarks>
-    /// Blocks on every guild teardown roundtrip, each bounded by the HTTP timeout, prefer <see
-    /// cref="DisposeAsync"/> wherever the caller can await.
+    /// Blocks until every guild is torn down, prefer <see cref="DisposeAsync"/> where you can await.
     /// </remarks>
     public void Dispose()
     {
@@ -487,17 +463,14 @@ public sealed class Node : IAsyncDisposable, IDisposable
     public override string ToString() => $"{Name} ({Endpoint})";
 
     /// <summary>
-    /// Connects the bot to the voice channel and creates a guild connection on this node, forwarding the voice
-    /// credentials.
+    /// Connects the bot to the voice channel and creates a guild connection on this node.
     /// </summary>
-    /// <remarks>Validating the channel kind is up to the adapters, the core only sees ids.</remarks>
     /// <param name="guildId">The guild to connect.</param>
     /// <param name="channelId">The voice channel to join.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The guild connection created by the join.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="guildId"/> or <paramref name="channelId"/> is zero, a join that could only ever fail as
-    /// a handshake timeout with no reason.
+    /// <paramref name="guildId"/> or <paramref name="channelId"/> is zero.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The guild is already connected through a different node (one guild plays on one node at a time) or to a
@@ -565,14 +538,12 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// sources/filters/plugins.
     /// </summary>
     /// <remarks>
-    /// Served by both, server-specific members null on the other kind. This read is strict, the connect probe
-    /// that admitted the node is not, a server whose info carries a member in an unexpected shape (a
-    /// stringified boolean, a fractional build time) can be connected and playing while this call fails.
+    /// Members only one server has are null on the other.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The descriptive info of the node.</returns>
     /// <exception cref="RestException">
-    /// The response body does not deserialize into <see cref="NodeInfo"/>, the status still reports OK.
+    /// The response could not be read.
     /// </exception>
     /// <exception cref="IncompatibleServerException">The server's /v4/info version is not supported.</exception>
     public Task<NodeInfo> GetNodeInfoAsync(CancellationToken cancellationToken = default) =>
@@ -605,9 +576,6 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <summary>
     /// Probes the server version if it was not detected yet, null on dev builds without a parseable semver.
     /// </summary>
-    /// <remarks>
-    /// Like <see cref="Version"/>, null means always current by policy, see its remarks for how to compare it.
-    /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The detected version, null on dev builds.</returns>
     /// <exception cref="IncompatibleServerException">The server's /v4/info version is not supported.</exception>
@@ -619,9 +587,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// through a disconnect, and how long it holds them.
     /// </summary>
     /// <remarks>
-    /// Both values are sent together, the server applies them as a pair. They last as long as the session,
-    /// a resumed session keeps them, a new session starts from <see cref="NodeOptions.Resuming"/> and <see
-    /// cref="NodeOptions.ResumeTimeout"/> again.
+    /// They last as long as the session. A new session starts again from <see cref="NodeOptions.Resuming"/> and
+    /// <see cref="NodeOptions.ResumeTimeout"/>.
     /// </remarks>
     /// <param name="resuming">Whether the session resumes its players after a reconnect.</param>
     /// <param name="timeout">
@@ -630,8 +597,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The session state the server stored.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="timeout"/> is negative or exceeds <see cref="int.MaxValue"/> seconds, the limits the
-    /// constructor enforces on <c>NodeOptions.ResumeTimeout</c>.
+    /// <paramref name="timeout"/> is negative or past <see cref="int.MaxValue"/> seconds.
     /// </exception>
     public Task<SessionConfig> UpdateSessionAsync(
         bool resuming,

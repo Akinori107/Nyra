@@ -5,16 +5,6 @@ namespace Nyra.Entities;
 /// <summary>Descriptive information about an audio node, from <c>GET /v4/info</c>.</summary>
 /// <remarks>
 /// Served by both servers, with server-specific members null on the other kind.
-/// <para>
-/// This read is strict beyond the number-in-string tolerance the shared options carry (a stringified build
-/// time still parses). One member in an unexpected shape (a stringified boolean, a fractional build time, a
-/// non-string list entry) fails the whole parse, surfaced as a <c>RestException</c> that carries the
-/// response's OK status.
-/// </para>
-/// <para>
-/// The connect probe reads the same endpoint tolerantly and only needs a readable <c>version.semver</c>, so a
-/// non-conforming server can be connected and playing while this read of its info fails.
-/// </para>
 /// </remarks>
 public sealed record NodeInfo
 {
@@ -31,8 +21,7 @@ public sealed record NodeInfo
     public long BuildTimeMilliseconds { get; internal set; }
 
     /// <summary>
-    /// Build time as a date, <see cref="DateTimeOffset.MinValue"/> when out of range or when the server
-    /// reports its missing-value sentinel (-1 on Lavalink dev builds and NodeLink without build info).
+    /// Build time as a date, <see cref="DateTimeOffset.MinValue"/> when unknown or out of range.
     /// </summary>
     [JsonIgnore]
     public DateTimeOffset BuildTime => UnixTime.ToDateTimeOffsetAfterEpoch(BuildTimeMilliseconds);
@@ -66,8 +55,7 @@ public sealed record NodeInfo
     public NodeInfoVoice? Voice { get; internal set; }
 
     /// <summary>
-    /// Whether the server identified itself as NodeLink through <c>isNodelink</c>, null when absent, i.e. on
-    /// Lavalink.
+    /// Whether the server says it is NodeLink through <c>isNodelink</c>, null on Lavalink.
     /// </summary>
     [JsonPropertyName("isNodelink"), JsonInclude]
     public bool? IsNodeLink { get; internal set; }
@@ -99,7 +87,6 @@ public sealed record NodeInfo
     /// <summary>
     /// Runtime version of the server, <see cref="Jvm"/> on Lavalink, <see cref="Node"/> on NodeLink.
     /// </summary>
-    /// <remarks><see cref="Lavaplayer"/> and <see cref="Voice"/> differ in shape and stay separate.</remarks>
     [JsonIgnore]
     public string? Runtime => Jvm ?? Node;
 
@@ -139,14 +126,7 @@ public sealed record NodeInfo
 
 /// <summary>Version of a server.</summary>
 /// <remarks>
-/// The semver string is always bound, enforced by the connection gate (which rejects a server reporting none)
-/// and not by this model, so a version object without it would parse with a null <see cref="Semver"/> outside
-/// the gate.
-/// <para>
-/// The numeric members carry the base version only, a Lavalink dev build reports zeros there. A NodeLink dev
-/// build's pre-release tag lives in <see cref="PreReleaseIdentifiers"/>, never in the numbers, and the string
-/// carries the pre-release and build metadata too.
-/// </para>
+/// The numbers are the base version, a Lavalink dev build reports zeros. The string has the full version.
 /// </remarks>
 public sealed record NodeInfoVersion
 {
@@ -168,15 +148,13 @@ public sealed record NodeInfoVersion
 
     /// <summary>Pre-release identifier.</summary>
     /// <remarks>
-    /// Lavalink sends an empty string on release builds, so <c>null</c> and <c>""</c> both occur and a
-    /// non-null test reads true on a release build. Lavalink only. NodeLink reports the array <see
-    /// cref="PreReleaseIdentifiers"/> instead.
+    /// Lavalink only, an empty string on release builds. NodeLink uses <see cref="PreReleaseIdentifiers"/>.
     /// </remarks>
     [JsonPropertyName("preRelease"), JsonInclude]
     public string? PreRelease { get; internal set; }
 
     /// <summary>
-    /// The pre-release identifiers, null entries the wire carries are dropped, a null list reads as empty.
+    /// The pre-release identifiers, never null.
     /// </summary>
     [JsonPropertyName("prerelease"), JsonInclude]
     public IReadOnlyList<string> PreReleaseIdentifiers
@@ -225,8 +203,7 @@ public sealed record NodeInfoGit
     public long CommitTimeMilliseconds { get; internal set; }
 
     /// <summary>
-    /// Commit time as a date, <see cref="DateTimeOffset.MinValue"/> when out of range or a missing-value
-    /// sentinel.
+    /// Commit time as a date, <see cref="DateTimeOffset.MinValue"/> when unknown or out of range.
     /// </summary>
     [JsonIgnore]
     public DateTimeOffset CommitTime => UnixTime.ToDateTimeOffsetAfterEpoch(CommitTimeMilliseconds);

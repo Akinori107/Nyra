@@ -21,10 +21,7 @@ public sealed class MixStartedEventArgs : System.EventArgs
     } = string.Empty;
 
     /// <summary>The track the layer plays.</summary>
-    /// <remarks>
-    /// Absorbs a null track the server sends, the setter substitutes a fresh instance, so handlers never read
-    /// null even when the frame carries one.
-    /// </remarks>
+    /// <remarks>Never null, a missing value reads as an empty instance.</remarks>
     [JsonPropertyName("track"), JsonInclude]
     public Track Track
     {
@@ -32,11 +29,7 @@ public sealed class MixStartedEventArgs : System.EventArgs
         internal set => field = value ?? new();
     } = new();
 
-    /// <summary>Layer loudness, 0.0-1.0, as reported, the server enforces the range, the read does not clamp.</summary>
-    /// <remarks>
-    /// The converter fails only a non-finite echo inside the read (1e40 reads back non-finite), an in-range
-    /// value outside 0.0-1.0 is not rejected here.
-    /// </remarks>
+    /// <summary>Layer loudness, 0.0-1.0, as the server reported it.</summary>
     [JsonPropertyName("volume"), JsonInclude]
     [JsonConverter(typeof(FiniteFloatConverter))]
     public float Volume { get; internal set; }

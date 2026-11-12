@@ -12,7 +12,6 @@ public sealed class PauseChangedEventArgs : System.EventArgs
     public ulong GuildId { get; internal set; }
 
     /// <summary>Whether playback is paused now.</summary>
-    /// <remarks>A frame without the member is rejected, not read as a resume.</remarks>
     [JsonPropertyName("paused"), JsonInclude]
     [JsonRequired]
     public bool IsPaused { get; internal set; }
