@@ -180,7 +180,7 @@ public sealed class VoiceClosePath
             var removed = await AdvanceUntilAsync(
                     time,
                     () => node.GetConnection(777) is null,
-                    TimeSpan.FromSeconds(14)
+                    TimeSpan.FromSeconds(20)
                 )
                 .ConfigureAwait(false);
             await Assert.That(removed).IsTrue();

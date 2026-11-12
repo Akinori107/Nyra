@@ -166,7 +166,7 @@ public sealed class VoiceCloseAndForwarder
                 )
                 .ConfigureAwait(false);
 
-            await RunForAsync(time, TimeSpan.FromMilliseconds(4600)).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(10_600)).ConfigureAwait(false);
             bridge.FireVoiceState(777, null, "vsess");
             bridge.FireVoiceState(777, 555, "vsess2");
             bridge.FireVoiceServer(777, "tok2", "127.0.0.1");

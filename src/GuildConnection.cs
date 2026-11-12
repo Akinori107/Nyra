@@ -50,6 +50,8 @@ public sealed class GuildConnection
 
     private static readonly TimeSpan VoiceRescueInterval = TimeSpan.FromSeconds(60);
 
+    private const int RescueJoinAttempts = 4;
+
     private long _voiceRescueTick = long.MinValue / 2;
 
     private int _voiceCloseHandling;
@@ -845,7 +847,7 @@ public sealed class GuildConnection
         var suppress =
             !_voiceForward.HasPending
             && (
-                transientClose
+                (transientClose || Node.IsNodeLink)
                     ? Node.Time.GetMilliseconds() - lastForwardTick
                         < VoiceCloseGracePeriod.TotalMilliseconds
                             + ForwardActivityWindow.TotalMilliseconds
@@ -869,9 +871,15 @@ public sealed class GuildConnection
                 Volatile.Write(ref _voiceRescueTick, Node.Time.GetMilliseconds());
                 var baseline = _voiceForward.LastForwardTick;
 
-                await SendRescueJoinAsync(bridge, leaveFirst: false).ConfigureAwait(false);
-                if (await RescueSettledAsync(VoiceCloseGracePeriod, baseline).ConfigureAwait(false))
-                    return;
+                for (var attempt = 0; attempt < RescueJoinAttempts; attempt++)
+                {
+                    await SendRescueJoinAsync(bridge, leaveFirst: false).ConfigureAwait(false);
+                    if (
+                        await RescueSettledAsync(VoiceCloseGracePeriod, baseline)
+                            .ConfigureAwait(false)
+                    )
+                        return;
+                }
 
                 await SendRescueJoinAsync(bridge, leaveFirst: true).ConfigureAwait(false);
                 if (await RescueSettledAsync(ForwardActivityWindow, baseline).ConfigureAwait(false))
