@@ -6,7 +6,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="TUnit" Version="1.83.8" />
+    <PackageReference Include="TUnit" Version="1.84.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Adapters\DSharpPlus\Nightly\Nyra.DSharpPlus.Nightly.csproj" />
