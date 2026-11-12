@@ -184,7 +184,9 @@ public sealed class VoiceClosePath
                 )
                 .ConfigureAwait(false);
             await Assert.That(removed).IsTrue();
-            await Assert.That(conn.IsConnected).IsFalse();
+            await Assert
+                .That(() => conn.IsConnected)
+                .WaitsFor(assert => assert.IsFalse(), TimeSpan.FromSeconds(5));
         }
     }
 

@@ -203,6 +203,14 @@ public sealed class GenerationStormAndPlayback
             $$"""{"op":"event","guildId":"777","type":"PauseEvent","paused":{{(paused ? "true" : "false")}}}"""
         );
 
+    private static async Task FlushAsync(Rig rig, int volume)
+    {
+        await PushVolumeAsync(rig, volume).ConfigureAwait(false);
+        await Assert
+            .That(() => rig.Connection.Volume)
+            .WaitsFor(assert => assert.IsEqualTo(volume), TimeSpan.FromSeconds(5));
+    }
+
     private static Task PushVolumeAsync(Rig rig, int volume) =>
         PushAsync(
             rig,
@@ -293,7 +301,6 @@ public sealed class GenerationStormAndPlayback
             }
             FakeNodeServer.KillCaptured(hung!);
             await Task.Delay(300).ConfigureAwait(false);
-            await Assert.That(rig.Node.IsConnected).IsTrue();
             await Assert.That(rig.Node.IsConnected).IsTrue();
         }
         finally
@@ -422,7 +429,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => rig.Connection.Position?.TotalMilliseconds == 7000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushStartAsync(rig, TrackJson).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(rig, 1).ConfigureAwait(false);
             await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(7000);
 
             await PushUpdateAsync(rig, 8000, true, 200).ConfigureAwait(false);
@@ -445,7 +452,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => rig.Connection.Position?.TotalMilliseconds == 8000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushStartAsync(rig, TrackJson).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(rig, 2).ConfigureAwait(false);
             await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(8000);
             await Assert.That(rig.Connection.CurrentTrack).IsNotNull();
 
@@ -461,10 +468,10 @@ public sealed class GenerationStormAndPlayback
                 .That(() => rig.Connection.CurrentTrack is null)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushUpdateAsync(rig, 1500, false, 500).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(rig, 3).ConfigureAwait(false);
             var beforeNullStart = rig.Connection.Position?.TotalMilliseconds ?? 0;
             await PushStartAsync(rig, null).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(rig, 4).ConfigureAwait(false);
             await Assert
                 .That(rig.Connection.Position?.TotalMilliseconds)
                 .IsEqualTo(beforeNullStart);
@@ -487,7 +494,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => endRig.Connection.Position?.TotalMilliseconds == 6000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushEndAsync(endRig, null, "finished").ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(endRig, 5).ConfigureAwait(false);
             await Assert.That(endRig.Connection.CurrentTrack?.Encoded).IsEqualTo(Encoded);
 
             await PushEndAsync(endRig, TrackJson, "finished").ConfigureAwait(false);
@@ -495,7 +502,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => endRig.Connection.CurrentTrack is null)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushEndAsync(endRig, null, "finished").ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(endRig, 6).ConfigureAwait(false);
             await Assert.That(endRig.Connection.CurrentTrack).IsNull();
             await Assert.That(endRig.Connection.Position?.TotalMilliseconds).IsEqualTo(6000);
 
@@ -505,7 +512,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => endRig.Connection.Position?.TotalMilliseconds == 9000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushEndAsync(endRig, TrackJson, "replaced").ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(endRig, 7).ConfigureAwait(false);
             await Assert.That(endRig.Connection.CurrentTrack?.Encoded).IsEqualTo(Encoded);
             await PushEndAsync(endRig, null, "finished").ConfigureAwait(false);
             await Assert
@@ -513,7 +520,7 @@ public sealed class GenerationStormAndPlayback
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
 
             await PushSeekAsync(endRig, 999).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(endRig, 8).ConfigureAwait(false);
             await Assert.That(endRig.Connection.Position?.TotalMilliseconds).IsEqualTo(9000);
 
             await PlayAsync(endRig, track).ConfigureAwait(false);
@@ -701,7 +708,7 @@ public sealed class GenerationStormAndPlayback
             await Assert
                 .That(() => pauseRig.Connection.IsPaused)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await Task.Delay(300).ConfigureAwait(false);
+            await RunForAsync(pauseTime, TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             await Assert
                 .That(pauseRig.Connection.Position?.TotalMilliseconds is >= 176_000 and <= 176_900)
                 .IsTrue();
@@ -990,11 +997,16 @@ public sealed class GenerationStormAndPlayback
         for (var round = 0; round < 10; round++)
         {
             var stormRig = await RigAsync().ConfigureAwait(false);
+            using var stopPushing = new CancellationTokenSource();
             try
             {
                 var pushing = Task.Run(async () =>
                 {
-                    for (var frame = 0; frame < 250; frame++)
+                    for (
+                        var frame = 0;
+                        frame < 250 && !stopPushing.IsCancellationRequested;
+                        frame++
+                    )
                     {
                         try
                         {
@@ -1025,6 +1037,7 @@ public sealed class GenerationStormAndPlayback
                         await Task.WhenAll(asyncDispose, drop).ConfigureAwait(false);
                     })
                     .ThrowsNothing();
+                await stopPushing.CancelAsync().ConfigureAwait(false);
                 await pushing.ConfigureAwait(false);
             }
             finally

@@ -113,14 +113,16 @@ public sealed class IdleDisconnect
         var rig = await StartAsync(Timeout5).ConfigureAwait(false);
         await using (rig.ConfigureAwait(false))
         {
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4.9)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4.9), TimeSpan.FromSeconds(1))
+                .ConfigureAwait(false);
             await Assert.That(rig.Connected).IsTrue();
             await Assert.That(rig.Log).IsEmpty();
 
             var left = await AdvanceUntilAsync(
                     rig.Time,
                     () => !rig.Connected,
-                    TimeSpan.FromMinutes(1)
+                    TimeSpan.FromMinutes(1),
+                    TimeSpan.FromSeconds(1)
                 )
                 .ConfigureAwait(false);
 
@@ -138,7 +140,8 @@ public sealed class IdleDisconnect
         {
             await PlayAsync(rig, "a").ConfigureAwait(false);
 
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(5))
+                .ConfigureAwait(false);
 
             await Assert.That(rig.Connected).IsTrue();
             await Assert.That(rig.Log).IsEmpty();
@@ -154,7 +157,8 @@ public sealed class IdleDisconnect
             await PlayAsync(rig, "a").ConfigureAwait(false);
             await rig.Connection.PauseAsync().ConfigureAwait(false);
 
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(5))
+                .ConfigureAwait(false);
 
             await Assert.That(rig.Connected).IsTrue();
             await Assert.That(rig.Log).IsEmpty();
@@ -167,20 +171,23 @@ public sealed class IdleDisconnect
         var rig = await StartAsync(Timeout5).ConfigureAwait(false);
         await using (rig.ConfigureAwait(false))
         {
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(1))
+                .ConfigureAwait(false);
             await PlayAsync(rig, "a").ConfigureAwait(false);
             await PushEndAsync(rig, "a").ConfigureAwait(false);
             await Assert
                 .That(() => rig.Connection.CurrentTrack is null)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
 
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(1))
+                .ConfigureAwait(false);
             await Assert.That(rig.Connected).IsTrue();
 
             var left = await AdvanceUntilAsync(
                     rig.Time,
                     () => !rig.Connected,
-                    TimeSpan.FromMinutes(2)
+                    TimeSpan.FromMinutes(2),
+                    TimeSpan.FromSeconds(1)
                 )
                 .ConfigureAwait(false);
             await Assert.That(left).IsTrue();
@@ -199,7 +206,8 @@ public sealed class IdleDisconnect
             var fired = await AdvanceUntilAsync(
                     rig.Time,
                     () => !rig.Log.IsEmpty,
-                    TimeSpan.FromMinutes(6)
+                    TimeSpan.FromMinutes(6),
+                    TimeSpan.FromSeconds(1)
                 )
                 .ConfigureAwait(false);
             await RunForAsync(rig.Time, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
@@ -218,7 +226,8 @@ public sealed class IdleDisconnect
         {
             await rig.Connection.DisconnectAsync().ConfigureAwait(false);
 
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(5))
+                .ConfigureAwait(false);
 
             await Assert.That(rig.Log).IsEmpty();
         }
@@ -232,7 +241,8 @@ public sealed class IdleDisconnect
         {
             await Assert.That(rig.Node.Options.IdleTimeout).IsEqualTo(Timeout.InfiniteTimeSpan);
 
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(30)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(30), TimeSpan.FromSeconds(10))
+                .ConfigureAwait(false);
 
             await Assert.That(rig.Connected).IsTrue();
             await Assert.That(rig.Log).IsEmpty();

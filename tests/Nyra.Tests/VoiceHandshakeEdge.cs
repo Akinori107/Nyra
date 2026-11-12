@@ -368,7 +368,7 @@ public sealed class VoiceHandshakeEdge
                     Resuming = true,
                     ReconnectDelay = TimeSpan.FromMilliseconds(50),
                     MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
-                    VoiceHandshakeTimeout = TimeSpan.FromSeconds(5),
+                    VoiceHandshakeTimeout = TimeSpan.FromSeconds(1),
                     ReadyTimeout = TimeSpan.FromSeconds(5),
                 }
             );

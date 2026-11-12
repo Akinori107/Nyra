@@ -465,7 +465,8 @@ public sealed class ConnectorAndTransportEdge
     public async Task HandshakeDoublePending()
     {
         var bridge = new FakeBridge();
-        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2));
+        var time = new FakeTimeProvider();
+        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2), time);
         var first = coordinator.WaitForUpdatesAsync(777, 555, bridge, CancellationToken.None);
         await Task.Delay(100).ConfigureAwait(false);
         await Assert
@@ -475,6 +476,7 @@ public sealed class ConnectorAndTransportEdge
                     .ConfigureAwait(false)
             )
             .Throws<InvalidOperationException>();
+        time.Advance(TimeSpan.FromSeconds(2));
         try
         {
             await first.ConfigureAwait(false);
@@ -502,7 +504,8 @@ public sealed class ConnectorAndTransportEdge
     public async Task HandshakeSecondEchoSkip()
     {
         var bridge = new FakeBridge();
-        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2));
+        var time = new FakeTimeProvider();
+        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2), time);
         var pending = coordinator.WaitForUpdatesAsync(999, 555, bridge, CancellationToken.None);
         await Task.Delay(100).ConfigureAwait(false);
         var firstEcho = coordinator.HandleVoiceStateUpdate(
@@ -515,6 +518,7 @@ public sealed class ConnectorAndTransportEdge
         );
         await Assert.That(firstEcho).IsTrue();
         await Assert.That(secondEcho).IsTrue();
+        time.Advance(TimeSpan.FromSeconds(2));
         await Assert
             .That(async () => await pending.ConfigureAwait(false))
             .Throws<VoiceHandshakeException>();

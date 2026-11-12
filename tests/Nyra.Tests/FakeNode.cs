@@ -227,7 +227,7 @@ internal sealed class FakeNodeServer : IDisposable
 
     public string Semver { get; init; } = "3.9.1";
 
-    public string SessionId { get; init; } = "fake-session";
+    public string SessionId { get; set; } = "fake-session";
 
     public bool ResumeOnReconnect { get; set; } = true;
 
@@ -823,13 +823,14 @@ internal static class NodeHarness
         stream.Close();
     }
 
+    private static readonly ConcurrentBag<Socket> HeldDeadPorts = [];
+
     public static int DeadPort()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start(1);
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
+        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        HeldDeadPorts.Add(socket);
+        return ((IPEndPoint)socket.LocalEndPoint!).Port;
     }
 
     public static async Task AdvanceUntilAsync(
@@ -861,13 +862,17 @@ internal static class NodeHarness
             throw new TimeoutException($"The task did not settle within {limit} of fake time.");
     }
 
-    public static async Task RunForAsync(FakeTimeProvider time, TimeSpan duration)
+    public static async Task RunForAsync(
+        FakeTimeProvider time,
+        TimeSpan duration,
+        TimeSpan? step = null
+    )
     {
-        var step = TimeSpan.FromMilliseconds(100);
+        var size = step ?? TimeSpan.FromMilliseconds(100);
         var remaining = duration;
         while (remaining > TimeSpan.Zero)
         {
-            var slice = remaining < step ? remaining : step;
+            var slice = remaining < size ? remaining : size;
             time.Advance(slice);
             remaining -= slice;
             await Task.Delay(2).ConfigureAwait(false);
@@ -879,15 +884,16 @@ internal static class NodeHarness
     public static async Task<bool> AdvanceUntilAsync(
         FakeTimeProvider time,
         Func<bool> condition,
-        TimeSpan limit
+        TimeSpan limit,
+        TimeSpan? step = null
     )
     {
-        var step = TimeSpan.FromMilliseconds(100);
+        var size = step ?? TimeSpan.FromMilliseconds(100);
         var elapsed = TimeSpan.Zero;
         while (!condition() && elapsed < limit)
         {
-            time.Advance(step);
-            elapsed += step;
+            time.Advance(size);
+            elapsed += size;
             await Task.Delay(2).ConfigureAwait(false);
         }
 

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using DSharpPlus.Entities;
 using Microsoft.Extensions.Time.Testing;
 using NetCord;
@@ -263,13 +264,9 @@ public sealed class LifecycleEdge
         hostileExtension.AddNode(hostileNode);
         await hostileExtension.ConnectAllNodesAsync().ConfigureAwait(false);
         await Assert.That(hostileNode.IsReady).IsTrue();
-        var sawFailure = false;
-        for (var i = 0; i < 30 && !sawFailure; i++)
-        {
-            await Task.Delay(100).ConfigureAwait(false);
-            sawFailure = reported.Task.IsCompleted;
-        }
-        await Assert.That(sawFailure).IsTrue();
+        await Assert
+            .That(() => reported.Task.IsCompleted)
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(3));
         await hostileExtension.DisposeAsync().ConfigureAwait(false);
         hostile.Dispose();
     }
@@ -338,7 +335,7 @@ public sealed class LifecycleEdge
     [Test]
     public async Task OrphanSweep()
     {
-        var destroyed = new List<string>();
+        var destroyed = new ConcurrentQueue<string>();
         var mode = 0;
         var stack = await StartAsync().ConfigureAwait(false);
         try
@@ -350,7 +347,7 @@ public sealed class LifecycleEdge
             ));
             stack.Server.On("DELETE", GhostPath, _ =>
             {
-                destroyed.Add("888");
+                destroyed.Enqueue("888");
                 return mode switch
                 {
                     1 => new FakeRestResponse(404, string.Empty),
@@ -367,18 +364,29 @@ public sealed class LifecycleEdge
                 return Task.CompletedTask;
             };
             await resumedAgain.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-            for (var i = 0; i < 40 && destroyed.Count == 0; i++)
-                await Task.Delay(100).ConfigureAwait(false);
-            await Assert.That(destroyed.Count).IsEqualTo(1);
+            await Assert
+                .That(() => destroyed.Count)
+                .WaitsFor(assert => assert.IsEqualTo(1), TimeSpan.FromSeconds(4));
 
             mode = 1;
             await stack.Server.DropConnectionAsync(1000, "orphan 404 drop").ConfigureAwait(false);
-            await Task.Delay(1500).ConfigureAwait(false);
+            await Assert
+                .That(() => destroyed.Count)
+                .WaitsFor(assert => assert.IsEqualTo(2), TimeSpan.FromSeconds(5));
             await Assert.That(stack.Node.IsReady).IsTrue();
 
+            var sweepFailed = new TaskCompletionSource<Exception>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            stack.Node.Error += (_, e) =>
+            {
+                if (e.Exception is RestException { StatusCode: 500 })
+                    sweepFailed.TrySetResult(e.Exception);
+                return Task.CompletedTask;
+            };
             mode = 2;
             await stack.Server.DropConnectionAsync(1000, "orphan 500 drop").ConfigureAwait(false);
-            await Task.Delay(1500).ConfigureAwait(false);
+            await sweepFailed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
             await Assert.That(stack.Node.IsReady).IsTrue();
             await Assert.That(destroyed.Count).IsEqualTo(3);
         }
@@ -746,9 +754,10 @@ public sealed class LifecycleEdge
         );
         extension.AddNode(node);
         var connectAll = extension.ConnectAllNodesAsync();
-        await Task.Delay(2500).ConfigureAwait(false);
+        await Assert
+            .That(() => Volatile.Read(ref server.WebsocketConnections))
+            .WaitsFor(assert => assert.IsGreaterThanOrEqualTo(2), TimeSpan.FromSeconds(5));
         await Assert.That(node.IsReady).IsFalse();
-        await Assert.That(server.WebsocketConnections).IsGreaterThanOrEqualTo(2);
         await extension.DisposeAsync().ConfigureAwait(false);
         try
         {

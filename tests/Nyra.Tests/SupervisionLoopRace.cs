@@ -70,7 +70,7 @@ public sealed class SupervisionLoopRace
     [Test]
     public async Task ReconnectDiscardedMidHandshake()
     {
-        var server = new FakeNodeServer { HandshakeDelay = TimeSpan.FromSeconds(2) };
+        var server = new FakeNodeServer { HandshakeDelay = TimeSpan.FromMilliseconds(500) };
         var stack = await StartAsync(server, name: "discard-mid").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
@@ -78,7 +78,7 @@ public sealed class SupervisionLoopRace
             await Task.Delay(200).ConfigureAwait(false);
 
             await stack.Node.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
-            await Task.Delay(2600).ConfigureAwait(false);
+            await Task.Delay(900).ConfigureAwait(false);
 
             await Assert.That(stack.Node.IsConnected).IsFalse();
         }

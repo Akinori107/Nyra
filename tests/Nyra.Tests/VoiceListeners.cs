@@ -212,13 +212,15 @@ public sealed class VoiceListeners
         var rig = await StartAsync(Leave).ConfigureAwait(false);
         await using (rig.ConfigureAwait(false))
         {
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4.9)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4.9), TimeSpan.FromSeconds(1))
+                .ConfigureAwait(false);
             await Assert.That(rig.Connected).IsTrue();
 
             var left = await AdvanceUntilAsync(
                     rig.Time,
                     () => !rig.Connected,
-                    TimeSpan.FromMinutes(1)
+                    TimeSpan.FromMinutes(1),
+                    TimeSpan.FromSeconds(1)
                 )
                 .ConfigureAwait(false);
 
@@ -247,7 +249,8 @@ public sealed class VoiceListeners
             var raised = await AdvanceUntilAsync(
                     rig.Time,
                     () => handled.Task.IsCompleted,
-                    TimeSpan.FromMinutes(6)
+                    TimeSpan.FromMinutes(6),
+                    TimeSpan.FromSeconds(1)
                 )
                 .ConfigureAwait(false);
             await RunForAsync(rig.Time, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
@@ -265,10 +268,12 @@ public sealed class VoiceListeners
         var rig = await StartAsync(Leave).ConfigureAwait(false);
         await using (rig.ConfigureAwait(false))
         {
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(1))
+                .ConfigureAwait(false);
             rig.Bridge.Move(1, 555);
 
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(5))
+                .ConfigureAwait(false);
 
             await Assert.That(rig.Connected).IsTrue();
             await Assert
@@ -285,7 +290,8 @@ public sealed class VoiceListeners
         {
             rig.Bridge.Cache[1] = 555;
 
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(5))
+                .ConfigureAwait(false);
 
             await Assert.That(rig.Connected).IsTrue();
             await Assert.That(rig.Connection.Listeners).IsEqualTo(1);
@@ -656,7 +662,8 @@ public sealed class VoiceListeners
             await extension.ConnectAllNodesAsync().ConfigureAwait(false);
             var connection = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
 
-            await RunForAsync(time, TimeSpan.FromMinutes(12)).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(5))
+                .ConfigureAwait(false);
 
             await Assert.That(connection.Listeners).IsNull();
             await Assert.That(node.GetConnection(777)).IsSameReferenceAs(connection);

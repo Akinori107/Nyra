@@ -1654,7 +1654,7 @@ public sealed class NodeIntegration
                     Resuming = false,
                     ReconnectDelay = TimeSpan.FromMilliseconds(50),
                     MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
-                    VoiceHandshakeTimeout = TimeSpan.FromSeconds(2),
+                    VoiceHandshakeTimeout = TimeSpan.FromMilliseconds(500),
                     ReadyTimeout = TimeSpan.FromSeconds(5),
                 }
             )

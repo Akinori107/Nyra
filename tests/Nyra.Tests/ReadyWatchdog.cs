@@ -58,7 +58,7 @@ public sealed class ReadyWatchdog
         var errors = 0;
         node.Error += (_, _) =>
         {
-            errors++;
+            Interlocked.Increment(ref errors);
             return Task.CompletedTask;
         };
 
@@ -66,13 +66,9 @@ public sealed class ReadyWatchdog
         await Assert.That(node.IsReady).IsFalse();
         await Assert.That(server.ReadySent).IsFalse();
 
-        var observed = false;
-        for (var i = 0; i < 40 && !observed; i++)
-        {
-            await Task.Delay(50).ConfigureAwait(false);
-            observed = errors >= 1;
-        }
-        await Assert.That(observed).IsTrue();
+        await Assert
+            .That(() => Volatile.Read(ref errors) >= 1)
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(2));
 
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
@@ -111,13 +107,9 @@ public sealed class ReadyWatchdog
                     await invalidated.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false)
                 )
                 .IsEqualTo(777);
-            var dropped = false;
-            for (var i = 0; i < 60 && !dropped; i++)
-            {
-                await Task.Delay(50).ConfigureAwait(false);
-                dropped = node.GetConnection(777) is null;
-            }
-            await Assert.That(dropped).IsTrue();
+            await Assert
+                .That(() => node.GetConnection(777) is null)
+                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(3));
         }
     }
 

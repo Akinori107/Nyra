@@ -50,16 +50,14 @@ public sealed class NodeEventEdge
         );
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-        var sessionPatchSeen = false;
-        for (var i = 0; i < 100 && !sessionPatchSeen; i++)
-        {
-            await Task.Delay(50).ConfigureAwait(false);
-            sessionPatchSeen = server.RestCalls.Any(c =>
-                c.Method == "PATCH"
-                && c.Path.EndsWith("/sessions/fake-session", StringComparison.Ordinal)
-            );
-        }
-        await Assert.That(sessionPatchSeen).IsTrue();
+        await Assert
+            .That(() =>
+                server.RestCalls.Any(c =>
+                    c.Method == "PATCH"
+                    && c.Path.EndsWith("/sessions/fake-session", StringComparison.Ordinal)
+                )
+            )
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
         {
             bool lockedCheck;
             lock (loggerSink)
@@ -114,16 +112,13 @@ public sealed class NodeEventEdge
         var statsRaised = statsSeen.Task.Wait(TimeSpan.FromSeconds(5));
         await Assert.That(statsRaised).IsTrue();
 
-        var resent = false;
-        for (var i = 0; i < 100 && !resent; i++)
-        {
-            await Task.Delay(50).ConfigureAwait(false);
-            resent =
+        await Assert
+            .That(() =>
                 server.RestCalls.Count(c =>
                     c.Method == "PATCH" && c.Path == PlayerPath && c.Body?.Contains("tok2") == true
-                ) > patchesWithTok2;
-        }
-        await Assert.That(resent).IsTrue();
+                ) > patchesWithTok2
+            )
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
         await Assert.That(conn.IsConnected).IsTrue();
 
         await conn.DisconnectAsync().ConfigureAwait(false);

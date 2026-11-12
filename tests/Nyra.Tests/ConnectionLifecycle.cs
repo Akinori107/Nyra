@@ -173,13 +173,9 @@ public sealed class ConnectionLifecycle
                     await invalidated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false)
                 )
                 .IsEqualTo(777);
-            var dropped = false;
-            for (var i = 0; i < 40 && !dropped; i++)
-            {
-                await Task.Delay(50).ConfigureAwait(false);
-                dropped = node.GetConnection(777) is null;
-            }
-            await Assert.That(dropped).IsTrue();
+            await Assert
+                .That(() => node.GetConnection(777) is null)
+                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(2));
 
             await stack.Extension.DisposeAsync().ConfigureAwait(false);
             stack.Server.Dispose();
@@ -239,7 +235,7 @@ public sealed class ConnectionLifecycle
             var tornDown = await AdvanceUntilAsync(
                     time,
                     () => node.GetConnection(777) is null,
-                    TimeSpan.FromSeconds(16)
+                    TimeSpan.FromSeconds(30)
                 )
                 .ConfigureAwait(false);
             await Assert.That(tornDown).IsTrue();
@@ -378,13 +374,9 @@ public sealed class ConnectionLifecycle
             await Task.WhenAll(playing, disconnecting).ConfigureAwait(false);
 
             await Assert.That(node.GetConnection(777)).IsNull();
-            var destroyed = false;
-            for (var i = 0; i < 40 && !destroyed; i++)
-            {
-                await Task.Delay(50).ConfigureAwait(false);
-                destroyed = server.RestCalls.Any(c => c is { Method: "DELETE", Path: PlayerPath });
-            }
-            await Assert.That(destroyed).IsTrue();
+            await Assert
+                .That(() => server.RestCalls.Any(c => c is { Method: "DELETE", Path: PlayerPath }))
+                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(2));
         }
     }
 }
