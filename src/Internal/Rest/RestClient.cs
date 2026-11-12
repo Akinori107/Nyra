@@ -35,6 +35,8 @@ internal sealed class RestClient
     };
     private static readonly MediaTypeHeaderValue JsonContentType = new("application/json");
 
+    private readonly SemaphoreSlim _slots = new(MaxConnectionsPerNode, MaxConnectionsPerNode);
+
     public RestClient(Node node)
     {
         Node = node;
@@ -191,16 +193,32 @@ internal sealed class RestClient
             [Uri.EscapeDataString(RequireSessionId()), .. arguments]
         );
 
-    internal async Task<T> SendExpectingAsync<T>(
+    internal Task<T> SendExpectingAsync<T>(
         HttpMethod method,
         string path,
         string what,
         byte[]? jsonBody = null,
         CancellationToken cancellationToken = default
+    ) => SendExpectingAsync<T>(method, path, what, jsonBody, RequestTimeout, cancellationToken);
+
+    internal async Task<T> SendExpectingAsync<T>(
+        HttpMethod method,
+        string path,
+        string what,
+        byte[]? jsonBody,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
     )
     {
         var options = Options;
-        var json = await SendAsync(method, path, jsonBody, cancellationToken).ConfigureAwait(false);
+        var (_, json) = await SendWithStatusAsync(
+                method,
+                path,
+                jsonBody,
+                timeout,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
         return DeserializeOrThrow<T>(json, path, what, options);
     }
 
@@ -215,16 +233,24 @@ internal sealed class RestClient
                 .ConfigureAwait(false)
         ).Body;
 
-    internal async Task<(int Status, byte[] Body)> SendWithStatusAsync(
+    internal Task<(int Status, byte[] Body)> SendWithStatusAsync(
         HttpMethod method,
         string path,
         byte[]? jsonBody = null,
         CancellationToken cancellationToken = default
+    ) => SendWithStatusAsync(method, path, jsonBody, RequestTimeout, cancellationToken);
+
+    private async Task<(int Status, byte[] Body)> SendWithStatusAsync(
+        HttpMethod method,
+        string path,
+        byte[]? jsonBody,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
     )
     {
         try
         {
-            var reply = await SendCoreAsync(method, path, jsonBody, cancellationToken)
+            var reply = await SendCoreAsync(method, path, jsonBody, timeout, cancellationToken)
                 .ConfigureAwait(false);
             Node.NoteRestSuccess();
             return reply;
@@ -245,6 +271,7 @@ internal sealed class RestClient
         HttpMethod method,
         string path,
         byte[]? jsonBody,
+        TimeSpan timeout,
         CancellationToken cancellationToken
     )
     {
@@ -256,10 +283,11 @@ internal sealed class RestClient
                 Headers = { ContentType = JsonContentType },
             };
 
+        await _slots.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             HttpResponseMessage reply;
-            using (var headerCts = new TimeoutLink(Node.Time, RequestTimeout, cancellationToken))
+            using (var headerCts = new TimeoutLink(Node.Time, timeout, cancellationToken))
                 reply = await Http.SendAsync(
                         request,
                         HttpCompletionOption.ResponseHeadersRead,
@@ -268,7 +296,7 @@ internal sealed class RestClient
                     .ConfigureAwait(false);
             using var response = reply;
 
-            using var bodyCts = new TimeoutLink(Node.Time, RequestTimeout, cancellationToken);
+            using var bodyCts = new TimeoutLink(Node.Time, timeout, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -309,6 +337,10 @@ internal sealed class RestClient
         catch (Exception exception) when (exception is HttpRequestException or IOException)
         {
             throw Unreachable(exception);
+        }
+        finally
+        {
+            _slots.Release();
         }
     }
 

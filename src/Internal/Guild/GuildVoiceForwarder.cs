@@ -107,16 +107,12 @@ internal sealed class GuildVoiceForwarder
         _pendingVoiceForward = voice;
         try
         {
-            using var attemptCts = new TimeoutLink(
-                _connection.Time,
-                VoiceSendDeadline,
-                _sendCts.Token
-            );
             await _connection
                 .Node.Rest.Players.UpdateAsync(
                     _connection.GuildId,
                     new PlayerUpdatePayload { Voice = voice },
-                    attemptCts.Token
+                    _sendCts.Token,
+                    timeout: VoiceSendDeadline
                 )
                 .ConfigureAwait(false);
             _pendingVoiceForward = null;

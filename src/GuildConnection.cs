@@ -736,7 +736,6 @@ public sealed class GuildConnection
 
         var requestTick = Node.Time.GetMilliseconds();
 
-        using var timeout = new CancellationTokenSource(GuildVoiceForwarder.VoiceSendDeadline);
         var player = await Patches
             .SendAsync(
                 ct =>
@@ -751,9 +750,10 @@ public sealed class GuildConnection
                             Filters = filters,
                             Voice = voice,
                         },
-                        ct
+                        ct,
+                        timeout: GuildVoiceForwarder.VoiceSendDeadline
                     ),
-                timeout.Token
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
