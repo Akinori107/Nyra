@@ -126,6 +126,7 @@ public sealed class VoiceCloseAndForwarder
         {
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
+            var joinSends = bridge.VoiceSends.Count(s => s.ChannelId == 555);
             bridge.HangVoiceSends = true;
 
             await server
@@ -141,7 +142,7 @@ public sealed class VoiceCloseAndForwarder
                 .ConfigureAwait(false);
             await RunForAsync(time, TimeSpan.FromMilliseconds(3000)).ConfigureAwait(false);
 
-            var rescueSends = bridge.VoiceSends.Count(s => s.ChannelId == 555);
+            var rescueSends = bridge.VoiceSends.Count(s => s.ChannelId == 555) - joinSends;
             await Assert.That(rescueSends).IsEqualTo(1);
             bridge.HangVoiceSends = false;
             await RunForAsync(time, TimeSpan.FromMilliseconds(10_500)).ConfigureAwait(false);
@@ -166,7 +167,9 @@ public sealed class VoiceCloseAndForwarder
                 .ConfigureAwait(false);
 
             await RunForAsync(time, TimeSpan.FromMilliseconds(4600)).ConfigureAwait(false);
+            bridge.FireVoiceState(777, null, "vsess");
             bridge.FireVoiceState(777, 555, "vsess2");
+            bridge.FireVoiceServer(777, "tok2", "127.0.0.1");
             await RunForAsync(time, TimeSpan.FromMilliseconds(5200)).ConfigureAwait(false);
 
             var kept = node.GetConnection(777);

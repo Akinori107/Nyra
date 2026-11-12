@@ -54,6 +54,8 @@ public sealed class GuildConnection
 
     private int _voiceCloseHandling;
 
+    private long _lastVoiceConnectedTick = long.MinValue;
+
     private bool _observedSelfDeaf;
     private bool _observedSelfMute;
 
@@ -814,7 +816,7 @@ public sealed class GuildConnection
     {
         Dispatch(WebSocketClosed, eventArgs);
 
-        if (!Node.IsNodeLink)
+        if (!Node.IsNodeLink || eventArgs.ByRemote)
             _ = DisconnectAfterVoiceClosedWithGraceAsync(
                 eventArgs.Code,
                 Node.Time.GetMilliseconds()
@@ -834,6 +836,9 @@ public sealed class GuildConnection
             .ConfigureAwait(false);
 
         if (_tearingDown)
+            return;
+
+        if (Interlocked.Read(ref _lastVoiceConnectedTick) >= closeTick)
             return;
 
         var lastForwardTick = _voiceForward.LastForwardTick;
@@ -982,8 +987,11 @@ public sealed class GuildConnection
         Dispatch(PlayerReconnecting, eventArgs);
     }
 
-    internal void HandlePlayerConnected(PlayerConnectedEventArgs eventArgs) =>
+    internal void HandlePlayerConnected(PlayerConnectedEventArgs eventArgs)
+    {
+        Interlocked.Exchange(ref _lastVoiceConnectedTick, Node.Time.GetMilliseconds());
         Dispatch(PlayerConnected, eventArgs);
+    }
 
     internal void HandleStreamMetadataUpdated(StreamMetadataUpdatedEventArgs eventArgs) =>
         Dispatch(StreamMetadataUpdated, eventArgs);
