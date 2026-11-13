@@ -814,8 +814,15 @@ internal static class NodeHarness
     )
     {
         AcceptPlayerPatch(server, guild);
+        var joins = bridge.VoiceSends.Count(send => send == (guild, channel));
         var connect = node.ConnectAsync(guild, channel);
-        await Task.Delay(150).ConfigureAwait(false);
+        var waited = Stopwatch.StartNew();
+        while (
+            !connect.IsCompleted
+            && bridge.VoiceSends.Count(send => send == (guild, channel)) == joins
+            && waited.ElapsedMilliseconds < 150
+        )
+            await Task.Delay(1).ConfigureAwait(false);
         bridge.FireVoiceState(guild, channel, "vsess");
         bridge.FireVoiceServer(guild, "tok", "127.0.0.1");
         return await connect.ConfigureAwait(false);
