@@ -231,6 +231,8 @@ internal sealed class FakeNodeServer : IDisposable
 
     public bool ResumeOnReconnect { get; set; } = true;
 
+    public bool Down { get; set; }
+
     public TimeSpan HandshakeDelay { get; set; } = TimeSpan.Zero;
 
     public bool GhostHandshakes { get; set; }
@@ -566,6 +568,12 @@ internal sealed class FakeNodeServer : IDisposable
         Dictionary<string, string> headers
     )
     {
+        if (Down)
+        {
+            stream.Close();
+            return;
+        }
+
         _stream = stream;
 
         if (GhostHandshakes)

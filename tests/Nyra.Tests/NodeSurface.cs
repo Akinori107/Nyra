@@ -97,6 +97,14 @@ public sealed class NodeSurface
             new NodeOptions { Name = "x", ReadyTimeout = TimeSpan.FromDays(41) },
             "a ready timeout past the ceiling"
         );
+        yield return Case(
+            new NodeOptions { Name = "x", FailoverAfter = TimeSpan.FromSeconds(-1) },
+            "a negative failover delay"
+        );
+        yield return Case(
+            new NodeOptions { Name = "x", FailoverAfter = TimeSpan.FromDays(41) },
+            "a failover delay past the ceiling"
+        );
     }
 
     [Test]
