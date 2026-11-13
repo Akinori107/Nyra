@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using Nyra.Abstractions;
+using Nyra.Entities;
 using Nyra.EventArgs;
 using Nyra.Internal;
 
@@ -238,27 +239,31 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         catch (Exception) { }
     }
 
-    /// <summary>The ready node with the fewest playing players, nodes without stats yet rank last.</summary>
+    /// <summary>The ready node with the lowest load, nodes without stats yet rank last.</summary>
     /// <remarks>
-    /// A node whose last REST request failed (unreachable, timed out, 429 or a 5xx) in the past 30 seconds
-    /// ranks after the others, it is still returned when it is the only ready node. Null while no node is
-    /// ready.
+    /// The load counts the playing players, the CPU load of the server (NodeLink's load average is divided by
+    /// its cores) and, on Lavalink, the frames that went out late or as silence in the last minute. A busy CPU
+    /// weighs more than a few players, a fully loaded one more than a thousand. A node whose last REST request
+    /// failed (unreachable, timed out, 429 or a 5xx) in the past 30 seconds ranks after the others, it is still
+    /// returned when it is the only ready node. Null while no node is ready.
     /// </remarks>
     /// <returns>The best node, null while none is ready.</returns>
     public Node? GetNode()
     {
         Node? best = null;
-        var bestScore = long.MaxValue;
+        (int Rank, double Load) bestScore = (int.MaxValue, double.MaxValue);
         lock (_lock)
             foreach (var node in _nodes)
             {
                 if (!node.IsReady)
                     continue;
 
-                var score =
-                    (node.RestDegraded ? 1L << 32 : 0L)
-                    + (node.Stats?.PlayingPlayers ?? int.MaxValue);
-                if (best is null || score < bestScore)
+                var stats = node.Stats;
+                var score = (
+                    (node.RestDegraded ? 2 : 0) + (stats is null ? 1 : 0),
+                    stats is null ? 0 : Load(node, stats)
+                );
+                if (best is null || score.CompareTo(bestScore) < 0)
                 {
                     bestScore = score;
                     best = node;
@@ -267,6 +272,25 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
         return best;
     }
+
+    private static double Load(Node node, Stats stats)
+    {
+        var cpu = node.IsNodeLink
+            ? stats.Cpu.SystemLoad / Math.Max(1, stats.Cpu.Cores)
+            : stats.Cpu.SystemLoad;
+        var load = stats.PlayingPlayers + Penalty(1.05, 100 * Fraction(cpu), 10);
+        if (!node.IsNodeLink && stats.FrameStats is { } frames)
+            load +=
+                Penalty(1.03, 500 * Fraction(frames.Deficit / 3000.0), 600)
+                + (2 * Penalty(1.03, 500 * Fraction(frames.Nulled / 3000.0), 300));
+        return load;
+    }
+
+    private static double Fraction(double value) =>
+        double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
+
+    private static double Penalty(double growth, double exponent, double scale) =>
+        (Math.Pow(growth, exponent) * scale) - scale;
 
     /// <summary>
     /// The connection playing in the guild, on whatever node it lives, or null when the guild is not

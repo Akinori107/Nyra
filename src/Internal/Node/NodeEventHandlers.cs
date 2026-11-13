@@ -255,6 +255,9 @@ internal sealed class NodeEventHandlers
             _node.TakeConnectCompletion()?.TrySetResult(true);
         }
 
+        if (_node.Stats is null)
+            _ = FetchFirstStatsAsync();
+
         if (effectiveResumed)
             _ = _node.GuardAsync(_node.Registry.DestroyOrphanPlayersAsync(CancellationToken.None));
 
@@ -298,6 +301,16 @@ internal sealed class NodeEventHandlers
         }
     }
 
+    private async Task FetchFirstStatsAsync()
+    {
+        try
+        {
+            var stats = await _node.GetStatsAsync().ConfigureAwait(false);
+            HandleStats(stats, onlyIfFirst: true);
+        }
+        catch (Exception) { }
+    }
+
     private Task InvalidateAsync(GuildConnection[] invalidated) =>
         GuardAllAsync(invalidated, connection =>
             connection.Teardown.HandleSessionInvalidatedAsync()
@@ -308,11 +321,11 @@ internal sealed class NodeEventHandlers
             Array.ConvertAll(connections, connection => _node.GuardAsync(handle(connection)))
         );
 
-    internal void HandleStats(Stats stats)
+    internal void HandleStats(Stats stats, bool onlyIfFirst = false)
     {
         lock (_node.EventsLock)
         {
-            if (_node.IsShutDown)
+            if (_node.IsShutDown || (onlyIfFirst && _node.Stats is not null))
                 return;
 
             _node.Stats = stats;
