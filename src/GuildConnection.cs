@@ -30,7 +30,7 @@ public sealed class GuildConnection
     private HashSet<ulong>? _listeners;
     private volatile bool _pausedWhenAlone;
 
-    private sealed record RestoreSnapshot(
+    internal sealed record RestoreSnapshot(
         Track? Track,
         TimeSpan? Position,
         int Volume,
@@ -352,6 +352,16 @@ public sealed class GuildConnection
     public event AsyncEventHandler<GuildConnectionRestoredEventArgs>? GuildConnectionRestored;
 
     /// <summary>
+    /// Raised when the node stayed down for <see cref="NodeOptions.FailoverAfter"/> and this guild moved to
+    /// another node, the bot stays in its voice channel.
+    /// </summary>
+    /// <remarks>
+    /// This connection is torn down and every call on it throws, subscribe to the events of the new connection
+    /// in <see cref="GuildConnectionMigratedEventArgs.Connection"/>.
+    /// </remarks>
+    public event AsyncEventHandler<GuildConnectionMigratedEventArgs>? GuildConnectionMigrated;
+
+    /// <summary>
     /// Raised when the connection went <see cref="NodeOptions.IdleTimeout"/> without a track, right before it
     /// disconnects.
     /// </summary>
@@ -531,21 +541,121 @@ public sealed class GuildConnection
         if (_restoreSnapshot is not null || _tearingDown || ChannelId is null)
             return;
 
-        Interlocked.CompareExchange(
-            ref _restoreSnapshot,
-            new RestoreSnapshot(
-                CurrentTrack,
-                Position,
-                Volume,
-                Filters.Applied,
-                IsPaused,
-                Node.Time.GetMilliseconds()
-            ),
-            null
-        );
+        Interlocked.CompareExchange(ref _restoreSnapshot, CaptureSnapshot(), null);
     }
 
+    private RestoreSnapshot CaptureSnapshot() =>
+        new(CurrentTrack, Position, Volume, Filters.Applied, IsPaused, Node.Time.GetMilliseconds());
+
     internal void DiscardRestoreSnapshot() => Interlocked.Exchange(ref _restoreSnapshot, null);
+
+    internal async Task FailoverToAsync(Node target)
+    {
+        ulong channelId;
+        lock (_restoreLock)
+        {
+            if (_restoring || _tearingDown || ChannelId is not { } current)
+                return;
+            _restoring = true;
+            channelId = current;
+        }
+
+        var snapshot = Interlocked.Exchange(ref _restoreSnapshot, null) ?? CaptureSnapshot();
+
+        (GuildConnection Connection, bool Resent)? moved = null;
+        try
+        {
+            moved = await Nyra
+                .Queue.GuildQueue.HandOverAsync(this, () =>
+                    Node.Registry.HandOverAsync(this, target, channelId, snapshot)
+                )
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Node.HandleError(
+                new InvalidOperationException(
+                    $"Failed to move guild {GuildId} from node '{Node.Name}' to node '{target.Name}': {exception.Message}",
+                    exception
+                )
+            );
+        }
+        finally
+        {
+            if (moved is null)
+            {
+                bool restore;
+                lock (_restoreLock)
+                {
+                    var lost = Node.IsReady && !Node.LastReadyResumed;
+                    restore = _restoreAgain || lost;
+                    _restoreAgain = false;
+                    if (restore || !Node.IsReady)
+                        Interlocked.CompareExchange(ref _restoreSnapshot, snapshot, null);
+                    _restoring = false;
+                }
+
+                if (restore && Node.IsReady)
+                    _ = Node.GuardAsync(Teardown.HandleSessionLostAsync());
+            }
+        }
+
+        if (moved is not { } handedOver)
+            return;
+
+        MarkTearingDown();
+        await _voiceForward.DrainAsync().ConfigureAwait(false);
+        await Patches.DrainAsync().ConfigureAwait(false);
+        await ClearStateAsync().ConfigureAwait(false);
+
+        Dispatch(
+            GuildConnectionMigrated,
+            new GuildConnectionMigratedEventArgs(handedOver.Connection, Node, handedOver.Resent)
+        );
+        await CompleteEventPumpAsync().ConfigureAwait(false);
+    }
+
+    internal async Task<bool> AdoptPlaybackAsync(RestoreSnapshot snapshot)
+    {
+        var voice = CurrentVoice(ChannelId!.Value);
+        List<RestoreSnapshot> attempts = [snapshot];
+        if (snapshot.Track is not null && snapshot.HasFilters)
+            attempts.Add(snapshot with { Filters = new() });
+        if (snapshot.Track is not null || snapshot.HasFilters)
+            attempts.Add(snapshot with { Track = null, Filters = new() });
+
+        for (var i = 0; ; i++)
+            try
+            {
+                await ResendInOneUpdateAsync(attempts[i], voice).ConfigureAwait(false);
+                return attempts[i].Track is not null;
+            }
+            catch (RestException exception) when (i < attempts.Count - 1)
+            {
+                Node.HandleError(
+                    new InvalidOperationException(
+                        $"Node '{Node.Name}' refused the playback of guild {GuildId}, trying again with less: {exception.Message}",
+                        exception
+                    )
+                );
+                ResetPlayerState();
+            }
+    }
+
+    internal void MarkHandedOver()
+    {
+        TryClaimVoiceLeave();
+        MarkTearingDown();
+    }
+
+    internal void InheritPlayerState(GuildConnection source)
+    {
+        ObserveSelfFlags(
+            Volatile.Read(ref source._observedSelfDeaf),
+            Volatile.Read(ref source._observedSelfMute)
+        );
+        _pausedWhenAlone = source._pausedWhenAlone;
+    }
 
     internal async Task<bool> TryRestoreAsync()
     {

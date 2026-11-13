@@ -62,6 +62,15 @@ public sealed class Node : IAsyncDisposable, IDisposable
                 nameof(options),
                 "NodeOptions.RescueTimeout must be positive, or Timeout.InfiniteTimeSpan for no limit."
             );
+        if (Options.FailoverAfter != Timeout.InfiniteTimeSpan)
+        {
+            if (Options.FailoverAfter < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(
+                    nameof(options),
+                    "NodeOptions.FailoverAfter must be zero or positive, or Timeout.InfiniteTimeSpan to never move."
+                );
+            ThrowIfOverLimit(Options.FailoverAfter, nameof(NodeOptions.FailoverAfter));
+        }
         ThrowIfInvalidLeaveTimeout(Options.IdleTimeout, nameof(NodeOptions.IdleTimeout));
         ThrowIfInvalidLeaveTimeout(Options.AloneTimeout, nameof(NodeOptions.AloneTimeout));
         ThrowIfNotPositive(
@@ -231,6 +240,12 @@ public sealed class Node : IAsyncDisposable, IDisposable
     {
         get => Volatile.Read(ref field);
         internal set => Volatile.Write(ref field, value);
+    }
+
+    internal bool LastReadyResumed
+    {
+        get => Volatile.Read(ref field);
+        set => Volatile.Write(ref field, value);
     }
 
     /// <summary>

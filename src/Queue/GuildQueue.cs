@@ -9,9 +9,10 @@ namespace Nyra.Queue;
 /// <summary>The queue of one <see cref="GuildConnection"/>.</summary>
 /// <remarks>
 /// Get it with <see cref="GuildConnectionQueueExtensions.UseQueue"/>. The queue lives as long as the
-/// connection does, a guild that moves to another node, or leaves and joins again, gets a new connection and
-/// so a new, empty queue. When the connection is invalidated the queue is cleared and every call on it throws
-/// <see cref="InvalidOperationException"/>.
+/// connection does, a guild that leaves and joins again gets a new connection and so a new, empty queue. A guild
+/// moved to another node by <see cref="NodeOptions.FailoverAfter"/> keeps this queue, unless the track could not
+/// be sent to the new node, then it is cleared like after a restore. When the connection is invalidated the queue
+/// is cleared and every call on it throws <see cref="InvalidOperationException"/>.
 /// <para>
 /// When the node loses its session and the connection is restored without the track being sent again, the new
 /// player is empty, so the queue is cleared and its loop mode goes back to <see cref="LoopMode.Off"/>. A node
@@ -44,11 +45,25 @@ public sealed class GuildQueue
         Connection = connection;
         _preloader = new NextTrackPreloader(this);
         _handlerError = OnHandlerErrorAsync;
+        Subscribe(connection);
+    }
+
+    private void Subscribe(GuildConnection connection)
+    {
         connection.TrackStarted += OnTrackStartedAsync;
         connection.TrackFinished += OnTrackFinishedAsync;
         connection.TrackStuck += OnTrackStuckAsync;
         connection.GuildConnectionRestored += OnRestoredAsync;
         connection.GuildConnectionInvalidated += OnInvalidatedAsync;
+    }
+
+    private void Unsubscribe(GuildConnection connection)
+    {
+        connection.TrackStarted -= OnTrackStartedAsync;
+        connection.TrackFinished -= OnTrackFinishedAsync;
+        connection.TrackStuck -= OnTrackStuckAsync;
+        connection.GuildConnectionRestored -= OnRestoredAsync;
+        connection.GuildConnectionInvalidated -= OnInvalidatedAsync;
     }
 
     /// <summary>Raised when a track becomes the current track.</summary>
@@ -79,7 +94,8 @@ public sealed class GuildQueue
     public event AsyncEventHandler<QueueTrackFailedEventArgs>? TrackFailed;
 
     /// <summary>Gets the connection this queue plays on.</summary>
-    public GuildConnection Connection { get; }
+    /// <remarks>It changes when the guild moves to another node, see <see cref="NodeOptions.FailoverAfter"/>.</remarks>
+    public GuildConnection Connection { get; private set; }
 
     internal QueueState State => _state;
 
@@ -236,6 +252,50 @@ public sealed class GuildQueue
     {
         lock (RegistryLock)
             return Queues.TryGetValue(connection, out var queue) ? queue : null;
+    }
+
+    internal static async Task<(GuildConnection Connection, bool Resent)?> HandOverAsync(
+        GuildConnection source,
+        Func<Task<(GuildConnection Connection, bool Resent)?>> handOver
+    )
+    {
+        if (Find(source) is not { } queue)
+            return await handOver().ConfigureAwait(false);
+
+        (GuildConnection Connection, bool Resent)? moved;
+        var notes = new QueueNotes();
+        await queue._gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            moved = await handOver().ConfigureAwait(false);
+            if (moved is { } handedOver && !queue._detached)
+            {
+                queue.Unsubscribe(source);
+                lock (RegistryLock)
+                {
+                    Queues.Remove(source);
+                    Queues.AddOrUpdate(handedOver.Connection, queue);
+                }
+
+                queue.Connection = handedOver.Connection;
+                queue.Subscribe(handedOver.Connection);
+                if (handedOver.Resent)
+                {
+                    Interlocked.Exchange(ref queue._expectingSuccessor, 0);
+                    queue._preloader.Forget();
+                }
+                else
+                    queue.Reset(QueueState.Empty, notes);
+            }
+        }
+        finally
+        {
+            queue._gate.Release();
+        }
+
+        if (moved is not null)
+            await queue.FlushAsync(notes).ConfigureAwait(false);
+        return moved;
     }
 
     /// <summary>Adds a track to the queue, and starts playing when nothing is playing.</summary>
@@ -768,11 +828,7 @@ public sealed class GuildQueue
         {
             _detached = true;
             _state = QueueState.Empty;
-            Connection.TrackStarted -= OnTrackStartedAsync;
-            Connection.TrackFinished -= OnTrackFinishedAsync;
-            Connection.TrackStuck -= OnTrackStuckAsync;
-            Connection.GuildConnectionRestored -= OnRestoredAsync;
-            Connection.GuildConnectionInvalidated -= OnInvalidatedAsync;
+            Unsubscribe(Connection);
             lock (RegistryLock)
                 Queues.Remove(Connection);
         }

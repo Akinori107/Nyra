@@ -10,6 +10,10 @@ internal sealed class NodeEventHandlers
 
     private ITimer? _readyWatchdog;
 
+    private ITimer? _failoverTimer;
+
+    private volatile bool _droppedNodeLink;
+
     private int _connectionEpoch;
 
     internal int ConnectionEpoch
@@ -156,6 +160,11 @@ internal sealed class NodeEventHandlers
                 ? _node.SessionId
                 : null;
 
+        var effectiveResumed =
+            (eventArgs.Resumed ?? false)
+            && presentedSessionId is not null
+            && eventArgs.SessionId == presentedSessionId;
+
         string? usableSessionId;
         bool discordTracked;
 
@@ -172,17 +181,14 @@ internal sealed class NodeEventHandlers
 
             usableSessionId = UsableSessionId(eventArgs.SessionId);
             _node.SessionId = usableSessionId;
+            _node.LastReadyResumed = effectiveResumed;
             _node.IsReady = true;
+            DisarmFailover();
             _node.Connection.NoteReady();
             _readyEpilogueRunning = true;
             discordTracked = !_stoppedSinceReady;
             _stoppedSinceReady = false;
         }
-
-        var effectiveResumed =
-            (eventArgs.Resumed ?? false)
-            && presentedSessionId is not null
-            && eventArgs.SessionId == presentedSessionId;
 
         if (!effectiveResumed)
             _node.ResetSessionSettings();
@@ -416,6 +422,8 @@ internal sealed class NodeEventHandlers
             _node.IsReady = false;
 
             DisarmReadyWatchdog();
+            if (_node.ServerInfo is { } info)
+                _droppedNodeLink = info.IsNodeLink;
             _node.InvalidateServerInfo();
 
             completion?.TrySetResult(false);
@@ -425,9 +433,63 @@ internal sealed class NodeEventHandlers
             );
         }
 
-        if (_node.Options.RescuePlayback)
+        var failover = _node.Options.FailoverAfter != Timeout.InfiniteTimeSpan;
+        if (_node.Options.RescuePlayback || failover)
             foreach (var connection in _node.Connections.Values)
                 connection.CaptureForRestore();
+
+        if (failover)
+            ArmFailover(_node.Options.FailoverAfter);
+    }
+
+    private void ArmFailover(TimeSpan delay)
+    {
+        lock (_node.EventsLock)
+        {
+            if (
+                _node.IsShutDown
+                || _node.Stopped
+                || _node.IsReady
+                || _node.Extension is null
+                || _failoverTimer is not null
+            )
+                return;
+
+            _failoverTimer = _node.Time.CreateTimer(
+                static state => ((NodeEventHandlers)state!).FailoverFired(),
+                this,
+                delay,
+                Timeout.InfiniteTimeSpan
+            );
+        }
+    }
+
+    private void DisarmFailover() => Interlocked.Exchange(ref _failoverTimer, null)?.Dispose();
+
+    private void FailoverFired()
+    {
+        lock (_node.EventsLock)
+        {
+            if (_failoverTimer is null)
+                return;
+
+            DisarmFailover();
+            if (_node.IsShutDown || _node.Stopped || _node.IsReady)
+                return;
+        }
+
+        _ = _node.GuardAsync(FailoverAsync());
+    }
+
+    private async Task FailoverAsync()
+    {
+        await _node.Registry.FailoverAsync(_droppedNodeLink).ConfigureAwait(false);
+        if (!_node.Connections.IsEmpty)
+            ArmFailover(
+                _node.Options.FailoverAfter > _node.Options.ReconnectDelay
+                    ? _node.Options.FailoverAfter
+                    : _node.Options.ReconnectDelay
+            );
     }
 
     internal void HandleError(Exception exception)
@@ -469,6 +531,7 @@ internal sealed class NodeEventHandlers
             _connectionEpoch++;
             _stoppedSinceReady = true;
             DisarmReadyWatchdog();
+            DisarmFailover();
         }
     }
 }

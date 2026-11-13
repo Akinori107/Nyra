@@ -84,6 +84,25 @@ connection.GuildConnectionInvalidated += async (sender, args) =>
 };
 ```
 
+## Another node takes over
+
+With more than one node, set `FailoverAfter` in [NodeOptions](../api/Nyra.NodeOptions.yml) and the guilds of a node that drops move to the best ready node of the same kind. The bot stays in the voice channel. The track goes on from where it was, with what `RescuePlayback` sends back even when it is off, and the [queue](queue.md) of Nyra follows the guild. `TimeSpan.Zero` moves as soon as the node drops, a longer time gives the node that long to come back:
+
+```csharp
+var node = new Node(endpoint, new NodeOptions { FailoverAfter = TimeSpan.Zero });
+
+connection.GuildConnectionMigrated += (sender, args) =>
+{
+    var moved = args.Connection;
+    // moved is the connection on args.To, subscribe to its events here
+    return Task.CompletedTask;
+};
+```
+
+Nyra can't tell a dead node from a lost websocket, so a node that was still playing loses its guilds too, with a short gap in the audio. The players it has when it comes back are destroyed. If no other node of the same kind is ready, the guilds wait and move once one is.
+
+Guilds never move between NodeLink and Lavalink. A track NodeLink encoded may not decode on Lavalink, which answers `Could not decode the provided track`, so the guild would come back without its track, and the rest of its queue would fail the same way. The filters differ too, NodeLink has filters Lavalink lacks and accepts values Lavalink refuses, and the mix and the crossfade only exist on NodeLink. To fail over, run at least two nodes of the same kind.
+
 ## The node gives up
 
 When `MaxReconnectAttempts` runs out, or the first connect fails for good, `NodeDisconnected` is raised with `Final = true`, and the node stops trying. `args.Exception` has the last error.

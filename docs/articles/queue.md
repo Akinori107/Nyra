@@ -39,7 +39,7 @@ The queue moves on by itself when a track finishes or fails to load, not when yo
 
 A node that resumes its session leaves the queue as it is. When it loses the session, the connection is restored with an empty player. If `NodeOptions.RescuePlayback` sent the track again the queue goes on, and if `PlaybackResent` is false the queue is cleared and its loop mode goes back to `Off`.
 
-The queue belongs to the guild connection. A guild that leaves and joins again, or moves to another node, gets a new connection and a new, empty queue. When a connection is invalidated its queue is cleared and every call on it throws.
+The queue belongs to the guild connection. A guild that leaves and joins again gets a new connection and a new, empty queue. A guild that `FailoverAfter` moves to another node keeps its queue, unless the track could not be sent to the new node, then it is cleared like after a restore. When a connection is invalidated its queue is cleared and every call on it throws.
 
 ## Gapless and crossfade
 

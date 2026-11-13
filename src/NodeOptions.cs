@@ -38,6 +38,24 @@ public sealed record NodeOptions
     public TimeSpan RescueTimeout { get; init; } = TimeSpan.FromMinutes(3);
 
     /// <summary>
+    /// How long the node can stay down before its guild connections move to another node of the extension, off
+    /// by default.
+    /// </summary>
+    /// <remarks>
+    /// Counted from the moment the node dropped, a node that is ready again before that keeps its connections.
+    /// Each connection moves to the best ready node of the same kind, see <see cref="NyraExtension.GetNode()"/>,
+    /// and the bot stays in its voice channel. The track goes on from where it was, with what <see
+    /// cref="RescuePlayback"/> sends back even when it is off, and the <see cref="Queue.GuildQueue"/> follows it.
+    /// The old connection raises <see cref="GuildConnection.GuildConnectionMigrated"/> with the new one. A
+    /// connection never moves between NodeLink and Lavalink, a track one encoded may not decode on the other, so
+    /// it waits until a node of its kind is ready. Nyra cannot tell a dead node from a lost websocket, so a node
+    /// that was still playing loses its connections too, and the players it has when it comes back are
+    /// destroyed. <see cref="TimeSpan.Zero"/> moves as soon as the node drops. <see
+    /// cref="Timeout.InfiniteTimeSpan"/>, the default, never moves.
+    /// </remarks>
+    public TimeSpan FailoverAfter { get; init; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
     /// How long a guild connection can go without a track before it leaves its voice channel, off by default.
     /// </summary>
     /// <remarks>

@@ -248,20 +248,25 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
     /// returned when it is the only ready node. Null while no node is ready.
     /// </remarks>
     /// <returns>The best node, null while none is ready.</returns>
-    public Node? GetNode()
+    public Node? GetNode() => GetNode(null);
+
+    internal Node? GetNode(
+        Func<Node, bool>? eligible,
+        IReadOnlyDictionary<Node, int>? pending = null
+    )
     {
         Node? best = null;
         (int Rank, double Load) bestScore = (int.MaxValue, double.MaxValue);
         lock (_lock)
             foreach (var node in _nodes)
             {
-                if (!node.IsReady)
+                if (!node.IsReady || eligible?.Invoke(node) == false)
                     continue;
 
                 var stats = node.Stats;
                 var score = (
                     (node.RestDegraded ? 2 : 0) + (stats is null ? 1 : 0),
-                    stats is null ? 0 : Load(node, stats)
+                    stats is null ? 0 : Load(node, stats) + (pending?.GetValueOrDefault(node) ?? 0)
                 );
                 if (best is null || score.CompareTo(bestScore) < 0)
                 {
