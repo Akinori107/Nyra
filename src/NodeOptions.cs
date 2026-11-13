@@ -17,9 +17,10 @@ public sealed record NodeOptions
     /// </summary>
     /// <remarks>
     /// A last resort. When the connection is restored on the new session, Nyra sends the volume,
-    /// the filters, the track from where it was when the node dropped, and the pause back to the node. The
-    /// position is an estimate. What Nyra does not keep, like the end time, the audio track, the crossfade,
-    /// the ducking and the mix, is not restored, and a queue of your own is not affected. <see
+    /// the filters, the <see cref="GuildConnection.Effects"/>, the track from where it was when the node dropped
+    /// with its end time and audio track, and the pause back to the node. The position is an estimate. What Nyra
+    /// does not keep, like the mix, the SponsorBlock categories and the lyrics subscription, is not restored, and
+    /// a queue of your own is not affected. <see
     /// cref="Nyra.EventArgs.GuildConnectionRestoredEventArgs.PlaybackResent"/> says whether the track was sent
     /// again.
     /// </remarks>

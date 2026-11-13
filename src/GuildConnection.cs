@@ -44,6 +44,61 @@ public sealed class GuildConnection
             || (Filters.Volume is { } volume && volume != 1f);
     }
 
+    internal sealed record PlayerSettings(
+        Track? TrackOptionsFor = null,
+        long? EndTime = null,
+        string? AudioTrackId = null,
+        CrossfadeOptions? Crossfade = null,
+        bool? Ducking = null,
+        FadingOptions? Fading = null,
+        bool? LoudnessNormalizer = null
+    );
+
+    private readonly Lock _settingsLock = new();
+    private PlayerSettings _settings = new();
+
+    internal PlayerSettings Settings => Volatile.Read(ref _settings);
+
+    internal void RememberSettings(Func<PlayerSettings, PlayerSettings> change)
+    {
+        lock (_settingsLock)
+            Volatile.Write(ref _settings, change(_settings));
+    }
+
+    internal void RememberTrackOptions(Track? track, PlayOptions? options) =>
+        RememberSettings(settings =>
+            settings with
+            {
+                TrackOptionsFor = track,
+                EndTime = (long?)options?.EndTime?.TotalMilliseconds,
+                AudioTrackId = options?.AudioTrackId,
+            }
+        );
+
+    internal void RememberEndTime(Track? track, TimeSpan? endTime) =>
+        RememberSettings(settings =>
+            settings with
+            {
+                TrackOptionsFor = track,
+                EndTime = (long?)endTime?.TotalMilliseconds,
+                AudioTrackId =
+                    track is not null && IsSameTrack(settings.TrackOptionsFor, track)
+                        ? settings.AudioTrackId
+                        : null,
+            }
+        );
+
+    internal void RememberEffects(PlayerUpdatePayload payload) =>
+        RememberSettings(settings =>
+            settings with
+            {
+                Crossfade = payload.Crossfade ?? settings.Crossfade,
+                Ducking = payload.Ducking ?? settings.Ducking,
+                Fading = payload.Fading ?? settings.Fading,
+                LoudnessNormalizer = payload.LoudnessNormalizer ?? settings.LoudnessNormalizer,
+            }
+        );
+
     private static readonly TimeSpan VoiceCloseGracePeriod = TimeSpan.FromSeconds(2);
 
     private static readonly TimeSpan ForwardActivityWindow = TimeSpan.FromSeconds(5);
@@ -630,7 +685,8 @@ public sealed class GuildConnection
                 await ResendInOneUpdateAsync(attempts[i], voice).ConfigureAwait(false);
                 return attempts[i].Track is not null;
             }
-            catch (RestException exception) when (i < attempts.Count - 1)
+            catch (RestException exception)
+                when (i < attempts.Count - 1 || Settings != new PlayerSettings())
             {
                 Node.HandleError(
                     new InvalidOperationException(
@@ -639,6 +695,11 @@ public sealed class GuildConnection
                     )
                 );
                 ResetPlayerState();
+                if (i == attempts.Count - 1)
+                {
+                    RememberSettings(_ => new PlayerSettings());
+                    attempts.Add(attempts[i]);
+                }
             }
     }
 
@@ -655,6 +716,7 @@ public sealed class GuildConnection
             Volatile.Read(ref source._observedSelfMute)
         );
         _pausedWhenAlone = source._pausedWhenAlone;
+        Volatile.Write(ref _settings, source.Settings);
     }
 
     internal async Task<bool> TryRestoreAsync()
@@ -848,6 +910,12 @@ public sealed class GuildConnection
                 Playback.StampPauseRequested();
         }
 
+        var settings = Settings;
+        var sameTrack =
+            trackUpdate is not null && IsSameTrack(settings.TrackOptionsFor, snapshot.Track!);
+        if (sameTrack)
+            trackUpdate = trackUpdate! with { AudioTrackId = settings.AudioTrackId };
+
         var requestTick = Node.Time.GetMilliseconds();
 
         var player = await Patches
@@ -861,7 +929,12 @@ public sealed class GuildConnection
                             Position = startMilliseconds,
                             Volume = volume,
                             Paused = trackUpdate is not null && snapshot.Paused ? true : null,
+                            EndTime = sameTrack ? settings.EndTime : null,
                             Filters = filters,
+                            Fading = settings.Fading,
+                            LoudnessNormalizer = settings.LoudnessNormalizer,
+                            Ducking = settings.Ducking,
+                            Crossfade = settings.Crossfade,
                             Voice = voice,
                         },
                         ct,

@@ -36,12 +36,9 @@ public sealed class GuildEffects
         );
         _connection.EnsureActive();
 
-        await _connection
-            .Patches.UpdateAsync(
-                new PlayerUpdatePayload { Fading = options ?? new FadingOptions() },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var payload = new PlayerUpdatePayload { Fading = options ?? new FadingOptions() };
+        await _connection.Patches.UpdateAsync(payload, cancellationToken).ConfigureAwait(false);
+        _connection.RememberEffects(payload);
     }
 
     /// <summary>Turns loudness normalization on or off.</summary>
@@ -129,5 +126,6 @@ public sealed class GuildEffects
         _connection.EnsureActive();
 
         await _connection.Patches.UpdateAsync(payload, cancellationToken).ConfigureAwait(false);
+        _connection.RememberEffects(payload);
     }
 }
