@@ -15,8 +15,9 @@ namespace Nyra.Queue;
 /// is cleared and every call on it throws <see cref="InvalidOperationException"/>.
 /// <para>
 /// When the node loses its session and the connection is restored without the track being sent again, the new
-/// player is empty, so the queue is cleared and its loop mode goes back to <see cref="LoopMode.Off"/>. A node
-/// that resumes its session leaves the queue as it is.
+/// player is empty, so the queue is cleared and its loop mode goes back to <see cref="LoopMode.Off"/>. A queue
+/// that had nothing playing, like when the node dropped between two tracks, keeps its tracks and plays the next
+/// one. A node that resumes its session leaves the queue as it is.
 /// </para>
 /// <para>
 /// Calls that change the queue run one at a time. Handlers of its events run in the order they were added, outside
@@ -264,6 +265,7 @@ public sealed class GuildQueue
 
         (GuildConnection Connection, bool Resent)? moved;
         var notes = new QueueNotes();
+        var resume = false;
         await queue._gate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -283,6 +285,7 @@ public sealed class GuildQueue
                 {
                     Interlocked.Exchange(ref queue._expectingSuccessor, 0);
                     queue._preloader.Forget();
+                    resume = !handedOver.Resent && !queue._state.Upcoming.IsEmpty;
                 }
                 else
                     queue.Reset(QueueState.Empty, notes);
@@ -295,6 +298,8 @@ public sealed class GuildQueue
 
         if (moved is not null)
             await queue.FlushAsync(notes).ConfigureAwait(false);
+        if (resume)
+            _ = queue.ResumeAfterLossAsync();
         return moved;
     }
 
@@ -805,13 +810,17 @@ public sealed class GuildQueue
             return;
 
         var notes = new QueueNotes();
+        var resume = false;
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
             if (_detached)
                 return;
 
-            Reset(QueueState.Empty, notes);
+            if (_state.Current is null)
+                resume = !_state.Upcoming.IsEmpty;
+            else
+                Reset(QueueState.Empty, notes);
         }
         finally
         {
@@ -819,6 +828,20 @@ public sealed class GuildQueue
         }
 
         await FlushAsync(notes).ConfigureAwait(false);
+        if (resume)
+            await ResumeAfterLossAsync().ConfigureAwait(false);
+    }
+
+    private async Task ResumeAfterLossAsync()
+    {
+        try
+        {
+            await AdvanceAsync(null, failed: false).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Connection.Node.HandleError(exception);
+        }
     }
 
     private async Task OnInvalidatedAsync(object? sender, GuildConnectionInvalidatedEventArgs args)
