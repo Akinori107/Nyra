@@ -435,8 +435,8 @@ internal sealed class NodeConnection(
 
                 string? LogFailure(
                     Exception exception,
-                    TimeSpan? retryIn = null,
-                    string? attemptText = null
+                    bool retrying = false,
+                    int? gaveUpAfter = null
                 ) =>
                     ConnectionFailure.Log(
                         node.Logger,
@@ -444,8 +444,8 @@ internal sealed class NodeConnection(
                         node.Endpoint,
                         initial: !wasEverConnected,
                         exception,
-                        retryIn,
-                        attemptText,
+                        retrying,
+                        gaveUpAfter,
                         lastFailureKey
                     );
 
@@ -458,7 +458,10 @@ internal sealed class NodeConnection(
                     )
                     {
                         if (failure is not null)
-                            LogFailure(failure);
+                            LogFailure(
+                                failure,
+                                gaveUpAfter: Volatile.Read(ref _attemptsSinceReady)
+                            );
                         EndSupervision(generation);
                         if (_generation != generation)
                             return;
@@ -478,20 +481,19 @@ internal sealed class NodeConnection(
                         node.Options.MaxReconnectAttempts < 0
                             ? attempt.ToString(CultureInfo.InvariantCulture)
                             : $"{attempt}/{node.Options.MaxReconnectAttempts}";
-                    if (failure is null)
-                        try
-                        {
-                            node.Logger?.LogDebug(
-                                LogEvents.Node,
-                                "Node {NodeName} reconnecting in {Delay} (attempt {Attempt}).",
-                                node.Name,
-                                shownDelay,
-                                attemptText
-                            );
-                        }
-                        catch { }
-                    else
-                        lastFailureKey = LogFailure(failure, shownDelay, attemptText);
+                    if (failure is not null)
+                        lastFailureKey = LogFailure(failure, retrying: true);
+                    try
+                    {
+                        node.Logger?.LogDebug(
+                            LogEvents.Node,
+                            "Node {NodeName} retrying in {Delay} (attempt {Attempt}).",
+                            node.Name,
+                            shownDelay,
+                            attemptText
+                        );
+                    }
+                    catch { }
                     failure = null;
 
                     try

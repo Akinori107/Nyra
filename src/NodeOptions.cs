@@ -115,7 +115,8 @@ public sealed record NodeOptions
     /// How long to wait for Discord's voice state and voice server updates before a handshake fails.
     /// </summary>
     /// <remarks>
-    /// It also covers sending the join and leave updates to the gateway.
+    /// It also covers sending the join and leave updates of a connect or a disconnect to the gateway. The join
+    /// that rejoins the channel after Discord closed the voice connection waits for the gateway instead.
     /// </remarks>
     public TimeSpan VoiceHandshakeTimeout { get; init; } = TimeSpan.FromSeconds(10);
 

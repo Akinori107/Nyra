@@ -682,7 +682,7 @@ public sealed class GuildConnection
         if (snapshot.Track is not null || snapshot.HasFilters)
             attempts.Add(snapshot with { Track = null, Filters = new() });
 
-        for (var i = 0; ; i++)
+        for (var i = 0; ; )
             try
             {
                 await ResendInOneUpdateAsync(attempts[i], voice).ConfigureAwait(false);
@@ -698,11 +698,16 @@ public sealed class GuildConnection
                     )
                 );
                 ResetPlayerState();
-                if (i == attempts.Count - 1)
-                {
+                var dropSettings =
+                    Settings != new PlayerSettings()
+                    && (
+                        i == attempts.Count - 1
+                        || (attempts[i].Track is not null && attempts[i + 1].Track is null)
+                    );
+                if (dropSettings)
                     RememberSettings(_ => new PlayerSettings());
-                    attempts.Add(attempts[i]);
-                }
+                else
+                    i++;
             }
     }
 
@@ -1004,10 +1009,12 @@ public sealed class GuildConnection
     {
         Dispatch(WebSocketClosed, eventArgs);
 
-        if (!Node.IsNodeLink || eventArgs.ByRemote)
+        var nodeLink = Node.IsNodeLink;
+        if (!nodeLink || eventArgs.ByRemote)
             _ = DisconnectAfterVoiceClosedWithGraceAsync(
                 eventArgs.Code,
-                Node.Time.GetMilliseconds()
+                Node.Time.GetMilliseconds(),
+                nodeLink
             );
     }
 
@@ -1016,7 +1023,11 @@ public sealed class GuildConnection
     internal void ReanchorTimescaleUnderLock(TimescaleFilter? oldTimescale) =>
         Playback.OnTimescaleChangedUnderLock(oldTimescale);
 
-    private async Task DisconnectAfterVoiceClosedWithGraceAsync(int? closeCode, long closeTick)
+    private async Task DisconnectAfterVoiceClosedWithGraceAsync(
+        int? closeCode,
+        long closeTick,
+        bool nodeLink
+    )
     {
         var transientClose = closeCode is 4009 or 4015 or 4022;
 
@@ -1033,7 +1044,7 @@ public sealed class GuildConnection
         var suppress =
             !_voiceForward.HasPending
             && (
-                (transientClose || Node.IsNodeLink)
+                (transientClose || nodeLink)
                     ? Node.Time.GetMilliseconds() - lastForwardTick
                         < VoiceCloseGracePeriod.TotalMilliseconds
                             + ForwardActivityWindow.TotalMilliseconds

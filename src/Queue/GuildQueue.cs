@@ -279,7 +279,7 @@ public sealed class GuildQueue
 
                 queue.Connection = handedOver.Connection;
                 queue.Subscribe(handedOver.Connection);
-                if (handedOver.Resent)
+                if (handedOver.Resent || queue._state.Current is null)
                 {
                     Interlocked.Exchange(ref queue._expectingSuccessor, 0);
                     queue._preloader.Forget();

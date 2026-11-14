@@ -445,7 +445,7 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
                         )
                         : null;
 
-                var compensationCts = new CancellationTokenSource(timeout);
+                var compensationCts = new CancellationTokenSource(timeout, _time);
                 var leaveSend = SendVoiceUpdateSafely(client, guildId, null, compensationCts.Token);
 
                 _ = ObserveCompensationAsync(
@@ -471,7 +471,7 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
 
         try
         {
-            using var leaveCts = new CancellationTokenSource(timeout);
+            using var leaveCts = new CancellationTokenSource(timeout, _time);
             var leaveSend = SendVoiceUpdateSafely(client, guildId, null, leaveCts.Token);
             try
             {

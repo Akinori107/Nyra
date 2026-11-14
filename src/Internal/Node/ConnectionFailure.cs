@@ -20,8 +20,8 @@ internal static partial class ConnectionFailure
         Endpoint endpoint,
         bool initial,
         Exception exception,
-        TimeSpan? retryIn = null,
-        string? attempt = null,
+        bool retrying = false,
+        int? gaveUpAfter = null,
         string? previous = null
     )
     {
@@ -31,16 +31,20 @@ internal static partial class ConnectionFailure
         void Write(LogLevel level, Exception? error, string template, params object?[] args)
         {
             key = $"{template}|{string.Join('|', args)}";
-            var repeated = key == previous;
-            if (repeated)
-                level = LogLevel.Debug;
-
-            if (retryIn is { } delay && repeated)
+            if (gaveUpAfter is { } attempts)
             {
-                template += " Retrying in {Delay} (attempt {Attempt}).";
-                args = [.. args, delay, attempt];
+                level = LogLevel.Error;
+                if (attempts > 1)
+                {
+                    template += " Gave up after {Attempts} attempts.";
+                    args = [.. args, attempts];
+                }
+                else
+                    template += " Gave up.";
             }
-            else if (retryIn is not null)
+            else if (key == previous)
+                return;
+            else if (retrying)
                 template += " Retrying.";
 
             logger?.Log(level, LogEvents.Node, error, template, args);

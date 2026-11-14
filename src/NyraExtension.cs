@@ -266,7 +266,8 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
                 var stats = node.Stats;
                 var score = (
                     (node.RestDegraded ? 2 : 0) + (stats is null ? 1 : 0),
-                    stats is null ? 0 : Load(node, stats) + (pending?.GetValueOrDefault(node) ?? 0)
+                    (stats is null ? 0 : Load(node, stats))
+                        + (pending?.GetValueOrDefault(node) ?? 0)
                 );
                 if (best is null || score.CompareTo(bestScore) < 0)
                 {
