@@ -4,18 +4,16 @@ namespace Nyra.Entities.Filters;
 
 /// <summary>Repeats the audio after a delay.</summary>
 /// <remarks>
-/// NodeLink only. An instance with every member null is rejected, the delay and mix both read as their
-/// rejected 0.0 neutral.
+/// NodeLink only. An instance with every member null is rejected.
 /// </remarks>
 /// <param name="DelayMilliseconds">
-/// Echo delay in milliseconds, greater than 0 (null is sent as 0 and rejected). The server clamps values above
-/// its maximum.
+/// Echo delay in milliseconds, greater than 0, null is rejected.
 /// </param>
 /// <param name="Feedback">How much of the echo is fed back in, 0.0-1.0.</param>
 /// <param name="Mix">
-/// Echo loudness, 0.0-1.0. 0.0 leaves the block inactive and is rejected, and so is null (sent as 0).
+/// Echo loudness, 0.0-1.0. 0.0 and null are rejected.
 /// </param>
-/// <param name="Transition">Fades the filter in or out instead of stepping. Parameter changes still step.</param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record EchoFilter(
     [property: JsonPropertyName("delay")] float? DelayMilliseconds = null,
     [property: JsonPropertyName("feedback")] float? Feedback = null,

@@ -22,9 +22,7 @@ public sealed class GuildMix
     /// cref="MixLayer.Id"/> changes or stops it later.
     /// </summary>
     /// <remarks>
-    /// Preconditions the server enforces with a 500 or a 403, the player must have an active stream, the layer
-    /// count must be under its cap, the mix toggle must be on. A paused or trackless player answers 500, the
-    /// toggle off answers 403.
+    /// The main track must be playing and the server must allow mixing.
     /// </remarks>
     /// <param name="track">The track the layer plays.</param>
     /// <param name="volume">How loud the layer plays, 0.0-1.0.</param>

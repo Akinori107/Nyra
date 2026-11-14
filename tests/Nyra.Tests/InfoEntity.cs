@@ -112,8 +112,10 @@ public sealed class InfoEntity
             await Assert.That(version!.Equals(null)).IsFalse();
             await Assert.That(version!.GetHashCode()).IsEqualTo(echo!.GetHashCode());
         }
-        var parsed = version!.Parsed;
-        await Assert.That(parsed?.ToString().StartsWith("3.9.1")).IsTrue();
+        var parsed = version.Parsed;
+        await Assert
+            .That(parsed?.ToString().StartsWith("3.9.1", StringComparison.Ordinal))
+            .IsTrue();
         var dev = JsonSerializer.Deserialize<NodeInfoVersion>(
             """{"semver":"commit-hash","major":0,"minor":0,"patch":0}""",
             NodeLink

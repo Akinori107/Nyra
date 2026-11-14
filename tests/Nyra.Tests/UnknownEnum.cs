@@ -29,7 +29,7 @@ public sealed class UnknownEnum
             """{"loadType":"brand-new","data":null}""",
             Lavalink
         );
-        await Assert.That(load).IsTypeOf<LoadResult.LoadFailed>();
+        await Assert.That(load).IsTypeOf<LoadFailed>();
     }
 
     [Test]

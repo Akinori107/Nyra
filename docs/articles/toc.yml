@@ -2,6 +2,8 @@
   href: getting-started.md
 - name: Adapters
   href: adapters.md
+- name: Queue
+  href: queue.md
 - name: When a connection breaks
   href: connection.md
 - name: Lavalink and NodeLink

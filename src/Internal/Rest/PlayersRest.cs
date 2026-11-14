@@ -18,7 +18,7 @@ internal sealed class PlayersRest
             var json = await _rest
                 .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            return _rest.Deserialize<Player>(json, path, options);
+            return RestClient.Deserialize<Player>(json, path, options);
         }
         catch (RestException exception) when (RestClient.IndicatesMissingResource(exception))
         {
@@ -30,7 +30,8 @@ internal sealed class PlayersRest
         ulong guildId,
         TPayload payload,
         CancellationToken cancellationToken,
-        bool noReplace = false
+        bool noReplace = false,
+        TimeSpan? timeout = null
     )
     {
         var body = NyraJson.SerializeToUtf8Bytes(payload, _rest.Options);
@@ -40,6 +41,7 @@ internal sealed class PlayersRest
                 BuildPlayerPath(guildId) + (noReplace ? "?noReplace=true" : string.Empty),
                 "player response",
                 body,
+                timeout ?? RestClient.RequestTimeout,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -59,7 +61,7 @@ internal sealed class PlayersRest
         var json = await _rest
             .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        return _rest.DeserializeList<Player>(json, path, options);
+        return RestClient.DeserializeList<Player>(json, path, options);
     }
 
     private string BuildPlayersPath() => _rest.SessionPath(Routes.Players);

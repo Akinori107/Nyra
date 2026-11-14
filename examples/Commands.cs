@@ -1,11 +1,14 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
+using Microsoft.Extensions.Logging;
 using Nyra.DiscordNet;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
+using Nyra.Queue;
 
 namespace Nyra.Examples;
 
@@ -13,6 +16,15 @@ namespace Nyra.Examples;
 internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionContext>
 {
     private const int QueuePageSize = 10;
+
+    private static readonly ConditionalWeakTable<
+        GuildQueue,
+        StrongBox<IMessageChannel>
+    > QueueChannels = [];
+    private static readonly Lock QueueChannelsGate = new();
+    private static readonly AsyncLocal<bool> InCommand = new();
+
+    public static ILogger? Logger { get; set; }
 
     [SlashCommand("join", "Join your voice channel")]
     public async Task JoinAsync()
@@ -32,7 +44,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
             return;
 
-        Queue.For(connection).Reset();
+        await connection.UseQueue().StopAsync().ConfigureAwait(false);
         await connection.DisconnectAsync().ConfigureAwait(false);
         await RespondAsync("Left the voice channel.").ConfigureAwait(false);
     }
@@ -59,7 +71,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
 
         var result = await connection.Node.LoadTracksAsync(query, searchType).ConfigureAwait(false);
 
-        if (result is LoadResult.LoadFailed { Error.Message: { } failure })
+        if (result is LoadFailed { Error.Message: { } failure })
         {
             await FailDeferredAsync($"Couldn't load that track: {failure}").ConfigureAwait(false);
             return;
@@ -72,7 +84,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
             return;
         }
 
-        var summary = result is LoadResult.PlaylistLoaded { PlaylistInfo: var info }
+        var summary = result is PlaylistLoaded { PlaylistInfo: var info }
             ? $"Added {tracks.Count} tracks from {info.Name} to the queue."
             : $"Added {tracks[0].Info.Title} to the queue.";
         await EnqueueAsync(connection, tracks, summary).ConfigureAwait(false);
@@ -101,7 +113,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
             return;
 
         var result = await connection.Node.LoadTracksAsync(name, searchType).ConfigureAwait(false);
-        if (result is not LoadResult.SearchLoaded { Tracks: { Count: > 0 } found })
+        if (result is not SearchLoaded { Tracks: { Count: > 0 } found })
         {
             await FailDeferredAsync($"No results found for {name}.").ConfigureAwait(false);
             return;
@@ -153,6 +165,42 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
             .ConfigureAwait(false);
     }
 
+    [SlashCommand("history", "See the songs that played before")]
+    public async Task ShowHistoryAsync()
+    {
+        if (await RequireConnectionAsync().ConfigureAwait(false) is not { } connection)
+            return;
+
+        var history = connection.UseQueue().History;
+        if (history.Count == 0)
+        {
+            await ReplyEphemeralAsync("Nothing has played yet.").ConfigureAwait(false);
+            return;
+        }
+
+        var embed = new EmbedBuilder
+        {
+            Title = "History",
+            Description = string.Join(
+                '\n',
+                history
+                    .Reverse()
+                    .Take(QueuePageSize)
+                    .Select((track, index) => $"{index + 1}. {track.Info.Title}")
+            ),
+            Color = new Color(0x5865F2),
+            Footer =
+                history.Count > QueuePageSize
+                    ? new EmbedFooterBuilder
+                    {
+                        Text = $"Showing the last {QueuePageSize} of {history.Count}",
+                    }
+                    : null,
+        }.Build();
+
+        await RespondAsync(embed: embed, ephemeral: true).ConfigureAwait(false);
+    }
+
     [SlashCommand("skip", "Skip to the next song")]
     public async Task SkipAsync(
         [Summary("number", "A number from /queue to jump to")]
@@ -170,8 +218,9 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
             return;
         }
 
+        InCommand.Value = true;
         if (
-            await Queue.For(connection).SkipAsync((int)number).ConfigureAwait(false) is not { } next
+            await connection.UseQueue().SkipAsync((int)number).ConfigureAwait(false) is not { } next
         )
         {
             await ReplyEphemeralAsync(
@@ -186,13 +235,103 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         await RespondAsync($"Skipped. Now playing: {next.Info.Title}").ConfigureAwait(false);
     }
 
+    [SlashCommand("shuffle", "Shuffle the songs that are next")]
+    public async Task ShuffleAsync(
+        [Summary("continuous", "Keep picking at random, songs added later included")]
+            bool? continuous = null
+    )
+    {
+        if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
+            return;
+
+        var queue = connection.UseQueue();
+        if (continuous is { } enabled)
+        {
+            queue.Shuffle = enabled;
+            await RespondAsync(enabled ? "Shuffle is on." : "Shuffle is off.")
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await queue.ShuffleAsync().ConfigureAwait(false);
+        await RespondAsync("Shuffled the queue.").ConfigureAwait(false);
+    }
+
+    [SlashCommand("remove", "Remove a song from the queue")]
+    public async Task RemoveAsync(
+        [Summary("number", "A number from /queue")] [MinValue(1)] [MaxValue(1000)] long number
+    )
+    {
+        if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
+            return;
+
+        if (
+            await connection.UseQueue().RemoveAsync((int)number - 1).ConfigureAwait(false)
+            is not { } removed
+        )
+        {
+            await ReplyEphemeralAsync($"There's no song number {number} in the queue.")
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await RespondAsync($"Removed {removed.Info.Title}.").ConfigureAwait(false);
+    }
+
+    [SlashCommand("move", "Move a song to another place in the queue")]
+    public async Task MoveAsync(
+        [Summary("from", "A number from /queue")] [MinValue(1)] [MaxValue(1000)] long from,
+        [Summary("to", "The number it should have")] [MinValue(1)] [MaxValue(1000)] long to
+    )
+    {
+        if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
+            return;
+
+        if (
+            !await connection.UseQueue().MoveAsync((int)from - 1, (int)to - 1).ConfigureAwait(false)
+        )
+        {
+            await ReplyEphemeralAsync("Both numbers need to be in the queue.")
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await RespondAsync("Moved.").ConfigureAwait(false);
+    }
+
+    [SlashCommand("previous", "Go back to the song that played before")]
+    public async Task PreviousAsync()
+    {
+        if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
+            return;
+
+        InCommand.Value = true;
+        if (await connection.UseQueue().PreviousAsync().ConfigureAwait(false) is not { } previous)
+        {
+            await ReplyEphemeralAsync("There's no previous song.").ConfigureAwait(false);
+            return;
+        }
+
+        await RespondAsync($"Went back. Now playing: {previous.Info.Title}").ConfigureAwait(false);
+    }
+
+    [SlashCommand("clear", "Clear the queue and keep the current song")]
+    public async Task ClearAsync()
+    {
+        if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
+            return;
+
+        await connection.UseQueue().ClearAsync().ConfigureAwait(false);
+        await RespondAsync("Cleared the queue.").ConfigureAwait(false);
+    }
+
     [SlashCommand("loop", "Repeat the song or the whole queue")]
     public async Task LoopAsync([Summary("mode", "What to repeat")] LoopMode mode)
     {
         if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
             return;
 
-        Queue.For(connection).Loop = mode;
+        connection.UseQueue().Loop = mode;
 
         var reply = mode switch
         {
@@ -203,14 +342,23 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         await RespondAsync(reply).ConfigureAwait(false);
     }
 
+    [SlashCommand("autoplay", "Keep playing recommendations when the queue runs out")]
+    public async Task AutoplayAsync([Summary("enabled", "Turn autoplay on or off")] bool enabled)
+    {
+        if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
+            return;
+
+        connection.UseQueue().Autoplay = enabled;
+        await RespondAsync(enabled ? "Autoplay is on." : "Autoplay is off.").ConfigureAwait(false);
+    }
+
     [SlashCommand("stop", "Stop the music and clear the queue")]
     public async Task StopAsync()
     {
         if (await RequireControlAsync().ConfigureAwait(false) is not { } connection)
             return;
 
-        Queue.For(connection).Reset();
-        await connection.StopAsync().ConfigureAwait(false);
+        await connection.UseQueue().StopAsync().ConfigureAwait(false);
         await RespondAsync("Stopped.").ConfigureAwait(false);
     }
 
@@ -256,7 +404,6 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
 
         var target = TimeSpan.FromSeconds(Math.Max(0, requested));
         await connection.SeekAsync(target).ConfigureAwait(false);
-        await Queue.For(connection).PreloadNextAsync().ConfigureAwait(false);
         await RespondAsync(
                 $"Seeked to {FormatPosition(target)}/{FormatPosition(track.Info.Length)}."
             )
@@ -304,7 +451,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         );
         if (connection.Position is { } position)
             embed.AddField("Position", FormatPosition(position), inline: true);
-        await RespondAsync(embed: embed.Build()).ConfigureAwait(false);
+        await RespondAsync(embed: embed.Build(), ephemeral: true).ConfigureAwait(false);
     }
 
     [SlashCommand("filter", "Change how the music sounds")]
@@ -367,12 +514,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
             .Effects.SetCrossfadeAsync(new CrossfadeOptions { Enabled = enabled })
             .ConfigureAwait(false);
 
-        var queue = Queue.For(connection);
-        queue.Crossfade = enabled;
-        if (enabled)
-            await queue.PreloadNextAsync().ConfigureAwait(false);
-        else
-            await connection.Effects.SetNextTrackAsync(null).ConfigureAwait(false);
+        connection.UseQueue().PreloadNext = enabled;
 
         await RespondAsync($"Crossfade {(enabled ? "on" : "off")}.").ConfigureAwait(false);
     }
@@ -534,8 +676,8 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         int page
     )
     {
-        var queue = Queue.For(connection);
-        var upcoming = queue.Snapshot();
+        var queue = connection.UseQueue();
+        var upcoming = queue.Upcoming;
         var current = connection.CurrentTrack;
         if (current is null && upcoming.Count == 0)
             return null;
@@ -553,6 +695,11 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
                 .Select((track, index) => $"{page * QueuePageSize + index + 1}. {track.Info.Title}")
         );
 
+        var totalDuration = queue.TotalDuration;
+        var footer =
+            totalDuration > TimeSpan.Zero
+                ? $"Loop: {queue.Loop} - Total queue duration: {FormatPosition(totalDuration)}"
+                : $"Loop: {queue.Loop}";
         var embed = new EmbedBuilder
         {
             Title = "Queue",
@@ -560,10 +707,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
             Color = new Color(0x5865F2),
             Footer = new EmbedFooterBuilder
             {
-                Text =
-                    lastPage > 0
-                        ? $"Page {page + 1}/{lastPage + 1} - Loop: {queue.Loop}"
-                        : $"Loop: {queue.Loop}",
+                Text = lastPage > 0 ? $"Page {page + 1}/{lastPage + 1} - {footer}" : footer,
             },
         }.Build();
 
@@ -587,9 +731,9 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
     private static IReadOnlyList<Track> TracksToQueue(LoadResult result) =>
         result switch
         {
-            LoadResult.TrackLoaded loaded => [loaded.Track],
-            LoadResult.SearchLoaded { Tracks: [var first, ..] } => [first],
-            LoadResult.PlaylistLoaded playlist => playlist.Tracks,
+            TrackLoaded loaded => [loaded.Track],
+            SearchLoaded { Tracks: [var first, ..] } => [first],
+            PlaylistLoaded playlist => playlist.Tracks,
             _ => [],
         };
 
@@ -599,12 +743,10 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         string summary
     )
     {
-        var queue = Queue.For(connection);
-        queue.Announce = Context.Channel;
-        queue.Add(tracks);
-        var started = await queue.StartIfIdleAsync().ConfigureAwait(false);
-        await queue.PreloadNextAsync().ConfigureAwait(false);
-
+        var queue = connection.UseQueue();
+        FollowQueue(queue, Context.Channel);
+        InCommand.Value = true;
+        var started = await queue.EnqueueAsync(tracks).ConfigureAwait(false);
         var reply = started switch
         {
             null => summary,
@@ -612,6 +754,57 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
             _ => $"{summary}\nNow playing: {started.Info.Title}",
         };
         await EditResponseAsync(reply).ConfigureAwait(false);
+    }
+
+    private static void FollowQueue(GuildQueue queue, IMessageChannel channel)
+    {
+        lock (QueueChannelsGate)
+        {
+            if (QueueChannels.TryGetValue(queue, out var existing))
+            {
+                existing.Value = channel;
+                return;
+            }
+
+            var target = new StrongBox<IMessageChannel>(channel);
+            QueueChannels.Add(queue, target);
+            queue.Advanced += (_, args) =>
+                InCommand.Value
+                    ? Task.CompletedTask
+                    : SendAsync(target, $"Now playing: {args.Track.Info.Title}");
+            queue.TrackFailed += (_, args) =>
+                SendAsync(target, $"Couldn't play {args.Track.Info.Title}, skipping.");
+            queue.HandlerError += (_, args) =>
+            {
+                Logger?.LogWarning(args.Exception, "A queue handler threw");
+                return Task.CompletedTask;
+            };
+            queue.Connection.IdleTimedOut += (_, _) =>
+                SendAsync(target, "Left the voice channel, nothing was playing.");
+            queue.Connection.AloneTimedOut += (_, _) =>
+                SendAsync(target, "Left the voice channel, nobody was listening.");
+            queue.Connection.TrackException += (_, args) =>
+            {
+                Logger?.LogWarning(
+                    "Couldn't play {Track}: {Reason}",
+                    args.Track?.Info.Title ?? "the track",
+                    args.Exception.Message
+                );
+                return Task.CompletedTask;
+            };
+        }
+    }
+
+    private static async Task SendAsync(StrongBox<IMessageChannel> target, string message)
+    {
+        try
+        {
+            await target.Value!.SendMessageAsync(message).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Logger?.LogWarning(exception, "Couldn't send a message to the channel");
+        }
     }
 
     private async Task<SearchType?> ResolveSourceAsync(string? source)
@@ -647,7 +840,7 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
         await FollowupAsync(content, ephemeral: true).ConfigureAwait(false);
     }
 
-    private Task EditResponseAsync(string content) =>
+    private Task<IUserMessage> EditResponseAsync(string content) =>
         ModifyOriginalResponseAsync(properties => properties.Content = content);
 
     private static bool TryParseSeek(string input, out double seconds, out bool relative)
@@ -861,7 +1054,7 @@ internal sealed class TrackHandler : AutocompleteHandler
                 node is null
                 || await node.LoadTracksAsync(typed, searchType ?? SearchType.Auto)
                     .ConfigureAwait(false)
-                    is not LoadResult.SearchLoaded { Tracks: var tracks }
+                    is not SearchLoaded { Tracks: var tracks }
             )
                 return AutocompletionResult.FromSuccess([]);
 

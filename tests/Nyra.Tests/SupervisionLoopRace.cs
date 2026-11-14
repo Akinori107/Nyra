@@ -1,6 +1,3 @@
-using Microsoft.Extensions.Logging;
-using Nyra.Internal;
-
 namespace Nyra.Tests;
 
 public sealed class SupervisionLoopRace
@@ -14,8 +11,6 @@ public sealed class SupervisionLoopRace
         public required FakeBridge Bridge { get; init; }
 
         public required FakeNodeServer Server { get; init; }
-
-        public Task? ConnectTask { get; init; }
 
         public async ValueTask DisposeAsync()
         {
@@ -56,61 +51,26 @@ public sealed class SupervisionLoopRace
             }
         );
         extension.AddNode(node);
-        Task connectTask;
         if (suppressReady)
         {
-            connectTask = extension.ConnectAllNodesAsync();
+            _ = extension.ConnectAllNodesAsync();
             await Task.Delay(400).ConfigureAwait(false);
         }
         else
-        {
             await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-            connectTask = Task.CompletedTask;
-        }
         return new Stack
         {
             Extension = extension,
             Node = node,
             Bridge = bridge,
             Server = server,
-            ConnectTask = connectTask,
         };
-    }
-
-    private sealed class GenerationFlippingLogger : ILogger
-    {
-        private readonly NodeConnection _connection;
-        private readonly int _target;
-
-        public GenerationFlippingLogger(NodeConnection connection, int target)
-        {
-            _connection = connection;
-            _target = target;
-        }
-
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            var rendered = formatter(state, exception);
-            if (rendered.Contains("(attempt 1/1)", StringComparison.Ordinal))
-                Reflect.Field(_connection, "_generation", _target);
-        }
     }
 
     [Test]
     public async Task ReconnectDiscardedMidHandshake()
     {
-        var server = new FakeNodeServer { HandshakeDelay = TimeSpan.FromSeconds(2) };
+        var server = new FakeNodeServer { HandshakeDelay = TimeSpan.FromMilliseconds(500) };
         var stack = await StartAsync(server, name: "discard-mid").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
@@ -118,7 +78,7 @@ public sealed class SupervisionLoopRace
             await Task.Delay(200).ConfigureAwait(false);
 
             await stack.Node.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
-            await Task.Delay(2600).ConfigureAwait(false);
+            await Task.Delay(900).ConfigureAwait(false);
 
             await Assert.That(stack.Node.IsConnected).IsFalse();
         }

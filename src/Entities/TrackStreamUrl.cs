@@ -11,11 +11,11 @@ public sealed record TrackStreamUrl
     [JsonPropertyName("url"), JsonInclude]
     public string? Url { get; internal set; }
 
-    /// <summary>The streaming protocol, e.g. <c>http</c>, <c>sabr</c> or <c>hls</c>.</summary>
+    /// <summary>The streaming protocol, like <c>http</c>, <c>sabr</c> or <c>hls</c>.</summary>
     [JsonPropertyName("protocol"), JsonInclude]
     public string? Protocol { get; internal set; }
 
-    /// <summary>The media container format, e.g. <c>m4a</c> or <c>webm/opus</c>.</summary>
+    /// <summary>The media container format, like <c>m4a</c> or <c>webm/opus</c>.</summary>
     [JsonPropertyName("format"), JsonInclude]
     public string? Format { get; internal set; }
 
@@ -31,8 +31,7 @@ public sealed record TrackStreamUrl
     public string? HlsUrl { get; internal set; }
 
     /// <summary>
-    /// The itag actually resolved, echoed by the YouTube direct path, null when the answer is SABR, HLS, a
-    /// mirrored source or a non-YouTube source (which carry no itag at all).
+    /// The itag that was resolved, null when the source has none.
     /// </summary>
     [JsonPropertyName("itag"), JsonInclude]
     public int? Itag { get; internal set; }

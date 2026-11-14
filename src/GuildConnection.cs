@@ -14,24 +14,23 @@ namespace Nyra;
 /// </summary>
 public sealed class GuildConnection
 {
-    private readonly Node _node;
-    private readonly GuildFilters _filters;
-    private readonly GuildLyrics _lyrics;
-    private readonly GuildSponsorBlock _sponsorBlock;
-    private readonly GuildMix _mix;
-    private readonly GuildEffects _effects;
-    private readonly GuildPlayback _playback;
     private readonly GuildVoiceForwarder _voiceForward;
-    private readonly GuildPatches _patches;
-    private readonly GuildTeardown _teardown;
     private readonly GuildCommands _commands;
-    private readonly EventPump _pump;
     private readonly Func<Exception, System.EventArgs?, Task> _handlerError;
     private volatile bool _tearingDown;
     private volatile bool _restoring;
-    private RestoreSnapshot? _restoreSnapshot;
 
-    private sealed record RestoreSnapshot(
+    private readonly Lock _restoreLock = new();
+
+    private bool _restoreAgain;
+    private RestoreSnapshot? _restoreSnapshot;
+    private readonly GuildTimer _idleTimer;
+    private readonly GuildTimer _aloneTimer;
+    private readonly Lock _listenersLock = new();
+    private HashSet<ulong>? _listeners;
+    private volatile bool _pausedWhenAlone;
+
+    internal sealed record RestoreSnapshot(
         Track? Track,
         TimeSpan? Position,
         int Volume,
@@ -45,15 +44,76 @@ public sealed class GuildConnection
             || (Filters.Volume is { } volume && volume != 1f);
     }
 
+    internal sealed record PlayerSettings(
+        Track? TrackOptionsFor = null,
+        long? EndTime = null,
+        string? AudioTrackId = null,
+        CrossfadeOptions? Crossfade = null,
+        bool? Ducking = null,
+        FadingOptions? Fading = null,
+        bool? LoudnessNormalizer = null
+    );
+
+    private readonly Lock _settingsLock = new();
+    private PlayerSettings _settings = new();
+
+    internal PlayerSettings Settings => Volatile.Read(ref _settings);
+
+    internal void RememberSettings(Func<PlayerSettings, PlayerSettings> change)
+    {
+        lock (_settingsLock)
+            Volatile.Write(ref _settings, change(_settings));
+    }
+
+    internal void RememberTrackOptions(Track? track, PlayOptions? options) =>
+        RememberSettings(settings =>
+            settings with
+            {
+                TrackOptionsFor = track,
+                EndTime = (long?)options?.EndTime?.TotalMilliseconds,
+                AudioTrackId = options?.AudioTrackId,
+            }
+        );
+
+    internal void RememberEndTime(Track? track, TimeSpan? endTime) =>
+        RememberSettings(settings =>
+            settings with
+            {
+                TrackOptionsFor = track,
+                EndTime = (long?)endTime?.TotalMilliseconds,
+                AudioTrackId =
+                    track is not null && IsSameTrack(settings.TrackOptionsFor, track)
+                        ? settings.AudioTrackId
+                        : null,
+            }
+        );
+
+    internal void RememberEffects(PlayerUpdatePayload payload) =>
+        RememberSettings(settings =>
+            settings with
+            {
+                Crossfade = payload.Crossfade ?? settings.Crossfade,
+                Ducking = payload.Ducking ?? settings.Ducking,
+                Fading = payload.Fading ?? settings.Fading,
+                LoudnessNormalizer = payload.LoudnessNormalizer ?? settings.LoudnessNormalizer,
+            }
+        );
+
     private static readonly TimeSpan VoiceCloseGracePeriod = TimeSpan.FromSeconds(2);
 
     private static readonly TimeSpan ForwardActivityWindow = TimeSpan.FromSeconds(5);
 
     private static readonly TimeSpan VoiceRescueInterval = TimeSpan.FromSeconds(60);
 
+    private const int RescueJoinAttempts = 4;
+
     private long _voiceRescueTick = long.MinValue / 2;
 
     private int _voiceCloseHandling;
+
+    private readonly CancellationTokenSource _lifetime = new();
+
+    private long _lastVoiceConnectedTick = long.MinValue;
 
     private bool _observedSelfDeaf;
     private bool _observedSelfMute;
@@ -67,19 +127,21 @@ public sealed class GuildConnection
         string voiceToken
     )
     {
-        _node = node;
-        _filters = new GuildFilters(this);
-        _lyrics = new GuildLyrics(this);
-        _sponsorBlock = new GuildSponsorBlock(this);
-        _mix = new GuildMix(this);
-        _effects = new GuildEffects(this);
-        _playback = new GuildPlayback(this, node.Time);
+        Node = node;
+        Filters = new GuildFilters(this);
+        Lyrics = new GuildLyrics(this);
+        SponsorBlock = new GuildSponsorBlock(this);
+        Mix = new GuildMix(this);
+        Effects = new GuildEffects(this);
+        Playback = new GuildPlayback(this, node.Time);
         _voiceForward = new GuildVoiceForwarder(this);
-        _patches = new GuildPatches(this);
-        _teardown = new GuildTeardown(this);
+        Patches = new GuildPatches(this);
+        Teardown = new GuildTeardown(this);
         _commands = new GuildCommands(this);
-        _pump = new EventPump($"guild {guildId}", node.Logger, LogEvents.Playback);
+        Pump = new EventPump($"guild {guildId}", node.Logger, LogEvents.Playback);
         _handlerError = OnHandlerErrorAsync;
+        _idleTimer = new GuildTimer(node.Time, OnIdleTimerFired);
+        _aloneTimer = new GuildTimer(node.Time, OnAloneTimerFired);
         GuildId = guildId;
         ChannelId = channelId;
         VoiceSessionId = sessionId;
@@ -122,13 +184,13 @@ public sealed class GuildConnection
 
     internal bool IsTearingDown => _tearingDown;
 
-    internal GuildPatches Patches => _patches;
+    internal GuildPatches Patches { get; }
 
-    internal GuildTeardown Teardown => _teardown;
+    internal GuildTeardown Teardown { get; }
 
-    internal GuildPlayback Playback => _playback;
+    internal GuildPlayback Playback { get; }
 
-    internal EventPump Pump => _pump;
+    internal EventPump Pump { get; }
 
     internal Task RaiseInvalidatedAsync(ulong? lastChannelId) =>
         GuildConnectionInvalidated.RaiseAsync(
@@ -137,9 +199,13 @@ public sealed class GuildConnection
             _handlerError
         );
 
-    internal bool IsNodeLinkServer => _node.IsNodeLink;
-
-    internal void MarkTearingDown() => _tearingDown = true;
+    internal void MarkTearingDown()
+    {
+        _tearingDown = true;
+        _idleTimer.Stop();
+        _aloneTimer.Stop();
+        _lifetime.Cancel();
+    }
 
     private int _voiceLeaveClaimed;
 
@@ -151,35 +217,61 @@ public sealed class GuildConnection
 
     internal bool IsPlayerCommitted => _playerCommitted;
 
-    internal void CommitPlayerUpdate() => _playerCommitted = true;
+    internal void CommitPlayerUpdate()
+    {
+        _playerCommitted = true;
+        UpdateIdleTimer();
+        SyncListeners();
+    }
 
     /// <summary>The node this connection plays through.</summary>
-    public Node Node => _node;
+    public Node Node { get; }
 
-    internal TimeProvider Time => _node.Time;
+    internal TimeProvider Time => Node.Time;
 
     /// <summary>The audio filters of the connection.</summary>
-    public GuildFilters Filters => _filters;
+    public GuildFilters Filters { get; }
 
     /// <summary>The lyrics subscription of the connection.</summary>
-    public GuildLyrics Lyrics => _lyrics;
+    public GuildLyrics Lyrics { get; }
 
     /// <summary>The SponsorBlock settings of the connection.</summary>
-    public GuildSponsorBlock SponsorBlock => _sponsorBlock;
+    public GuildSponsorBlock SponsorBlock { get; }
 
     /// <summary>The mix layers of the connection.</summary>
-    public GuildMix Mix => _mix;
+    public GuildMix Mix { get; }
 
     /// <summary>The fading, ducking, loudness and crossfade effects of the connection.</summary>
-    public GuildEffects Effects => _effects;
+    public GuildEffects Effects { get; }
 
     /// <summary>The track currently loaded, or null when nothing is playing.</summary>
     /// <remarks>
-    /// A server-side destroy by another actor (a co-client) only raises <see cref="PlayerDestroyed"/>, it does
-    /// not clear this, the stale track lives on until the next play or a teardown resets it, and a later
-    /// PlayAsync re-creates the player.
+    /// A destroy by another client only raises <see cref="PlayerDestroyed"/> and keeps this track until the
+    /// next play or a teardown. A later PlayAsync creates the player again.
     /// </remarks>
-    public Track? CurrentTrack { get; internal set; }
+    public Track? CurrentTrack
+    {
+        get;
+        internal set
+        {
+            field = value;
+            UpdateIdleTimer();
+        }
+    }
+
+    /// <summary>
+    /// How many users who are not bots are in the voice channel with the bot, or null when the bridge does not
+    /// report it.
+    /// </summary>
+    /// <remarks>The built-in bridges report it from the library's cache, see <see cref="IVoiceListenerSource"/>.</remarks>
+    public int? Listeners
+    {
+        get
+        {
+            lock (_listenersLock)
+                return _listeners?.Count;
+        }
+    }
 
     /// <summary>The last player state reported by the server, or null when none arrived yet.</summary>
     public PlayerState? State { get; internal set; }
@@ -188,33 +280,23 @@ public sealed class GuildConnection
     public bool IsPaused { get; internal set; }
 
     /// <summary>
-    /// The player volume (0-1000), as last confirmed by the server, 100 is the default. The server enforces
-    /// the range, the read does not clamp.
+    /// The player volume (0-1000), as last confirmed by the server, 100 is the default.
     /// </summary>
     public int Volume { get; internal set; } = 100;
 
     /// <summary>
-    /// Estimated position, the last server report advanced by elapsed wall time while playing, scaled by the
-    /// applied timescale until the next report lands.
+    /// Estimated position, moved forward from the last server report while playing.
     /// </summary>
     /// <remarks>
-    /// The sustained pace follows the raw reports, which differ per server kind. NodeLink reports already
-    /// carry the timescale, Lavalink reports advance at wall time under one, so a timescale speed other than
-    /// one leaves the Lavalink estimate at wall pace. Reports arrive on the server's player update interval.
-    /// <para>
-    /// Null before the first report and after a disconnect, freezes at the final position after a natural
-    /// end.
-    /// </para>
+    /// Null before the first report and after a disconnect, and it stops at the end of a track that finished.
     /// </remarks>
-    public TimeSpan? Position => _playback.Position;
+    public TimeSpan? Position => Playback.Position;
 
     /// <summary>Raised when the server started playing the current track.</summary>
     public event AsyncEventHandler<TrackStartedEventArgs>? TrackStarted;
 
     /// <summary>
-    /// Raised when the current track ended, <see cref="TrackFinishedEventArgs.EndReason"/> says why, a null
-    /// <see cref="TrackFinishedEventArgs.Track"/> (NodeLink) may report a reset of an earlier playthrough,
-    /// see the remarks of that property.
+    /// Raised when the current track ended, <see cref="TrackFinishedEventArgs.EndReason"/> says why.
     /// </summary>
     public event AsyncEventHandler<TrackFinishedEventArgs>? TrackFinished;
 
@@ -228,18 +310,15 @@ public sealed class GuildConnection
 
     /// <summary>Raised on every position report of the player.</summary>
     /// <remarks>
-    /// Reports are skipped while the connection's event queue is more than 512 events behind (a stuck or slow
-    /// handler), the latest state is always available through <see cref="State"/> and <see cref="Position"/>.
+    /// Skipped while handlers are far behind, <see cref="State"/> and <see cref="Position"/> always hold the
+    /// latest.
     /// </remarks>
     public event AsyncEventHandler<PlayerUpdateEventArgs>? PlayerUpdated;
 
     /// <summary>Raised when the node's Discord voice websocket for this guild was closed.</summary>
     /// <remarks>
-    /// For NodeLink this also reports synthetic voice deaths (worker failure, UDP/IP-discovery loss) that
-    /// never closed a Discord websocket (see <see cref="WebSocketClosedEventArgs.Code"/>). NodeLink also
-    /// emits deaths that never came from Discord wearing Discord codes, for example 4015 when its voice
-    /// library gives up reconnecting and 4014 when the voice server endpoint is null. Do not attribute 4xxx to
-    /// Discord on NodeLink without checking the reason.
+    /// On NodeLink a close here does not always come from Discord, even with a 4xxx code. Check
+    /// <see cref="WebSocketClosedEventArgs.Reason"/> before blaming Discord.
     /// </remarks>
     public event AsyncEventHandler<WebSocketClosedEventArgs>? WebSocketClosed;
 
@@ -255,8 +334,7 @@ public sealed class GuildConnection
 
     /// <summary>Raised for every lyrics line that becomes current during playback.</summary>
     /// <remarks>
-    /// Lines are skipped while the connection's event queue is more than 512 events behind (a stuck or slow
-    /// handler).
+    /// Skipped while handlers are far behind.
     /// </remarks>
     public event AsyncEventHandler<LyricsLineEventArgs>? LyricsLine;
 
@@ -274,8 +352,7 @@ public sealed class GuildConnection
 
     /// <summary>Raised when a mix layer ended.</summary>
     /// <remarks>
-    /// NodeLink only. The FINISHED and MAIN_ENDED reasons only arrive when the server's mix auto-cleanup is
-    /// enabled, a layer that plays through with it off ends through the mixer's teardown instead.
+    /// NodeLink only. Some reasons only arrive when the server's mix auto-cleanup is on.
     /// </remarks>
     public event AsyncEventHandler<MixEndedEventArgs>? MixEnded;
 
@@ -299,9 +376,9 @@ public sealed class GuildConnection
 
     /// <summary>Raised when the server created the player.</summary>
     /// <remarks>
-    /// NodeLink only. The creation this connection's own join caused races the return of the connect and
-    /// usually fires before any handler can subscribe, so treat the connect's completion as the creation
-    /// signal. This event only reports creations by other actors (a co-client, a re-creation after a resume).
+    /// NodeLink only. The player created by the join usually fires before a handler can subscribe, so treat the
+    /// end of the connect as the creation. This event reports the other creations, like another client or a
+    /// re-creation after a resume.
     /// </remarks>
     public event AsyncEventHandler<PlayerCreatedEventArgs>? PlayerCreated;
 
@@ -310,10 +387,8 @@ public sealed class GuildConnection
     /// connection's own REST teardown (DisconnectAsync).
     /// </summary>
     /// <remarks>
-    /// A destroy frame queued by a kick or pass can still drain through this connection, and a successor
-    /// connection of the same guild can observe a stale frame of a predecessor's teardown. The destroy is a
-    /// notification only, the connection's playback half (track, position estimate, filters) keeps its last
-    /// state until the next play or a teardown resets it. NodeLink only.
+    /// NodeLink only. A new connection of the same guild can still get a late destroy from the one before it.
+    /// The destroy is only a notice, the track, position and filters stay until the next play or a teardown.
     /// </remarks>
     public event AsyncEventHandler<PlayerDestroyedEventArgs>? PlayerDestroyed;
 
@@ -329,23 +404,48 @@ public sealed class GuildConnection
     /// the bot stays in its voice channel.
     /// </summary>
     /// <remarks>
-    /// The new player is empty, the track, the volume and the filters are gone, start playing again. Calls made
+    /// The new player is empty unless <see cref="NodeOptions.RescuePlayback"/> sent the track again. Calls made
     /// while the restore runs throw <see cref="InvalidOperationException"/>.
     /// </remarks>
     public event AsyncEventHandler<GuildConnectionRestoredEventArgs>? GuildConnectionRestored;
 
+    /// <summary>
+    /// Raised when the node stayed down for <see cref="NodeOptions.FailoverAfter"/> and this guild moved to
+    /// another node, the bot stays in its voice channel.
+    /// </summary>
+    /// <remarks>
+    /// This connection is torn down and every call on it throws, subscribe to the events of the new connection
+    /// in <see cref="GuildConnectionMigratedEventArgs.Connection"/>.
+    /// </remarks>
+    public event AsyncEventHandler<GuildConnectionMigratedEventArgs>? GuildConnectionMigrated;
+
+    /// <summary>
+    /// Raised when the connection went <see cref="NodeOptions.IdleTimeout"/> without a track, right before it
+    /// disconnects.
+    /// </summary>
+    /// <remarks>A handler that starts a track keeps the connection.</remarks>
+    public event AsyncEventHandler<GuildConnectionIdleEventArgs>? IdleTimedOut;
+
+    /// <summary>Raised when <see cref="Listeners"/> changes.</summary>
+    public event AsyncEventHandler<GuildConnectionListenersEventArgs>? ListenersChanged;
+
+    /// <summary>
+    /// Raised when the connection went <see cref="NodeOptions.AloneTimeout"/> without <see cref="Listeners"/>,
+    /// right before it disconnects.
+    /// </summary>
+    /// <remarks>The connection stays when someone joined while the handlers ran.</remarks>
+    public event AsyncEventHandler<GuildConnectionListenersEventArgs>? AloneTimedOut;
+
     /// <summary>The voice connection dropped and is being re-established.</summary>
     /// <remarks>
-    /// NodeLink only. The server dispatches this per re-establishment attempt, one reconnect with an
-    /// intermediate failure can carry more than one raise.
+    /// NodeLink only. Raised once per retry.
     /// </remarks>
     public event AsyncEventHandler<PlayerReconnectingEventArgs>? PlayerReconnecting;
 
     /// <summary>The voice connection became established.</summary>
     /// <remarks>
-    /// NodeLink only. The establishment of the join itself can dispatch before a handler can attach (the
-    /// connect's roundtrip races the voice websocket), the reliable signal for the first join is the connect
-    /// completing, reconnect cycles raise this while subscribed.
+    /// NodeLink only. The first connection usually fires before a handler can subscribe, so treat the end of the
+    /// connect as that one.
     /// </remarks>
     public event AsyncEventHandler<PlayerConnectedEventArgs>? PlayerConnected;
 
@@ -354,8 +454,7 @@ public sealed class GuildConnection
     public event AsyncEventHandler<StreamMetadataUpdatedEventArgs>? StreamMetadataUpdated;
 
     /// <summary>
-    /// Raised when the node reports EternalBox context for the playing track, whenever the server signals the
-    /// track start.
+    /// Raised when a track with EternalBox info starts.
     /// </summary>
     /// <remarks>NodeLink only.</remarks>
     public event AsyncEventHandler<EternalBoxInfoUpdatedEventArgs>? EternalBoxInfoUpdated;
@@ -368,14 +467,8 @@ public sealed class GuildConnection
     public event AsyncEventHandler<HandlerErrorEventArgs>? HandlerError;
 
     /// <summary>
-    /// Plays a track, replacing whatever plays unless <see cref="PlayOptions.NoReplace"/> is set, falls back
-    /// to <see cref="Track.StartPosition"/> without an explicit start, consumed after the first accepted play.
+    /// Plays a track, replacing whatever plays unless <see cref="PlayOptions.NoReplace"/> is set.
     /// </summary>
-    /// <remarks>
-    /// The consumption is best-effort on the echo, a play the server ignored (NodeLink drops a re-sent
-    /// identical track) can consume the offset without a restart, the next accepted play then starts from
-    /// zero.
-    /// </remarks>
     /// <param name="track">The track to play.</param>
     /// <param name="options">How to start the track, null starts it plain.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
@@ -387,7 +480,13 @@ public sealed class GuildConnection
         Track track,
         PlayOptions? options = null,
         CancellationToken cancellationToken = default
-    ) => _commands.PlayAsync(track, options, cancellationToken);
+    ) => _commands.PlayAsync(track, options, cancellationToken: cancellationToken);
+
+    internal Task PlayWithNextAsync(
+        Track track,
+        Track nextTrack,
+        CancellationToken cancellationToken
+    ) => _commands.PlayAsync(track, null, nextTrack, cancellationToken);
 
     /// <summary>
     /// Plays a raw identifier and lets the server load it, search queries and playlists are rejected by both
@@ -406,24 +505,14 @@ public sealed class GuildConnection
     ) => _commands.PlayIdentifierAsync(identifier, options, cancellationToken);
 
     /// <summary>
-    /// Moves the end time marker mid-track, honored by Lavalink, accepted but not applied by NodeLink, set it
-    /// through <see cref="PlayOptions.EndTime"/> there.
+    /// Changes where the current track stops.
     /// </summary>
     /// <remarks>
-    /// On Lavalink the marker fires and the end reports as a natural finish. A null <paramref name="endTime"/>
-    /// does not clear it, the server skips the marker block for a null value, play the track again without an
-    /// end time to clear it.
-    /// <para>
-    /// On NodeLink an end time that travels with a play works on every source, but a marker moved mid-track
-    /// only applies on the native seek paths (SABR sources like YouTube and the legacy path), plain http
-    /// sources drop the value on the re-seek. A replay without an end time clears an applied marker, and the
-    /// update is silently dropped while the position still reads zero (voice startup, the first second or so).
-    /// </para>
+    /// The track then ends as if it finished. On NodeLink a change mid-track does not work on every source, so
+    /// prefer <see cref="PlayOptions.EndTime"/> there. To clear the end time, play the track again without one,
+    /// since a null does not clear it on Lavalink.
     /// </remarks>
-    /// <param name="endTime">
-    /// The marker to stop the track at. On NodeLink a null value is sent as-is, on Lavalink it is a no-op (the
-    /// marker stays armed, see remarks).
-    /// </param>
+    /// <param name="endTime">Where to stop the track.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the end time was updated.</returns>
     public Task SetEndTimeAsync(TimeSpan? endTime, CancellationToken cancellationToken = default) =>
@@ -437,14 +526,16 @@ public sealed class GuildConnection
 
     /// <summary>Pauses playback.</summary>
     /// <remarks>
-    /// NodeLink rate-limits requests per guild and answers 429, which surfaces as an <see
-    /// cref="Exceptions.RestException"/> with status 429. The limits are set on the server and cover any
-    /// request for the guild. Lavalink applies no such limit.
+    /// NodeLink can rate-limit requests per guild, which throws a <see cref="Exceptions.RestException"/> with
+    /// status 429.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the player was paused.</returns>
-    public Task PauseAsync(CancellationToken cancellationToken = default) =>
-        _commands.SetPausedAsync(true, cancellationToken);
+    public Task PauseAsync(CancellationToken cancellationToken = default)
+    {
+        _pausedWhenAlone = false;
+        return _commands.SetPausedAsync(true, cancellationToken);
+    }
 
     /// <summary>Resumes playback.</summary>
     /// <remarks>
@@ -452,8 +543,11 @@ public sealed class GuildConnection
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the player was resumed.</returns>
-    public Task ResumeAsync(CancellationToken cancellationToken = default) =>
-        _commands.SetPausedAsync(false, cancellationToken);
+    public Task ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        _pausedWhenAlone = false;
+        return _commands.SetPausedAsync(false, cancellationToken);
+    }
 
     /// <summary>Seeks the current track to a position.</summary>
     /// <remarks>
@@ -479,10 +573,6 @@ public sealed class GuildConnection
     /// Fetches the player as the server sees it, takes its state in and returns it, useful to re-sync after a
     /// resumed reconnect or an out-of-band change.
     /// </summary>
-    /// <remarks>
-    /// After a session loss the new player is empty, see <see cref="GuildConnectionRestored"/>, a refresh only
-    /// returns what the server holds now.
-    /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The fetched player, now the connection's state.</returns>
     public Task<Player> RefreshAsync(CancellationToken cancellationToken = default) =>
@@ -490,94 +580,250 @@ public sealed class GuildConnection
 
     /// <summary>Disconnects the bot from the voice channel and destroys the player on the server.</summary>
     /// <remarks>
-    /// A cancellation during the teardown leaves the connection marked as tearing down. The registry removal
-    /// runs inside the destroy, so a cancellation before it leaves the connection registered, one after it
-    /// leaves it removed but unwiped. Either way it accepts no operations until another disconnect completes
-    /// the cleanup or a new connect takes the guild over.
+    /// If the call is cancelled or the server fails the destroy, the connection takes no more operations until
+    /// another disconnect finishes the job or a new connect takes the guild over.
     /// <para>
-    /// The state wipe only runs when the destroy settled. The event pump retires with the teardown attempt
-    /// either way, since a dying connection has no reader left for events.
-    /// </para>
-    /// <para>
-    /// A destroy the server failed is not swallowed and throws to the caller. The connection stays unwiped and
-    /// accepts no operations until a retry or a takeover cleans it up.
-    /// </para>
-    /// <para>
-    /// A connect right after disconnecting a bot that was already out of voice can fail with a <see
-    /// cref="Exceptions.VoiceHandshakeException"/> until <see cref="NodeOptions.VoiceHandshakeTimeout"/>
-    /// passes. The library ignores the guild's voice state updates while it waits for the leave echo, and none
-    /// comes if the bot was not in voice.
+    /// Connecting again right after disconnecting a bot that was already out of voice can throw a
+    /// <see cref="Exceptions.VoiceHandshakeException"/> until <see cref="NodeOptions.VoiceHandshakeTimeout"/>
+    /// passes.
     /// </para>
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the player was destroyed.</returns>
     /// <exception cref="RestException">The server refused the player destroy.</exception>
     public Task DisconnectAsync(CancellationToken cancellationToken = default) =>
-        _teardown.DisconnectAsync(cancellationToken);
+        Teardown.DisconnectAsync(cancellationToken);
 
     internal void CaptureForRestore()
     {
         if (_restoreSnapshot is not null || _tearingDown || ChannelId is null)
             return;
 
-        Interlocked.CompareExchange(
-            ref _restoreSnapshot,
-            new RestoreSnapshot(
-                CurrentTrack,
-                Position,
-                Volume,
-                _filters.Applied,
-                IsPaused,
-                _node.Time.GetMilliseconds()
-            ),
-            null
-        );
+        Interlocked.CompareExchange(ref _restoreSnapshot, CaptureSnapshot(), null);
     }
 
+    private RestoreSnapshot CaptureSnapshot() =>
+        new(CurrentTrack, Position, Volume, Filters.Applied, IsPaused, Node.Time.GetMilliseconds());
+
     internal void DiscardRestoreSnapshot() => Interlocked.Exchange(ref _restoreSnapshot, null);
+
+    internal async Task FailoverToAsync(Node target)
+    {
+        ulong channelId;
+        lock (_restoreLock)
+        {
+            if (_restoring || _tearingDown || ChannelId is not { } current)
+                return;
+            _restoring = true;
+            channelId = current;
+        }
+
+        var snapshot = Interlocked.Exchange(ref _restoreSnapshot, null) ?? CaptureSnapshot();
+
+        (GuildConnection Connection, bool Resent)? moved = null;
+        try
+        {
+            moved = await Nyra
+                .Queue.GuildQueue.HandOverAsync(this, () =>
+                    Node.Registry.HandOverAsync(this, target, channelId, snapshot)
+                )
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Node.HandleError(
+                new InvalidOperationException(
+                    $"Failed to move guild {GuildId} from node '{Node.Name}' to node '{target.Name}': {exception.Message}",
+                    exception
+                )
+            );
+        }
+        finally
+        {
+            if (moved is null)
+            {
+                bool restore;
+                lock (_restoreLock)
+                {
+                    var lost = Node.IsReady && !Node.LastReadyResumed;
+                    restore = _restoreAgain || lost;
+                    _restoreAgain = false;
+                    if (restore || !Node.IsReady)
+                        Interlocked.CompareExchange(ref _restoreSnapshot, snapshot, null);
+                    _restoring = false;
+                }
+
+                if (restore && Node.IsReady)
+                    _ = Node.GuardAsync(Teardown.HandleSessionLostAsync());
+            }
+        }
+
+        if (moved is not { } handedOver)
+            return;
+
+        MarkTearingDown();
+        await _voiceForward.DrainAsync().ConfigureAwait(false);
+        await Patches.DrainAsync().ConfigureAwait(false);
+        await ClearStateAsync().ConfigureAwait(false);
+
+        Dispatch(
+            GuildConnectionMigrated,
+            new GuildConnectionMigratedEventArgs(handedOver.Connection, Node, handedOver.Resent)
+        );
+        await CompleteEventPumpAsync().ConfigureAwait(false);
+    }
+
+    internal async Task<bool> AdoptPlaybackAsync(RestoreSnapshot snapshot)
+    {
+        var voice = CurrentVoice(ChannelId!.Value);
+        List<RestoreSnapshot> attempts = [snapshot];
+        if (snapshot.Track is not null && snapshot.HasFilters)
+            attempts.Add(snapshot with { Filters = new() });
+        if (snapshot.Track is not null || snapshot.HasFilters)
+            attempts.Add(snapshot with { Track = null, Filters = new() });
+
+        for (var i = 0; ; i++)
+            try
+            {
+                await ResendInOneUpdateAsync(attempts[i], voice).ConfigureAwait(false);
+                return attempts[i].Track is not null;
+            }
+            catch (RestException exception)
+                when (i < attempts.Count - 1 || Settings != new PlayerSettings())
+            {
+                Node.HandleError(
+                    new InvalidOperationException(
+                        $"Node '{Node.Name}' refused the playback of guild {GuildId}, trying again with less: {exception.Message}",
+                        exception
+                    )
+                );
+                ResetPlayerState();
+                if (i == attempts.Count - 1)
+                {
+                    RememberSettings(_ => new PlayerSettings());
+                    attempts.Add(attempts[i]);
+                }
+            }
+    }
+
+    internal void MarkHandedOver()
+    {
+        TryClaimVoiceLeave();
+        MarkTearingDown();
+    }
+
+    internal void InheritPlayerState(GuildConnection source)
+    {
+        ObserveSelfFlags(
+            Volatile.Read(ref source._observedSelfDeaf),
+            Volatile.Read(ref source._observedSelfMute)
+        );
+        _pausedWhenAlone = source._pausedWhenAlone;
+        Volatile.Write(ref _settings, source.Settings);
+    }
 
     internal async Task<bool> TryRestoreAsync()
     {
         var snapshot = Interlocked.Exchange(ref _restoreSnapshot, null);
-        if (_tearingDown || _restoring || ChannelId is not { } channelId)
+        if (_tearingDown || ChannelId is null)
             return false;
 
+        lock (_restoreLock)
+        {
+            if (_restoring)
+            {
+                if (snapshot is not null)
+                    Interlocked.CompareExchange(ref _restoreSnapshot, snapshot, null);
+                _restoreAgain = true;
+                return true;
+            }
+
+            _restoring = true;
+            snapshot = TakeNewerSnapshot(snapshot);
+        }
+
+        ulong channelId;
         bool resent;
-        _restoring = true;
+        var released = false;
         try
         {
-            await _voiceForward.DrainAsync().ConfigureAwait(false);
-            await _patches.DrainAsync().ConfigureAwait(false);
+            while (true)
+            {
+                if (_tearingDown || ChannelId is not { } current)
+                    return false;
+                channelId = current;
+                var epoch = Node.EventHandlers.ConnectionEpoch;
 
-            ResetPlayerState();
-            await _filters.ResetForNewSessionAsync().ConfigureAwait(false);
-            _voiceForward.ClearPending();
+                await _voiceForward.DrainAsync().ConfigureAwait(false);
+                await Patches.DrainAsync().ConfigureAwait(false);
 
-            await _voiceForward
-                .ForwardAsync(
-                    new PlayerVoiceState
+                ResetPlayerState();
+                await Filters.ResetForNewSessionAsync().ConfigureAwait(false);
+                _voiceForward.ClearPending();
+
+                var voice = CurrentVoice(channelId);
+                var rescue =
+                    Node.Options.RescuePlayback
+                    && snapshot is not null
+                    && !IsRescueExpired(snapshot)
+                        ? ResumeIfSomeoneJoined(snapshot)
+                        : null;
+                var resendsTrack = rescue?.Track is not null;
+
+                var combined =
+                    rescue is not null
+                    && await _voiceForward
+                        .ForwardWithAsync(voice, () => ResendPlaybackAsync(rescue, voice))
+                        .ConfigureAwait(false);
+                if (!combined)
+                    await _voiceForward.ForwardAsync(voice).ConfigureAwait(false);
+
+                bool stalled;
+                bool movedOn;
+                lock (_restoreLock)
+                {
+                    var again = _restoreAgain && !_tearingDown;
+                    _restoreAgain = false;
+                    if (again)
                     {
-                        Token = VoiceToken,
-                        Endpoint = VoiceEndpoint,
-                        SessionId = VoiceSessionId,
-                        ChannelId = channelId,
+                        snapshot = TakeNewerSnapshot(snapshot);
+                        continue;
                     }
-                )
-                .ConfigureAwait(false);
 
-            if (_voiceForward.HasPending || _tearingDown)
-                return false;
+                    stalled = _voiceForward.HasPending;
+                    movedOn = Node.EventHandlers.ConnectionEpoch != epoch;
+                    if (
+                        stalled
+                        && movedOn
+                        && !_tearingDown
+                        && TakeNewerSnapshot(snapshot) is { } kept
+                    )
+                        Interlocked.CompareExchange(ref _restoreSnapshot, kept, null);
+                    _restoring = false;
+                    released = true;
+                }
 
-            resent =
-                _node.Options.RescuePlayback
-                && snapshot is not null
-                && !IsRescueExpired(snapshot)
-                && await ResendPlaybackAsync(snapshot).ConfigureAwait(false);
+                if (_tearingDown)
+                    return false;
+
+                if (stalled)
+                    return movedOn;
+
+                resent = combined && resendsTrack;
+                break;
+            }
         }
         finally
         {
-            _restoring = false;
+            if (!released)
+                lock (_restoreLock)
+                {
+                    _restoring = false;
+                    _restoreAgain = false;
+                }
         }
+
+        ReapplyListeners();
 
         Dispatch(
             GuildConnectionRestored,
@@ -586,24 +832,43 @@ public sealed class GuildConnection
         return true;
     }
 
-    private bool IsRescueExpired(RestoreSnapshot snapshot) =>
-        _node.Options.RescueTimeout != Timeout.InfiniteTimeSpan
-        && _node.Time.GetMilliseconds() - snapshot.CapturedTick
-            > _node.Options.RescueTimeout.TotalMilliseconds;
+    private RestoreSnapshot? TakeNewerSnapshot(RestoreSnapshot? current)
+    {
+        var next = Interlocked.Exchange(ref _restoreSnapshot, null);
+        if (next is null || current is null)
+            return next ?? current;
+        if (next.Track is null != current.Track is null)
+            return next.Track is null ? current : next;
+        return next.CapturedTick >= current.CapturedTick ? next : current;
+    }
 
-    private async Task<bool> ResendPlaybackAsync(RestoreSnapshot snapshot)
+    private RestoreSnapshot ResumeIfSomeoneJoined(RestoreSnapshot snapshot)
+    {
+        if (snapshot.Track is null || Listeners is not > 0 || !_pausedWhenAlone)
+            return snapshot;
+
+        _pausedWhenAlone = false;
+        return snapshot with { Paused = false };
+    }
+
+    private bool IsRescueExpired(RestoreSnapshot snapshot) =>
+        Node.Options.RescueTimeout != Timeout.InfiniteTimeSpan
+        && Node.Time.GetMilliseconds() - snapshot.CapturedTick
+            > Node.Options.RescueTimeout.TotalMilliseconds;
+
+    private async Task<bool> ResendPlaybackAsync(RestoreSnapshot snapshot, PlayerVoiceState voice)
     {
         try
         {
-            await ResendInOneUpdateAsync(snapshot).ConfigureAwait(false);
-            return snapshot.Track is not null;
+            await ResendInOneUpdateAsync(snapshot, voice).ConfigureAwait(false);
+            return true;
         }
         catch (Exception exception)
         {
-            if (_tearingDown)
+            if (_tearingDown || (exception is OperationCanceledException && !Node.IsReady))
                 return false;
 
-            _node.HandleError(
+            Node.HandleError(
                 new InvalidOperationException(
                     $"Failed to restore the playback of guild {GuildId}: {exception.Message}",
                     exception
@@ -623,7 +888,7 @@ public sealed class GuildConnection
         return (long)start.TotalMilliseconds;
     }
 
-    private async Task ResendInOneUpdateAsync(RestoreSnapshot snapshot)
+    private async Task ResendInOneUpdateAsync(RestoreSnapshot snapshot, PlayerVoiceState voice)
     {
         var filters = snapshot.HasFilters ? GuildFilters.Normalize(snapshot.Filters) : null;
         int? volume = snapshot.Volume != 100 ? snapshot.Volume : null;
@@ -643,20 +908,23 @@ public sealed class GuildConnection
                     : null,
             };
 
-            _playback.StampPlayRequested();
+            Playback.StampPlayRequested();
             if (snapshot.Paused)
-                _playback.StampPauseRequested();
+                Playback.StampPauseRequested();
         }
-        else if (volume is null && filters is null)
-            return;
 
-        var requestTick = _node.Time.GetMilliseconds();
+        var settings = Settings;
+        var sameTrack =
+            trackUpdate is not null && IsSameTrack(settings.TrackOptionsFor, snapshot.Track!);
+        if (sameTrack)
+            trackUpdate = trackUpdate! with { AudioTrackId = settings.AudioTrackId };
 
-        using var timeout = new CancellationTokenSource(GuildVoiceForwarder.VoiceSendDeadline);
-        var player = await _patches
+        var requestTick = Node.Time.GetMilliseconds();
+
+        var player = await Patches
             .SendAsync(
                 ct =>
-                    _node.Rest.Players.UpdateAsync(
+                    Node.Rest.Players.UpdateAsync(
                         GuildId,
                         new PlayerUpdatePayload
                         {
@@ -664,16 +932,23 @@ public sealed class GuildConnection
                             Position = startMilliseconds,
                             Volume = volume,
                             Paused = trackUpdate is not null && snapshot.Paused ? true : null,
+                            EndTime = sameTrack ? settings.EndTime : null,
                             Filters = filters,
+                            Fading = settings.Fading,
+                            LoudnessNormalizer = settings.LoudnessNormalizer,
+                            Ducking = settings.Ducking,
+                            Crossfade = settings.Crossfade,
+                            Voice = voice,
                         },
-                        ct
+                        ct,
+                        timeout: GuildVoiceForwarder.VoiceSendDeadline
                     ),
-                timeout.Token
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
         if (filters is not null)
-            await _filters.LandRescuedAsync(player, filters).ConfigureAwait(false);
+            await Filters.LandRescuedAsync(player, filters).ConfigureAwait(false);
         CaptureState(player, requestTick, startMilliseconds);
     }
 
@@ -681,23 +956,20 @@ public sealed class GuildConnection
         _voiceForward.DrainAsync(cancellationToken);
 
     internal Task DrainFiltersAsync(CancellationToken cancellationToken = default) =>
-        _filters.DrainAsync(cancellationToken);
+        Filters.DrainAsync(cancellationToken);
 
-    internal Task CompleteEventPumpAsync() => _pump.CompleteAsync(TimeSpan.FromSeconds(5));
+    internal Task CompleteEventPumpAsync() => Pump.CompleteAsync(TimeSpan.FromSeconds(5));
 
     /// <summary>Returns the connection as its guild and node.</summary>
     /// <returns>The guild and node of the connection.</returns>
-    public override string ToString() => $"{GuildId} ({_node})";
+    public override string ToString() => $"{GuildId} ({Node})";
 
     internal void HandleTrackStart(TrackStartedEventArgs eventArgs)
     {
         if (_tearingDown)
             return;
 
-        if (_filters.HasPendingFilters)
-            _ = _filters.ResendPendingFiltersAsync();
-
-        _playback.OnTrackStart(eventArgs);
+        Playback.OnTrackStart(eventArgs);
 
         Dispatch(TrackStarted, eventArgs);
     }
@@ -707,7 +979,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnTrackEnd(eventArgs);
+        Playback.OnTrackEnd(eventArgs);
 
         Dispatch(TrackFinished, eventArgs);
     }
@@ -723,7 +995,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnPlayerUpdate(eventArgs);
+        Playback.OnPlayerUpdate(eventArgs);
 
         Dispatch(PlayerUpdated, eventArgs, droppable: true);
     }
@@ -732,34 +1004,37 @@ public sealed class GuildConnection
     {
         Dispatch(WebSocketClosed, eventArgs);
 
-        if (!_node.IsNodeLink)
+        if (!Node.IsNodeLink || eventArgs.ByRemote)
             _ = DisconnectAfterVoiceClosedWithGraceAsync(
                 eventArgs.Code,
-                _node.Time.GetMilliseconds()
+                Node.Time.GetMilliseconds()
             );
     }
 
-    internal Lock PlaybackPositionLock => _playback.PositionLock;
+    internal Lock PlaybackPositionLock => Playback.PositionLock;
 
     internal void ReanchorTimescaleUnderLock(TimescaleFilter? oldTimescale) =>
-        _playback.OnTimescaleChangedUnderLock(oldTimescale);
+        Playback.OnTimescaleChangedUnderLock(oldTimescale);
 
     private async Task DisconnectAfterVoiceClosedWithGraceAsync(int? closeCode, long closeTick)
     {
         var transientClose = closeCode is 4009 or 4015 or 4022;
 
-        await Task.Delay(VoiceCloseGracePeriod, _node.Time, CancellationToken.None)
+        await Task.Delay(VoiceCloseGracePeriod, Node.Time, CancellationToken.None)
             .ConfigureAwait(false);
 
         if (_tearingDown)
+            return;
+
+        if (Interlocked.Read(ref _lastVoiceConnectedTick) >= closeTick)
             return;
 
         var lastForwardTick = _voiceForward.LastForwardTick;
         var suppress =
             !_voiceForward.HasPending
             && (
-                transientClose
-                    ? _node.Time.GetMilliseconds() - lastForwardTick
+                (transientClose || Node.IsNodeLink)
+                    ? Node.Time.GetMilliseconds() - lastForwardTick
                         < VoiceCloseGracePeriod.TotalMilliseconds
                             + ForwardActivityWindow.TotalMilliseconds
                     : lastForwardTick >= closeTick
@@ -774,24 +1049,30 @@ public sealed class GuildConnection
         {
             if (
                 closeCode is not 4014
-                && _node.Client is { } bridge
-                && _node.Time.GetMilliseconds() - Volatile.Read(ref _voiceRescueTick)
+                && Node.Client is { } bridge
+                && Node.Time.GetMilliseconds() - Volatile.Read(ref _voiceRescueTick)
                     > VoiceRescueInterval.TotalMilliseconds
             )
             {
-                Volatile.Write(ref _voiceRescueTick, _node.Time.GetMilliseconds());
+                Volatile.Write(ref _voiceRescueTick, Node.Time.GetMilliseconds());
                 var baseline = _voiceForward.LastForwardTick;
 
-                await SendRescueJoinAsync(bridge, leaveFirst: false).ConfigureAwait(false);
-                if (await RescueSettledAsync(VoiceCloseGracePeriod, baseline).ConfigureAwait(false))
-                    return;
+                for (var attempt = 0; attempt < RescueJoinAttempts; attempt++)
+                {
+                    await SendRescueJoinAsync(bridge, leaveFirst: false).ConfigureAwait(false);
+                    if (
+                        await RescueSettledAsync(VoiceCloseGracePeriod, baseline)
+                            .ConfigureAwait(false)
+                    )
+                        return;
+                }
 
                 await SendRescueJoinAsync(bridge, leaveFirst: true).ConfigureAwait(false);
                 if (await RescueSettledAsync(ForwardActivityWindow, baseline).ConfigureAwait(false))
                     return;
             }
 
-            await _teardown.AfterVoiceClosedAsync().ConfigureAwait(false);
+            await Teardown.AfterVoiceClosedAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -801,7 +1082,7 @@ public sealed class GuildConnection
 
     private async Task<bool> RescueSettledAsync(TimeSpan window, long baseline)
     {
-        await Task.Delay(window, _node.Time, CancellationToken.None).ConfigureAwait(false);
+        await Task.Delay(window, Node.Time, CancellationToken.None).ConfigureAwait(false);
         return _tearingDown || _voiceForward.LastForwardTick > baseline;
     }
 
@@ -813,21 +1094,18 @@ public sealed class GuildConnection
                 return;
 
             if (leaveFirst)
-                await _node.VoiceHandshake.LeaveChannelAsync(bridge, GuildId).ConfigureAwait(false);
+                await Node.VoiceHandshake.LeaveChannelAsync(bridge, GuildId).ConfigureAwait(false);
 
             if (_tearingDown)
                 return;
 
-            using var rescueCts = new CancellationTokenSource(
-                GuildVoiceForwarder.VoiceSendDeadline
-            );
             await bridge
                 .SendVoiceUpdateAsync(
                     GuildId,
                     ChannelId,
                     Volatile.Read(ref _observedSelfDeaf),
                     Volatile.Read(ref _observedSelfMute),
-                    cancellationToken: rescueCts.Token
+                    cancellationToken: _lifetime.Token
                 )
                 .ConfigureAwait(false);
         }
@@ -859,7 +1137,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnVolumeChanged(eventArgs);
+        Playback.OnVolumeChanged(eventArgs);
 
         Dispatch(VolumeChanged, eventArgs);
     }
@@ -872,7 +1150,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnTrackSought(eventArgs);
+        Playback.OnTrackSought(eventArgs);
 
         Dispatch(TrackSought, eventArgs);
     }
@@ -882,7 +1160,7 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        _playback.OnPauseChanged(eventArgs);
+        Playback.OnPauseChanged(eventArgs);
 
         Dispatch(PauseChanged, eventArgs);
     }
@@ -900,8 +1178,11 @@ public sealed class GuildConnection
         Dispatch(PlayerReconnecting, eventArgs);
     }
 
-    internal void HandlePlayerConnected(PlayerConnectedEventArgs eventArgs) =>
+    internal void HandlePlayerConnected(PlayerConnectedEventArgs eventArgs)
+    {
+        Interlocked.Exchange(ref _lastVoiceConnectedTick, Node.Time.GetMilliseconds());
         Dispatch(PlayerConnected, eventArgs);
+    }
 
     internal void HandleStreamMetadataUpdated(StreamMetadataUpdatedEventArgs eventArgs) =>
         Dispatch(StreamMetadataUpdated, eventArgs);
@@ -919,6 +1200,7 @@ public sealed class GuildConnection
 
         ChannelId = channelId;
         HandleVoiceSessionUpdated(sessionId);
+        SyncListeners();
     }
 
     internal void HandleVoiceSessionUpdated(string? sessionId)
@@ -946,16 +1228,17 @@ public sealed class GuildConnection
         VoiceToken = token;
         VoiceEndpoint = endpoint;
 
-        var voice = new PlayerVoiceState
+        await _voiceForward.ForwardAsync(CurrentVoice(channelId)).ConfigureAwait(false);
+    }
+
+    private PlayerVoiceState CurrentVoice(ulong channelId) =>
+        new()
         {
-            Token = token,
-            Endpoint = endpoint,
+            Token = VoiceToken,
+            Endpoint = VoiceEndpoint,
             SessionId = VoiceSessionId,
             ChannelId = channelId,
         };
-
-        await _voiceForward.ForwardAsync(voice).ConfigureAwait(false);
-    }
 
     internal Task ResendPendingVoiceAsync() => _voiceForward.ResendPendingAsync();
 
@@ -971,11 +1254,10 @@ public sealed class GuildConnection
     internal void CaptureState(Player player, long requestTick, long? startMilliseconds = null)
     {
         if (_tearingDown)
-            _node
-                .Registry.DestroyPlayerExclusivelyAsync(this, CancellationToken.None)
-                .ObserveFaults(_node.HandleError);
+            Node.Registry.DestroyPlayerExclusivelyAsync(this, CancellationToken.None)
+                .ObserveFaults(Node.HandleError);
 
-        _playback.Capture(player, requestTick, startMilliseconds);
+        Playback.Capture(player, requestTick, startMilliseconds);
     }
 
     internal void ClearState()
@@ -990,30 +1272,226 @@ public sealed class GuildConnection
         IsPaused = false;
         State = null;
         Volume = 100;
-        _playback.Clear();
+        Playback.Clear();
     }
 
     internal async Task ClearStateAsync()
     {
         ClearState();
-        await _filters.ResetAsync().ConfigureAwait(false);
+        await Filters.ResetAsync().ConfigureAwait(false);
         _voiceForward.ClearPending();
     }
 
-    internal void EnsureActive()
+    internal void EnsureNotTearingDown()
     {
         if (_tearingDown)
             throw new InvalidOperationException(
                 "The connection is being torn down, it no longer accepts operations."
             );
+    }
+
+    internal void EnsureActive()
+    {
+        EnsureNotTearingDown();
         if (_restoring)
             throw new InvalidOperationException(
                 "The connection is being restored after the node lost its session, try again in a moment."
             );
-        if (!_node.IsReady)
-            throw new InvalidOperationException($"The node '{_node.Name}' is not ready.");
+        if (!Node.IsReady)
+            throw new InvalidOperationException($"The node '{Node.Name}' is not ready.");
         if (!IsConnected)
             throw new InvalidOperationException("The bot is not connected to a voice channel.");
+    }
+
+    private void UpdateIdleTimer()
+    {
+        var timeout = Node.Options.IdleTimeout;
+        if (timeout == Timeout.InfiniteTimeSpan || !_playerCommitted)
+            return;
+
+        if (CurrentTrack is not null)
+            _idleTimer.Disarm();
+        else
+            _idleTimer.Arm(timeout);
+    }
+
+    private void OnIdleTimerFired()
+    {
+        if (_tearingDown || CurrentTrack is not null || ChannelId is not { } channelId)
+            return;
+
+        if (_restoring)
+        {
+            UpdateIdleTimer();
+            return;
+        }
+
+        LeaveIdleAsync(channelId).ObserveFaults(Node.HandleError);
+    }
+
+    private async Task LeaveIdleAsync(ulong channelId)
+    {
+        await IdleTimedOut
+            .RaiseAsync(this, new GuildConnectionIdleEventArgs(GuildId, channelId), _handlerError)
+            .ConfigureAwait(false);
+
+        if (_tearingDown || CurrentTrack is not null)
+            return;
+
+        await DisconnectAsync().ConfigureAwait(false);
+    }
+
+    internal void SyncListeners()
+    {
+        if (
+            _tearingDown
+            || ChannelId is not { } channelId
+            || Node.Client is not IVoiceListenerSource source
+        )
+            return;
+
+        IReadOnlyCollection<ulong>? found;
+        try
+        {
+            found = source.GetListeners(GuildId, channelId);
+        }
+        catch (Exception exception)
+        {
+            Node.HandleError(exception);
+            return;
+        }
+
+        if (found is null)
+            return;
+
+        int? before;
+        int after;
+        lock (_listenersLock)
+        {
+            before = _listeners?.Count;
+            _listeners = [.. found];
+            after = _listeners.Count;
+        }
+
+        OnListenersChanged(before, after, channelId);
+    }
+
+    internal void HandleListenerVoiceState(ulong userId, ulong? channelId)
+    {
+        if (_tearingDown || ChannelId is not { } own)
+            return;
+
+        if (Listeners is null)
+            SyncListeners();
+
+        int before;
+        int after;
+        lock (_listenersLock)
+        {
+            if (_listeners is null)
+                return;
+
+            before = _listeners.Count;
+            if (channelId == own)
+                _listeners.Add(userId);
+            else
+                _listeners.Remove(userId);
+            after = _listeners.Count;
+        }
+
+        OnListenersChanged(before, after, own);
+    }
+
+    private void OnListenersChanged(int? before, int after, ulong channelId)
+    {
+        if (before == after)
+            return;
+
+        Dispatch(
+            ListenersChanged,
+            new GuildConnectionListenersEventArgs(GuildId, channelId, after)
+        );
+        ApplyListeners(after);
+    }
+
+    internal void ReapplyListeners()
+    {
+        if (Listeners is { } listeners)
+            ApplyListeners(listeners);
+    }
+
+    private void ApplyListeners(int listeners)
+    {
+        if (listeners > 0)
+            _aloneTimer.Disarm();
+        else if (Node.Options.AloneTimeout != Timeout.InfiniteTimeSpan)
+            _aloneTimer.Arm(Node.Options.AloneTimeout);
+
+        if (Node.Options.PauseWhenAlone || _pausedWhenAlone)
+            SettlePauseWhenAloneAsync().ObserveFaults(Node.HandleError);
+    }
+
+    private async Task SettlePauseWhenAloneAsync()
+    {
+        for (var pass = 0; pass < 4; pass++)
+        {
+            if (_tearingDown || _restoring || !Node.IsReady || Listeners is not { } listeners)
+                return;
+
+            if (listeners == 0)
+            {
+                if (!Node.Options.PauseWhenAlone || CurrentTrack is null || IsPaused)
+                    return;
+
+                await _commands.SetPausedAsync(true, CancellationToken.None).ConfigureAwait(false);
+                _pausedWhenAlone = true;
+            }
+            else
+            {
+                if (!_pausedWhenAlone)
+                    return;
+
+                if (IsPaused)
+                    await _commands
+                        .SetPausedAsync(false, CancellationToken.None)
+                        .ConfigureAwait(false);
+                _pausedWhenAlone = false;
+            }
+        }
+    }
+
+    private void OnAloneTimerFired()
+    {
+        if (_tearingDown || ChannelId is not { } channelId)
+            return;
+
+        SyncListeners();
+        if (Listeners != 0)
+            return;
+
+        if (_restoring)
+        {
+            _aloneTimer.Arm(Node.Options.AloneTimeout);
+            return;
+        }
+
+        LeaveAloneAsync(channelId).ObserveFaults(Node.HandleError);
+    }
+
+    private async Task LeaveAloneAsync(ulong channelId)
+    {
+        await AloneTimedOut
+            .RaiseAsync(
+                this,
+                new GuildConnectionListenersEventArgs(GuildId, channelId, 0),
+                _handlerError
+            )
+            .ConfigureAwait(false);
+
+        if (_tearingDown || Listeners != 0)
+            return;
+
+        await DisconnectAsync().ConfigureAwait(false);
     }
 
     private void Dispatch<TArgs>(
@@ -1022,7 +1500,7 @@ public sealed class GuildConnection
         bool droppable = false
     )
         where TArgs : System.EventArgs =>
-        _pump.TryDispatch(handler, this, eventArgs, _handlerError, droppable);
+        Pump.TryDispatch(handler, this, eventArgs, _handlerError, droppable);
 
     private Task OnHandlerErrorAsync(Exception exception, System.EventArgs? origin) =>
         HandlerError.RaiseAsync(
@@ -1032,7 +1510,7 @@ public sealed class GuildConnection
             {
                 try
                 {
-                    _node.Logger?.LogError(
+                    Node.Logger?.LogError(
                         LogEvents.Playback,
                         handlerFailure,
                         "A HandlerError handler of guild {GuildId} threw.",

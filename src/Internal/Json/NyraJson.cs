@@ -50,12 +50,17 @@ internal static class NyraJson
         JsonSerializerOptions options
     ) => JsonSerializer.Deserialize(ref reader, TypeInfoOf<TValue>(options));
 
+#if NET11_0_OR_GREATER
+    private static JsonTypeInfo<TValue> TypeInfoOf<TValue>(JsonSerializerOptions options) =>
+        options.GetTypeInfo<TValue>();
+#else
     private static JsonTypeInfo<TValue> TypeInfoOf<TValue>(JsonSerializerOptions options) =>
         options.GetTypeInfo(typeof(TValue)) is JsonTypeInfo<TValue> typeInfo
             ? typeInfo
             : throw new NotSupportedException(
                 $"The type '{typeof(TValue)}' is not covered by the options' serialization context."
             );
+#endif
 
     private static JsonSerializerOptions Create(
         bool? isNodeLink = null,
@@ -135,22 +140,6 @@ internal sealed class SnowflakeConverter : JsonConverter<ulong>
     }
 }
 
-internal abstract class NullAsDefaultConverter<T>(JsonConverter<T> strict) : JsonConverter<T>
-    where T : struct
-{
-    public override T Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    ) =>
-        reader.TokenType == JsonTokenType.Null
-            ? default
-            : strict.Read(ref reader, typeToConvert, options);
-
-    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options) =>
-        strict.Write(writer, value, options);
-}
-
 internal abstract class NullAsNullConverter<T>(JsonConverter<T> strict) : JsonConverter<T?>
     where T : struct
 {
@@ -172,64 +161,8 @@ internal abstract class NullAsNullConverter<T>(JsonConverter<T> strict) : JsonCo
     }
 }
 
-internal sealed class TolerantSnowflakeConverter()
-    : NullAsDefaultConverter<ulong>(new SnowflakeConverter());
-
 internal sealed class NullableSnowflakeConverter()
     : NullAsNullConverter<ulong>(new SnowflakeConverter());
-
-internal abstract class GarbageAsDefaultConverter<T>(JsonConverter<T> strict)
-    : NullAsDefaultConverter<T>(strict)
-    where T : struct
-{
-    public override T Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    )
-    {
-        try
-        {
-            return base.Read(ref reader, typeToConvert, options);
-        }
-        catch (JsonException)
-        {
-            reader.Skip();
-            return default;
-        }
-    }
-}
-
-internal abstract class GarbageAsNullConverter<T>(JsonConverter<T> strict)
-    : NullAsNullConverter<T>(strict)
-    where T : struct
-{
-    public override T? Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    )
-    {
-        try
-        {
-            return base.Read(ref reader, typeToConvert, options);
-        }
-        catch (JsonException)
-        {
-            reader.Skip();
-            return null;
-        }
-    }
-}
-
-internal sealed class TolerantRoundedInt32Converter()
-    : GarbageAsDefaultConverter<int>(new RoundedInt32Converter());
-
-internal sealed class TolerantRoundedInt64Converter()
-    : GarbageAsDefaultConverter<long>(new RoundedInt64Converter());
-
-internal sealed class TolerantNullableRoundedInt64Converter()
-    : GarbageAsNullConverter<long>(new RoundedInt64Converter());
 
 internal sealed class StringOrNumberConverter : JsonConverter<string?>
 {
@@ -270,13 +203,11 @@ internal sealed class StringOrNumberConverter : JsonConverter<string?>
         }
     }
 
-    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
-    {
-        if (value is null)
-            writer.WriteNullValue();
-        else
-            writer.WriteStringValue(value);
-    }
+    public override void Write(
+        Utf8JsonWriter writer,
+        string? value,
+        JsonSerializerOptions options
+    ) => writer.WriteStringValue(value);
 }
 
 internal static class JsonNumberParsing
@@ -357,81 +288,6 @@ internal sealed class RoundedInt64Converter : JsonConverter<long>
         throw new JsonException(
             $"Integral value {value} is outside the int64 range, the server sent garbage."
         );
-    }
-}
-
-internal sealed class TolerantBooleanConverter : JsonConverter<bool>
-{
-    private static readonly NullableTolerantBooleanConverter Nullable = new();
-
-    public override bool Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    ) => Nullable.Read(ref reader, typeToConvert, options) ?? false;
-
-    public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options) =>
-        writer.WriteBooleanValue(value);
-}
-
-internal sealed class NullableTolerantStringConverter : JsonConverter<string?>
-{
-    public override string? Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    ) =>
-        reader.TokenType switch
-        {
-            JsonTokenType.String => reader.GetString(),
-            JsonTokenType.Null => null,
-            _ => SkipAsStringless(ref reader),
-        };
-
-    private static string? SkipAsStringless(ref Utf8JsonReader reader)
-    {
-        reader.Skip();
-        return null;
-    }
-
-    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
-    {
-        if (value is null)
-            writer.WriteNullValue();
-        else
-            writer.WriteStringValue(value);
-    }
-}
-
-internal sealed class NullableTolerantBooleanConverter : JsonConverter<bool?>
-{
-    public override bool? Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    ) =>
-        reader.TokenType switch
-        {
-            JsonTokenType.True => true,
-            JsonTokenType.False => false,
-            JsonTokenType.Null => null,
-            JsonTokenType.Number => reader.GetDouble() != 0,
-            JsonTokenType.String when bool.TryParse(reader.GetString(), out var parsed) => parsed,
-            _ => SkipAsUnknown(ref reader),
-        };
-
-    private static bool? SkipAsUnknown(ref Utf8JsonReader reader)
-    {
-        reader.Skip();
-        return null;
-    }
-
-    public override void Write(Utf8JsonWriter writer, bool? value, JsonSerializerOptions options)
-    {
-        if (value.HasValue)
-            writer.WriteBooleanValue(value.Value);
-        else
-            writer.WriteNullValue();
     }
 }
 

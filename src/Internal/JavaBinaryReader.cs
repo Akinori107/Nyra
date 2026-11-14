@@ -11,7 +11,6 @@ internal ref struct JavaBinaryReader
     public JavaBinaryReader(ReadOnlySpan<byte> buffer)
     {
         _buffer = buffer;
-        _position = 0;
     }
 
     public readonly int Remaining => _buffer.Length - _position;

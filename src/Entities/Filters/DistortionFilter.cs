@@ -4,20 +4,19 @@ namespace Nyra.Entities.Filters;
 
 /// <summary>Distorts the audio.</summary>
 /// <remarks>
-/// The server defaults are offsets 0.0 and scales 1.0. A full-chain write by this side fills the unset members
-/// with them, which activates the filter on Lavalink. NodeLink keeps the block in the applied state but
-/// bypasses the default values, so the same write is inaudible there (the fade-out idiom when a transition
-/// rides it). Send explicit values to pin the sound you intend, removing the filter disables it.
-/// <para>
-/// Lavalink multiplies the three trigonometric terms (a zeroed scale mutes the whole filter), NodeLink adds
-/// them as separate terms with the offsets as phase, the same values sound different per server.
-/// </para>
-/// <para>
-/// The NodeLink-only transition fades the filter in or out, the out leg is the default-values block carrying
-/// a transition, removals themselves step, no removal in this library carries a transition. Parameter
-/// changes still step.
-/// </para>
+/// The server defaults are offsets 0.0 and scales 1.0, and unset members are sent as those. On Lavalink they
+/// still change the sound while another filter is on, on NodeLink they do nothing. Set explicit values to get
+/// the sound you want, and remove the filter to turn it off. The same values sound different on each server.
 /// </remarks>
+/// <param name="SinOffset">Offset of the sine term, the server default is 0.0.</param>
+/// <param name="SinScale">Scale of the sine term, the server default is 1.0.</param>
+/// <param name="CosOffset">Offset of the cosine term, the server default is 0.0.</param>
+/// <param name="CosScale">Scale of the cosine term, the server default is 1.0.</param>
+/// <param name="TanOffset">Offset of the tangent term, the server default is 0.0.</param>
+/// <param name="TanScale">Scale of the tangent term, the server default is 1.0.</param>
+/// <param name="Offset">General offset, the server default is 0.0.</param>
+/// <param name="Scale">General scale, the server default is 1.0.</param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record DistortionFilter(
     [property: JsonPropertyName("sinOffset")] float? SinOffset = null,
     [property: JsonPropertyName("sinScale")] float? SinScale = null,

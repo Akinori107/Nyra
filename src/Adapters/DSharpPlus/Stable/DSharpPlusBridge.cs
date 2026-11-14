@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using DSharpPlus;
 using DSharpPlus.EventArgs;
 using DSharpPlus.Net.Abstractions;
@@ -11,14 +12,16 @@ namespace Nyra.DSharpPlus;
 /// Wraps a <see cref="DiscordClient"/> or <see cref="DiscordShardedClient"/> for Nyra, forwards the voice
 /// events of the current user and sends the raw gateway voice state update.
 /// </summary>
-public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDisposable
+public sealed class DSharpPlusBridge
+    : IDiscordBridge,
+        IGuildRemovalSource,
+        IVoiceListenerSource,
+        IDisposable
 {
     private object? _client;
     private readonly TaskCompletionSource<ClientInformation> _ready = new(
         TaskCreationOptions.RunContinuationsAsynchronously
     );
-    private readonly int? _shardCount;
-
     private readonly ConcurrentDictionary<DiscordClient, byte> _gatewaySocketsUp = new();
 
     /// <summary>Raised when Discord allocates or re-targets the voice server of a guild.</summary>
@@ -31,11 +34,10 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     /// <remarks>Not raised for guild outages.</remarks>
     public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
 
+    /// <summary>Raised when a user who is not a bot joins, leaves or changes a voice channel.</summary>
+    public event EventHandler<ListenerVoiceStateUpdatedEventArgs>? ListenerVoiceStateUpdated;
+
     /// <summary>Wraps a single <see cref="DiscordClient"/>.</summary>
-    /// <remarks>
-    /// <see cref="DiscordClient.ShardCount"/> reports the configured count before the first connect, then the
-    /// count Discord recommends once connected, never the count the gateway routes by.
-    /// </remarks>
     /// <param name="client">The client to wrap.</param>
     /// <param name="shardCount">
     /// The shard count the gateway routes by. Pass it when the client is one shard of a sharded setup so the
@@ -46,7 +48,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
         ArgumentNullException.ThrowIfNull(client);
 
         _client = client;
-        _shardCount = shardCount;
+        ShardCountHint = shardCount;
         Logger = client.Logger;
 
         client.VoiceStateUpdated += OnVoiceStateUpdated;
@@ -92,7 +94,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     /// <inheritdoc />
     public ILogger? Logger { get; }
 
-    internal int? ShardCountHint => _shardCount;
+    internal int? ShardCountHint { get; }
 
     /// <inheritdoc />
     public async Task SendVoiceUpdateAsync(
@@ -107,8 +109,8 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
 
         var payload = new Dictionary<string, object?>
         {
-            ["guild_id"] = guildId.ToString(),
-            ["channel_id"] = channelId?.ToString(),
+            ["guild_id"] = guildId.ToString(CultureInfo.InvariantCulture),
+            ["channel_id"] = channelId?.ToString(CultureInfo.InvariantCulture),
             ["self_mute"] = selfMute,
             ["self_deaf"] = selfDeaf,
         };
@@ -129,6 +131,26 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
             );
         }
 #pragma warning restore CS0618
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<ulong>? GetListeners(ulong guildId, ulong channelId)
+    {
+        var client = GetClientForGuild(guildId);
+        if (!client.Guilds.TryGetValue(guildId, out var guild))
+            return null;
+
+        var self = client.CurrentUser?.Id;
+        return
+        [
+            .. guild
+                .VoiceStates.Where(pair =>
+                    pair.Value.Channel?.Id == channelId
+                    && pair.Key != self
+                    && !(guild.Members.TryGetValue(pair.Key, out var member) && member.IsBot)
+                )
+                .Select(pair => pair.Key),
+        ];
     }
 
     /// <inheritdoc />
@@ -178,7 +200,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
         if (_client is DiscordClient client)
         {
             if (
-                _shardCount is int total
+                ShardCountHint is { } total
                 && total > 1
                 && GuildShard.IdFor(guildId, total) != client.ShardId
             )
@@ -236,8 +258,24 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
 
     private Task OnVoiceStateUpdated(DiscordClient sender, VoiceStateUpdateEventArgs eventArgs)
     {
-        if (eventArgs.Guild is null || eventArgs.User?.Id != sender.CurrentUser.Id)
+        if (eventArgs.Guild is null || eventArgs.User is not { } user)
             return Task.CompletedTask;
+
+        if (user.Id != sender.CurrentUser.Id)
+        {
+            if (!user.IsBot)
+                BridgeEvent.RaiseIsolated(
+                    ListenerVoiceStateUpdated,
+                    this,
+                    new ListenerVoiceStateUpdatedEventArgs(
+                        eventArgs.Guild.Id,
+                        user.Id,
+                        eventArgs.After?.Channel?.Id
+                    ),
+                    Logger
+                );
+            return Task.CompletedTask;
+        }
 
         BridgeEvent.RaiseIsolated(
             VoiceStateUpdated,

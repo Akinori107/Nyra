@@ -176,7 +176,7 @@ internal sealed class GuildRegistry
                     )
                     .ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (Exception exception)
             {
                 await RollbackRegistrationAsync(
                         guildId,
@@ -185,19 +185,13 @@ internal sealed class GuildRegistry
                         completePump: true
                     )
                     .ConfigureAwait(false);
-                throw new VoiceHandshakeException(
-                    $"The player registration for guild {guildId} did not answer within the voice handshake timeout, the node may be overloaded or unable to reach the Discord voice server (Lavalink answers this request only once its voice connection is up)."
-                );
-            }
-            catch
-            {
-                await RollbackRegistrationAsync(
-                        guildId,
-                        connection,
-                        sendLeave: true,
-                        completePump: true
-                    )
-                    .ConfigureAwait(false);
+                if (
+                    exception is OperationCanceledException
+                    && !cancellationToken.IsCancellationRequested
+                )
+                    throw new VoiceHandshakeException(
+                        $"The player registration for guild {guildId} did not answer within the voice handshake timeout, the node may be overloaded or unable to reach the Discord voice server (Lavalink answers this request only once its voice connection is up)."
+                    );
                 throw;
             }
 
@@ -232,6 +226,128 @@ internal sealed class GuildRegistry
             connection.CommitPlayerUpdate();
 
             return connection;
+        }
+        finally
+        {
+            claimed?.ReleaseGuildClaim(guildId, _node);
+        }
+    }
+
+    internal async Task FailoverAsync(bool nodeLink)
+    {
+        var connections = Connections.Values.ToArray();
+        if (connections.Length == 0)
+            return;
+
+        var pending = new Dictionary<Node, int>();
+        await Task.WhenAll(Array.ConvertAll(connections, connection =>
+                {
+                    if (_node.IsReady || _node.Stopped)
+                        return Task.CompletedTask;
+                    if (
+                        _node.Extension?.GetNode(node => node.IsNodeLink == nodeLink, pending)
+                        is not { } target
+                    )
+                        return Task.CompletedTask;
+                    pending[target] = pending.GetValueOrDefault(target) + 1;
+                    return _node.GuardAsync(connection.FailoverToAsync(target));
+                }))
+            .ConfigureAwait(false);
+    }
+
+    internal async Task<(GuildConnection Connection, bool Resent)?> HandOverAsync(
+        GuildConnection connection,
+        Node target,
+        ulong channelId,
+        GuildConnection.RestoreSnapshot snapshot
+    )
+    {
+        var guildId = connection.GuildId;
+        using var lease = await EnterGateAsync(guildId, CancellationToken.None)
+            .ConfigureAwait(false);
+
+        if (
+            _node.IsReady
+            || !Connections.TryRemove(new KeyValuePair<ulong, GuildConnection>(guildId, connection))
+        )
+            return null;
+
+        try
+        {
+            var adopted = await target
+                .Registry.AdoptAsync(connection, channelId, snapshot)
+                .ConfigureAwait(false);
+            connection.MarkHandedOver();
+            return adopted;
+        }
+        catch
+        {
+            Connections.TryAdd(guildId, connection);
+            throw;
+        }
+    }
+
+    private async Task<(GuildConnection Connection, bool Resent)> AdoptAsync(
+        GuildConnection source,
+        ulong channelId,
+        GuildConnection.RestoreSnapshot snapshot
+    )
+    {
+        _node.ThrowIfDisposed();
+        if (!_node.IsReady)
+            throw new InvalidOperationException($"The node '{_node.Name}' is not ready.");
+
+        var guildId = source.GuildId;
+        using var lease = await EnterGateAsync(guildId, CancellationToken.None)
+            .ConfigureAwait(false);
+
+        NyraExtension? claimed = null;
+        try
+        {
+            if (_node.Extension is { } extension)
+            {
+                if (!extension.TryClaimGuild(guildId, _node, out var owner))
+                    throw new InvalidOperationException(
+                        $"The bot is already connected in this guild through node '{owner!.Name}'."
+                    );
+                claimed = extension;
+            }
+
+            if (Connections.ContainsKey(guildId))
+                throw new InvalidOperationException(
+                    $"The guild {guildId} already has a connection on node '{_node.Name}'."
+                );
+
+            var connection = new GuildConnection(
+                _node,
+                guildId,
+                channelId,
+                source.VoiceSessionId,
+                source.VoiceEndpoint,
+                source.VoiceToken
+            );
+            connection.InheritPlayerState(source);
+            Connections[guildId] = connection;
+
+            bool resent;
+            try
+            {
+                resent = await connection.AdoptPlaybackAsync(snapshot).ConfigureAwait(false);
+            }
+            catch
+            {
+                await RollbackRegistrationAsync(
+                        guildId,
+                        connection,
+                        sendLeave: false,
+                        completePump: true
+                    )
+                    .ConfigureAwait(false);
+                throw;
+            }
+
+            connection.CommitPlayerUpdate();
+            return (connection, resent);
         }
         finally
         {
@@ -278,7 +394,7 @@ internal sealed class GuildRegistry
             _ = connection.CompleteEventPumpAsync();
     }
 
-    private readonly Dictionary<ulong, (SemaphoreSlim Semaphore, int RefCount)> _guildGates = new();
+    private readonly Dictionary<ulong, (SemaphoreSlim Semaphore, int RefCount)> _guildGates = [];
     private readonly Lock _guildGatesLock = new();
 
     private SemaphoreSlim AcquireGate(ulong guildId)

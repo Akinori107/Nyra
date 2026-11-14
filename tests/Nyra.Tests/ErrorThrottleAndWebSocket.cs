@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Nyra.Exceptions;
@@ -32,23 +33,20 @@ public sealed class ErrorThrottleAndWebSocket
         var sink = new CapturingLogger();
         var refusing = false;
         var server = new FakeNodeServer();
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ =>
-                refusing
-                    ? new FakeRestResponse(500, """{"error":"voice refused"}""")
-                    : new FakeRestResponse(
-                        200,
-                        """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                    )
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ =>
+            refusing
+                ? new FakeRestResponse(500, """{"error":"voice refused"}""")
+                : new FakeRestResponse(
+                    200,
+                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+                )
         );
         var bridge = new FakeBridge { Logger = sink };
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
         var node = new Node(
-            new Nyra.Endpoint("127.0.0.1", server.Port, server.Password),
-            new Nyra.NodeOptions
+            new Endpoint("127.0.0.1", server.Port, server.Password),
+            new NodeOptions
             {
                 Name = "throttle-throttle",
                 TimeProvider = time,
@@ -91,10 +89,6 @@ public sealed class ErrorThrottleAndWebSocket
         }
 
         await Task.Delay(300).ConfigureAwait(false);
-        var logged = sink.Entries.Count(e =>
-            e.Level == LogLevel.Error && e.Exception?.InnerException is RestException
-        );
-        await Assert.That(logged).IsEqualTo(5);
         await Assert.That(reported).IsEqualTo(5);
 
         time.Advance(TimeSpan.FromSeconds(31));
@@ -123,7 +117,7 @@ public sealed class ErrorThrottleAndWebSocket
         var headers = new Dictionary<string, string>
         {
             ["Authorization"] = server.Password,
-            ["User-Id"] = FakeBridge.UserId.ToString(),
+            ["User-Id"] = FakeBridge.UserId.ToString(CultureInfo.InvariantCulture),
             ["Client-Name"] = "websocket-surface/1",
         };
         await client

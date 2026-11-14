@@ -5,6 +5,11 @@ namespace Nyra.Internal;
 
 internal sealed class GuildCommands
 {
+    private static readonly PlayerUpdatePayload StopPayload = new()
+    {
+        Track = new PlayerUpdateTrack { Encoded = null },
+    };
+
     private readonly GuildConnection _connection;
     private readonly Node _node;
 
@@ -19,6 +24,7 @@ internal sealed class GuildCommands
     internal async Task PlayAsync(
         Track track,
         PlayOptions? options = null,
+        Track? nextTrack = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -35,18 +41,6 @@ internal sealed class GuildCommands
         var urlStart = positionMilliseconds is null ? track.StartPosition : null;
         if (urlStart is not null)
             positionMilliseconds = (long)urlStart.Value.TotalMilliseconds;
-
-        if (
-            _node.IsNodeLink
-            && options?.NoReplace != true
-            && GuildConnection.IsSameTrack(_connection.CurrentTrack, track)
-        )
-            await _connection
-                .Patches.UpdateAsync(
-                    new PlayerUpdatePayload { Track = new PlayerUpdateTrack { Encoded = null } },
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
 
         var refusable = options?.NoReplace == true && _connection.CurrentTrack is not null;
 
@@ -66,6 +60,9 @@ internal sealed class GuildCommands
                     },
                     Position = positionMilliseconds,
                     EndTime = (long?)options?.EndTime?.TotalMilliseconds,
+                    NextTrack = nextTrack is null
+                        ? null
+                        : new PlayerUpdateTrack { Encoded = nextTrack.Encoded },
                 },
                 ct,
                 options?.NoReplace ?? false
@@ -83,6 +80,8 @@ internal sealed class GuildCommands
         var landed = !refusable && GuildConnection.IsSameTrack(player.Track, track);
         if (urlStart is not null && landed)
             track.StartPosition = null;
+        if (landed)
+            _connection.RememberTrackOptions(track, options);
 
         _connection.CaptureState(
             player,
@@ -144,6 +143,8 @@ internal sealed class GuildCommands
             .ConfigureAwait(false);
 
         var landed = options?.NoReplace != true && player.Track is not null;
+        if (landed)
+            _connection.RememberTrackOptions(player.Track, options);
         _connection.CaptureState(player, requestTick, landed ? positionMilliseconds ?? 0 : null);
         return player.Track
             ?? throw new InvalidOperationException(
@@ -172,6 +173,7 @@ internal sealed class GuildCommands
                 cancellationToken
             )
             .ConfigureAwait(false);
+        _connection.RememberEndTime(player.Track, endTime);
         _connection.CaptureState(player, requestTick);
     }
 
@@ -179,12 +181,7 @@ internal sealed class GuildCommands
     {
         _connection.EnsureActive();
 
-        await _connection
-            .Patches.UpdateAsync(
-                new PlayerUpdatePayload { Track = new PlayerUpdateTrack { Encoded = null } },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        await _connection.Patches.UpdateAsync(StopPayload, cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task SetPausedAsync(bool paused, CancellationToken cancellationToken = default)
@@ -249,8 +246,9 @@ internal sealed class GuildCommands
 
         var requestTick = _node.Time.GetMilliseconds();
         var requestTicket = GuildFilters.NextTicket();
-        var player =
-            await _node.Rest.Players.GetAsync(GuildId, cancellationToken).ConfigureAwait(false)
+        var player = await _node
+            .Rest.Players.GetAsync(GuildId, cancellationToken)
+            .ConfigureAwait(false)
             ?? throw new InvalidOperationException($"The node has no player for guild {GuildId}.");
 
         await _connection

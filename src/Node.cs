@@ -9,39 +9,19 @@ using Nyra.Internal;
 namespace Nyra;
 
 /// <summary>
-/// A connection to a Lavalink v4.2+ or NodeLink v3.9+ server. The kind is detected at connect (GET /v4/info)
-/// and probed again by the first query after a disconnect drops the detection. A server below the floors
-/// throws <see cref="IncompatibleServerException"/> from the query surface.
+/// A connection to a Lavalink v4.2+ or NodeLink v3.9+ server, which one is detected at connect. An older
+/// server makes the queries throw <see cref="IncompatibleServerException"/>.
 /// </summary>
-/// <remarks>
-/// Owns the websocket, the REST client, the voice handshake and the guild connections created through it.
-/// </remarks>
 public sealed class Node : IAsyncDisposable, IDisposable
 {
-    private readonly NodeOptions _options;
-    private readonly NodeConnection _connection;
-    private readonly VoiceHandshakeCoordinator _voiceHandshake;
-    private readonly RestClient _rest;
     private readonly NodeQueries _queries;
     private readonly NodeServerInfo _serverInfo;
     private readonly NodeConnector _connector;
-    private readonly NodeGroups _groups;
-    private readonly NodeTracks _tracks;
-    private readonly NodeLyrics _lyrics;
-    private readonly NodeYouTube _youTube;
-    private readonly NodeRoutePlanner _routePlanner;
-    private readonly GuildRegistry _registry;
     private readonly EventPump _events;
-
-    private readonly NodeEventHandlers _eventHandlers;
-    private readonly NodeBridgeWiring _wiring;
-    private bool _stopped = true;
-
     private static readonly TimeSpan TimeoutLimit = TimeSpan.FromDays(40);
 
     private int _stopEpoch;
     private volatile bool _disposed;
-    private readonly Lock _eventsLock = new();
 
     /// <summary>Creates a node for an endpoint.</summary>
     /// <param name="endpoint">The endpoint of the server.</param>
@@ -50,87 +30,121 @@ public sealed class Node : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(endpoint);
         Endpoint = endpoint;
-        _options = options ?? new NodeOptions();
+        Options = options ?? new NodeOptions();
         ResetSessionSettings();
-        ArgumentException.ThrowIfNullOrWhiteSpace(_options.Name);
-        ArgumentNullException.ThrowIfNull(_options.TimeProvider, nameof(NodeOptions.TimeProvider));
+        ArgumentException.ThrowIfNullOrWhiteSpace(Options.Name);
+        ArgumentNullException.ThrowIfNull(Options.TimeProvider, nameof(NodeOptions.TimeProvider));
 
-        if (_options.ReconnectDelay <= TimeSpan.Zero)
+        if (Options.ReconnectDelay <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 "NodeOptions.ReconnectDelay must be positive."
             );
-        if (_options.MaxReconnectDelay < _options.ReconnectDelay)
+        if (Options.MaxReconnectDelay < Options.ReconnectDelay)
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 "NodeOptions.MaxReconnectDelay must not be smaller than ReconnectDelay."
             );
-        ThrowIfOverLimit(_options.MaxReconnectDelay, nameof(NodeOptions.MaxReconnectDelay));
+        ThrowIfOverLimit(Options.MaxReconnectDelay, nameof(NodeOptions.MaxReconnectDelay));
         if (
-            _options.ResumeTimeout < TimeSpan.Zero
-            || _options.ResumeTimeout.TotalSeconds > int.MaxValue
+            Options.ResumeTimeout < TimeSpan.Zero
+            || Options.ResumeTimeout.TotalSeconds > int.MaxValue
         )
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 "NodeOptions.ResumeTimeout must be zero or a positive number of seconds."
             );
         if (
-            _options.RescueTimeout != Timeout.InfiniteTimeSpan
-            && _options.RescueTimeout <= TimeSpan.Zero
+            Options.RescueTimeout != Timeout.InfiniteTimeSpan
+            && Options.RescueTimeout <= TimeSpan.Zero
         )
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 "NodeOptions.RescueTimeout must be positive, or Timeout.InfiniteTimeSpan for no limit."
             );
+        if (Options.FailoverAfter != Timeout.InfiniteTimeSpan)
+        {
+            if (Options.FailoverAfter < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(
+                    nameof(options),
+                    "NodeOptions.FailoverAfter must be zero or positive, or Timeout.InfiniteTimeSpan to never move."
+                );
+            ThrowIfOverLimit(Options.FailoverAfter, nameof(NodeOptions.FailoverAfter));
+        }
+        ThrowIfInvalidLeaveTimeout(Options.IdleTimeout, nameof(NodeOptions.IdleTimeout));
+        ThrowIfInvalidLeaveTimeout(Options.AloneTimeout, nameof(NodeOptions.AloneTimeout));
         ThrowIfNotPositive(
-            _options.VoiceHandshakeTimeout,
+            Options.VoiceHandshakeTimeout,
             nameof(NodeOptions.VoiceHandshakeTimeout)
         );
-        ThrowIfOverLimit(_options.VoiceHandshakeTimeout, nameof(NodeOptions.VoiceHandshakeTimeout));
-        ThrowIfNotPositive(_options.ReadyTimeout, nameof(NodeOptions.ReadyTimeout));
-        ThrowIfOverLimit(_options.ReadyTimeout, nameof(NodeOptions.ReadyTimeout));
+        ThrowIfOverLimit(Options.VoiceHandshakeTimeout, nameof(NodeOptions.VoiceHandshakeTimeout));
+        ThrowIfNotPositive(Options.ReadyTimeout, nameof(NodeOptions.ReadyTimeout));
+        ThrowIfOverLimit(Options.ReadyTimeout, nameof(NodeOptions.ReadyTimeout));
 
-        _events = new EventPump($"node {_options.Name}", null, LogEvents.Node);
+        _events = new EventPump($"node {Options.Name}", null, LogEvents.Node);
         _eventError = OnEventErrorAsync;
 
-        _rest = new RestClient(this);
+        Rest = new RestClient(this);
         var dispatcher = new NodeEventDispatcher(this);
-        _connection = new NodeConnection(
-            this,
-            dispatcher,
-            cancellationToken => EnsureServerInfoAsync(cancellationToken, forceProbe: true)
+        Connection = new NodeConnection(this, dispatcher, cancellationToken =>
+            EnsureServerInfoAsync(cancellationToken, forceProbe: true)
         );
-        _voiceHandshake = new VoiceHandshakeCoordinator(
-            _options.VoiceHandshakeTimeout,
-            _options.TimeProvider
+        VoiceHandshake = new VoiceHandshakeCoordinator(
+            Options.VoiceHandshakeTimeout,
+            Options.TimeProvider
         );
         _queries = new NodeQueries(this);
         _serverInfo = new NodeServerInfo(this);
         _connector = new NodeConnector(this);
-        _groups = new NodeGroups(this);
-        _tracks = new NodeTracks(this);
-        _lyrics = new NodeLyrics(this);
-        _youTube = new NodeYouTube(this);
-        _routePlanner = new NodeRoutePlanner(this);
-        _registry = new GuildRegistry(this);
-        _eventHandlers = new NodeEventHandlers(this);
-        _wiring = new NodeBridgeWiring(this);
+        Groups = new NodeGroups(this);
+        Tracks = new NodeTracks(this);
+        Lyrics = new NodeLyrics(this);
+        YouTube = new NodeYouTube(this);
+        RoutePlanner = new NodeRoutePlanner(this);
+        Registry = new GuildRegistry(this);
+        EventHandlers = new NodeEventHandlers(this);
+        Wiring = new NodeBridgeWiring(this);
     }
 
-    private static void ThrowIfNotPositive(TimeSpan value, string option)
+    private static void ThrowIfNotPositive(
+        TimeSpan value,
+        string option,
+        string paramName = "options"
+    )
     {
         if (value <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(
-                "options",
+                paramName,
                 $"NodeOptions.{option} must be positive."
             );
     }
 
-    private static void ThrowIfOverLimit(TimeSpan value, string option)
+    private static void ThrowIfInvalidLeaveTimeout(
+        TimeSpan value,
+        string option,
+        string paramName = "options"
+    )
+    {
+        if (value == Timeout.InfiniteTimeSpan)
+            return;
+
+        if (value <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                $"NodeOptions.{option} must be positive, or Timeout.InfiniteTimeSpan to never leave."
+            );
+        ThrowIfOverLimit(value, option, paramName);
+    }
+
+    private static void ThrowIfOverLimit(
+        TimeSpan value,
+        string option,
+        string paramName = "options"
+    )
     {
         if (value > TimeoutLimit)
             throw new ArgumentOutOfRangeException(
-                "options",
+                paramName,
                 $"NodeOptions.{option} must not exceed {TimeoutLimit.TotalDays:N0} days."
             );
     }
@@ -139,24 +153,17 @@ public sealed class Node : IAsyncDisposable, IDisposable
     public Endpoint Endpoint { get; }
 
     /// <summary>The node's display name, used in logs and error messages, must not be blank.</summary>
-    public string Name => _options.Name;
+    public string Name => Options.Name;
 
     /// <summary>
-    /// Detected at connect, true when the server is NodeLink, false when it is Lavalink or no detection is
-    /// held.
+    /// True when the server is NodeLink, false on Lavalink or before the first connect.
     /// </summary>
     public bool IsNodeLink => ServerInfo?.IsNodeLink ?? false;
 
-    /// <summary>Server-reported version, e.g. <c>3.9.0</c>.</summary>
+    /// <summary>Server-reported version, like <c>3.9.0</c>.</summary>
     /// <remarks>
-    /// Null while no detection is held (before the first connect, and after a disconnect until a query
-    /// re-probes the server) and on Lavalink dev builds (commit hash, not semver). NodeLink dev pre-release
-    /// tags parse as their base version.
-    /// <para>
-    /// Null means always current by policy (dev builds skip the version floors), so write
-    /// <c>node.Version is { } v</c> and compare the bound variable, a lifted relational operator on the null
-    /// answers false and would invert the meaning.
-    /// </para>
+    /// Null before the first connect, after a disconnect until the next query, and on Lavalink dev builds. A
+    /// NodeLink dev build reads as its base version.
     /// </remarks>
     public NodeVersion? Version => ServerInfo?.Version;
 
@@ -165,7 +172,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// alike.
     /// </summary>
     /// <param name="name">The plugin to check for, for example lavasrc-plugin, matched case-insensitively.</param>
-    /// <returns>Whether the plugin is loaded, false until the first connect and while no detection is held.</returns>
+    /// <returns>Whether the plugin is loaded, false before the first connect.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is null.</exception>
     public bool HasPlugin(string name)
     {
@@ -173,9 +180,9 @@ public sealed class Node : IAsyncDisposable, IDisposable
         return ServerInfo?.HasPlugin(name) ?? false;
     }
 
-    internal NodeOptions Options => _options;
+    internal NodeOptions Options { get; }
 
-    internal TimeProvider Time => _options.TimeProvider;
+    internal TimeProvider Time => Options.TimeProvider;
 
     /// <summary>The node session id of the current connection, null before the node first became ready.</summary>
     /// <remarks>
@@ -183,32 +190,26 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// </remarks>
     public string? SessionId
     {
-        get => Volatile.Read(ref _sessionId);
-        internal set => Volatile.Write(ref _sessionId, value);
+        get => Volatile.Read(ref field);
+        internal set => Volatile.Write(ref field, value);
     }
-
-    private string? _sessionId;
 
     internal bool ResumingEnabled
     {
-        get => Volatile.Read(ref _resumingEnabled);
-        private set => Volatile.Write(ref _resumingEnabled, value);
+        get => Volatile.Read(ref field);
+        private set => Volatile.Write(ref field, value);
     }
-
-    private bool _resumingEnabled;
 
     internal int ResumeTimeoutSeconds
     {
-        get => Volatile.Read(ref _resumeTimeoutSeconds);
-        private set => Volatile.Write(ref _resumeTimeoutSeconds, value);
+        get => Volatile.Read(ref field);
+        private set => Volatile.Write(ref field, value);
     }
-
-    private int _resumeTimeoutSeconds;
 
     internal void ResetSessionSettings()
     {
-        ResumingEnabled = _options.Resuming;
-        ResumeTimeoutSeconds = (int)_options.ResumeTimeout.TotalSeconds;
+        ResumingEnabled = Options.Resuming;
+        ResumeTimeoutSeconds = (int)Options.ResumeTimeout.TotalSeconds;
     }
 
     private const long RestFailureMemoryMilliseconds = 30_000;
@@ -232,40 +233,39 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <summary>
     /// Whether the websocket to the server is open, wait for <see cref="IsReady"/> before issuing requests.
     /// </summary>
-    public bool IsConnected => _connection.IsConnected;
+    public bool IsConnected => Connection.IsConnected;
 
     /// <summary>Whether the node received the ready operation and can serve requests.</summary>
     public bool IsReady
     {
-        get => Volatile.Read(ref _isReady);
-        internal set => Volatile.Write(ref _isReady, value);
+        get => Volatile.Read(ref field);
+        internal set => Volatile.Write(ref field, value);
     }
 
-    private bool _isReady;
+    internal bool LastReadyResumed
+    {
+        get => Volatile.Read(ref field);
+        set => Volatile.Write(ref field, value);
+    }
 
     /// <summary>
     /// The last statistics reported by the server, or null before the first <c>stats</c> operation.
     /// </summary>
     public Stats? Stats
     {
-        get => Volatile.Read(ref _stats);
-        internal set => Volatile.Write(ref _stats, value);
+        get => Volatile.Read(ref field);
+        internal set => Volatile.Write(ref field, value);
     }
-
-    private Stats? _stats;
 
     /// <summary>Last reported outbound connection status, or null before the first event.</summary>
     /// <remarks>
-    /// NodeLink only, and only while the node's session holds at least one player, a playerless session
-    /// receives no pushes, <see cref="GetConnectionStatusAsync"/> works without one.
+    /// NodeLink only, and only pushed while the session has a player.
     /// </remarks>
     public ConnectionStatus? ConnectionStatus
     {
-        get => Volatile.Read(ref _connectionStatus);
-        internal set => Volatile.Write(ref _connectionStatus, value);
+        get => Volatile.Read(ref field);
+        internal set => Volatile.Write(ref field, value);
     }
-
-    private ConnectionStatus? _connectionStatus;
 
     internal IDiscordBridge? Client { get; private set; }
 
@@ -275,24 +275,24 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     internal ulong CurrentUserId => (ulong)Interlocked.Read(ref _currentUserId);
 
-    internal RestClient Rest => _rest;
+    internal RestClient Rest { get; }
 
-    internal NodeConnection Connection => _connection;
+    internal NodeConnection Connection { get; }
 
     /// <summary>The player groups of the node, NodeLink only.</summary>
-    public NodeGroups Groups => _groups;
+    public NodeGroups Groups { get; }
 
     /// <summary>Decoding, encoding and streaming of the tracks of the node.</summary>
-    public NodeTracks Tracks => _tracks;
+    public NodeTracks Tracks { get; }
 
     /// <summary>Lyrics, chapters and meanings of the tracks of the node.</summary>
-    public NodeLyrics Lyrics => _lyrics;
+    public NodeLyrics Lyrics { get; }
 
     /// <summary>The YouTube source configuration of the node.</summary>
-    public NodeYouTube YouTube => _youTube;
+    public NodeYouTube YouTube { get; }
 
     /// <summary>The IP route planner of the node.</summary>
-    public NodeRoutePlanner RoutePlanner => _routePlanner;
+    public NodeRoutePlanner RoutePlanner { get; }
 
     internal ServerInfo? ServerInfo => _serverInfo.Current;
 
@@ -300,6 +300,12 @@ public sealed class Node : IAsyncDisposable, IDisposable
         CancellationToken cancellationToken,
         bool forceProbe = false
     ) => _serverInfo.EnsureAsync(cancellationToken, forceProbe);
+
+    internal async Task RequireNodeLinkAsync(string feature, CancellationToken cancellationToken)
+    {
+        await EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
+        NodeGuards.RequireNodeLink(this, feature);
+    }
 
     internal void InvalidateServerInfo() => _serverInfo.Invalidate();
 
@@ -312,11 +318,11 @@ public sealed class Node : IAsyncDisposable, IDisposable
     internal TaskCompletionSource<bool>? TakeConnectCompletion(int? maxOwnerGeneration = null) =>
         _connector.TakeCompletion(maxOwnerGeneration);
 
-    internal NodeBridgeWiring Wiring => _wiring;
+    internal NodeBridgeWiring Wiring { get; }
 
-    internal NodeEventHandlers EventHandlers => _eventHandlers;
+    internal NodeEventHandlers EventHandlers { get; }
 
-    internal GuildRegistry Registry => _registry;
+    internal GuildRegistry Registry { get; }
 
     internal int StopEpoch => Volatile.Read(ref _stopEpoch);
 
@@ -327,11 +333,11 @@ public sealed class Node : IAsyncDisposable, IDisposable
         int stopEpoch
     )
     {
-        lock (_eventsLock)
+        lock (EventsLock)
         {
             ThrowIfInterruptedWhileConnecting(expectedExtension, stopEpoch);
 
-            if (_wiring.WiredClient is not null && !ReferenceEquals(_wiring.WiredClient, client))
+            if (Wiring.WiredClient is not null && !ReferenceEquals(Wiring.WiredClient, client))
                 throw new InvalidOperationException(
                     $"The node '{Name}' is already attached to another Discord client."
                 );
@@ -345,20 +351,22 @@ public sealed class Node : IAsyncDisposable, IDisposable
             Interlocked.Exchange(ref _currentUserId, (long)clientInformation.CurrentUserId);
             _events.Logger = client.Logger;
 
-            _stopped = false;
-            _wiring.Wire(client);
+            Stopped = false;
+            Wiring.Wire(client);
         }
     }
 
-    internal Lock EventsLock => _eventsLock;
+    internal Lock EventsLock { get; } = new();
 
-    internal bool Stopped => _stopped;
+    internal bool Stopped { get; private set; } = true;
 
     internal bool Disposed => _disposed;
 
-    internal VoiceHandshakeCoordinator VoiceHandshake => _voiceHandshake;
+    internal bool IsShutDown => Stopped || Disposed;
 
-    internal ConcurrentDictionary<ulong, GuildConnection> Connections => _registry.Connections;
+    internal VoiceHandshakeCoordinator VoiceHandshake { get; }
+
+    internal ConcurrentDictionary<ulong, GuildConnection> Connections => Registry.Connections;
 
     internal ILogger? Logger => Client?.Logger;
 
@@ -376,30 +384,21 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>Raised for internal client errors, see <see cref="NodeErrorEventArgs"/> for the categories.</summary>
     /// <remarks>
-    /// Reconnect failures log separately, playback errors surface through the guild connection, a throwing
-    /// handler is caught and logged. Errors of the same kind are reported five times per thirty seconds, the
-    /// rest of the window is counted in one log line, so a malformed frame repeated for every player cannot
-    /// flood the log or the event queue.
+    /// Reconnect failures are only logged, playback errors come through the guild connection, and a handler that
+    /// throws is caught and logged. Each kind of error is raised at most five times per thirty seconds, the
+    /// rest are counted in one log line.
     /// </remarks>
     public event AsyncEventHandler<NodeErrorEventArgs>? Error;
 
     /// <summary>
     /// Raised when the server reports its statistics, the latest report is also <see cref="Stats"/>.
     /// </summary>
-    /// <remarks>
-    /// Frames landing while a ready's final phase runs collapse into the one raise after <see cref="Ready"/>.
-    /// </remarks>
     public event AsyncEventHandler<NodeStatsEventArgs>? StatsUpdated;
 
     /// <summary>Raised on every <c>ConnectionStatusEvent</c>.</summary>
     /// <remarks>
-    /// The args carry the snapshot <see cref="ConnectionStatus"/> held when the raise was queued, a newer
-    /// push may have replaced the property by handler time. NodeLink only. The event's guildId is node-wide
-    /// data delivered inside a guild-scoped payload, not exposed here.
-    /// <para>
-    /// An update queued before a stop or a disconnect can still run after it returns, a slow handler ahead of
-    /// it in the queue holds it back. The dispose drains what is left with a bounded wait.
-    /// </para>
+    /// NodeLink only. <see cref="ConnectionStatus"/> may already be newer than the args when the handler runs,
+    /// and an update can still arrive right after a stop.
     /// </remarks>
     public event AsyncEventHandler<NodeConnectionStatusEventArgs>? ConnectionStatusUpdated;
 
@@ -412,9 +411,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>Stops the websocket connection, active guild connections are left untouched.</summary>
     /// <remarks>
-    /// The Discord events are unwired by the stop, so the guild connections left behind lose the Discord-side
-    /// tracking (a kick, a move, a voice server re-target) until the node is connected again, a removal that
-    /// lands during the dormancy finds no subscriber and the connection stays registered until then.
+    /// Until the node connects again, those connections stop following Discord changes like a kick or a move.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the websocket was stopped.</returns>
@@ -423,7 +420,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         var pendingConnect = StopAndUnwireDiscordEvents();
         try
         {
-            await _connection.StopAsync(cancellationToken).ConfigureAwait(false);
+            await Connection.StopAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -443,8 +440,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         try
         {
-            await _registry.DisconnectGuildsAsync(deadline.Token).ConfigureAwait(false);
-            await _connection.StopAsync().ConfigureAwait(false);
+            await Registry.DisconnectGuildsAsync(deadline.Token).ConfigureAwait(false);
+            await Connection.StopAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -455,8 +452,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     /// <summary>Stops the node synchronously, the guild connections are torn down over the network.</summary>
     /// <remarks>
-    /// Blocks on every guild teardown roundtrip, each bounded by the HTTP timeout, prefer <see
-    /// cref="DisposeAsync"/> wherever the caller can await.
+    /// Blocks until every guild is torn down, prefer <see cref="DisposeAsync"/> where you can await.
     /// </remarks>
     public void Dispose()
     {
@@ -464,7 +460,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         var pendingConnect = ClaimStoppedDiscordEvents();
         try
         {
-            _registry.DisconnectGuilds();
+            Registry.DisconnectGuilds();
         }
         finally
         {
@@ -482,17 +478,14 @@ public sealed class Node : IAsyncDisposable, IDisposable
     public override string ToString() => $"{Name} ({Endpoint})";
 
     /// <summary>
-    /// Connects the bot to the voice channel and creates a guild connection on this node, forwarding the voice
-    /// credentials.
+    /// Connects the bot to the voice channel and creates a guild connection on this node.
     /// </summary>
-    /// <remarks>Validating the channel kind is up to the adapters, the core only sees ids.</remarks>
     /// <param name="guildId">The guild to connect.</param>
     /// <param name="channelId">The voice channel to join.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The guild connection created by the join.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="guildId"/> or <paramref name="channelId"/> is zero, a join that could only ever fail as
-    /// a handshake timeout with no reason.
+    /// <paramref name="guildId"/> or <paramref name="channelId"/> is zero.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The guild is already connected through a different node (one guild plays on one node at a time) or to a
@@ -520,13 +513,13 @@ public sealed class Node : IAsyncDisposable, IDisposable
     {
         ArgumentOutOfRangeException.ThrowIfZero(guildId);
         ArgumentOutOfRangeException.ThrowIfZero(channelId);
-        return _registry.ConnectAsync(guildId, channelId, cancellationToken);
+        return Registry.ConnectAsync(guildId, channelId, cancellationToken);
     }
 
     /// <summary>The guild connection playing on this node, or null when the guild is not connected here.</summary>
     /// <param name="guildId">The guild to get the connection of.</param>
     /// <returns>The guild's connection, null when it is not connected here.</returns>
-    public GuildConnection? GetConnection(ulong guildId) => _registry.GetConnection(guildId);
+    public GuildConnection? GetConnection(ulong guildId) => Registry.GetConnection(guildId);
 
     /// <summary>
     /// Loads tracks for a query, direct http(s) and <c>ftts</c> URLs are sent as-is, plain terms resolve per
@@ -560,14 +553,12 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// sources/filters/plugins.
     /// </summary>
     /// <remarks>
-    /// Served by both, server-specific members null on the other kind. This read is strict, the connect probe
-    /// that admitted the node is not, a server whose info carries a member in an unexpected shape (a
-    /// stringified boolean, a fractional build time) can be connected and playing while this call fails.
+    /// Members only one server has are null on the other.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The descriptive info of the node.</returns>
     /// <exception cref="RestException">
-    /// The response body does not deserialize into <see cref="NodeInfo"/>, the status still reports OK.
+    /// The response could not be read.
     /// </exception>
     /// <exception cref="IncompatibleServerException">The server's /v4/info version is not supported.</exception>
     public Task<NodeInfo> GetNodeInfoAsync(CancellationToken cancellationToken = default) =>
@@ -600,9 +591,6 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <summary>
     /// Probes the server version if it was not detected yet, null on dev builds without a parseable semver.
     /// </summary>
-    /// <remarks>
-    /// Like <see cref="Version"/>, null means always current by policy, see its remarks for how to compare it.
-    /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The detected version, null on dev builds.</returns>
     /// <exception cref="IncompatibleServerException">The server's /v4/info version is not supported.</exception>
@@ -614,9 +602,8 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// through a disconnect, and how long it holds them.
     /// </summary>
     /// <remarks>
-    /// Both values are sent together, the server applies them as a pair. They last as long as the session,
-    /// a resumed session keeps them, a new session starts from <see cref="NodeOptions.Resuming"/> and <see
-    /// cref="NodeOptions.ResumeTimeout"/> again.
+    /// They last as long as the session. A new session starts again from <see cref="NodeOptions.Resuming"/> and
+    /// <see cref="NodeOptions.ResumeTimeout"/>.
     /// </remarks>
     /// <param name="resuming">Whether the session resumes its players after a reconnect.</param>
     /// <param name="timeout">
@@ -625,8 +612,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The session state the server stored.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="timeout"/> is negative or exceeds <see cref="int.MaxValue"/> seconds, the limits the
-    /// constructor enforces on <c>NodeOptions.ResumeTimeout</c>.
+    /// <paramref name="timeout"/> is negative or past <see cref="int.MaxValue"/> seconds.
     /// </exception>
     public Task<SessionConfig> UpdateSessionAsync(
         bool resuming,
@@ -651,7 +637,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         CancellationToken cancellationToken
     )
     {
-        var session = await _rest
+        var session = await Rest
             .Session.UpdateAsync(resuming, timeoutSeconds, cancellationToken)
             .ConfigureAwait(false);
         ResumingEnabled = resuming;
@@ -659,7 +645,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
         return session;
     }
 
-    internal void HandleError(Exception exception) => _eventHandlers.HandleError(exception);
+    internal void HandleError(Exception exception) => EventHandlers.HandleError(exception);
 
     internal async Task GuardAsync(Task operation)
     {
@@ -715,24 +701,24 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     private TaskCompletionSource<bool>? StopAndUnwireDiscordEvents()
     {
-        lock (_eventsLock)
+        lock (EventsLock)
         {
             var pendingConnect = ClaimStoppedDiscordEvents();
-            _wiring.Unwire();
+            Wiring.Unwire();
             return pendingConnect;
         }
     }
 
     private TaskCompletionSource<bool>? ClaimStoppedDiscordEvents()
     {
-        lock (_eventsLock)
+        lock (EventsLock)
         {
-            _stopped = true;
+            Stopped = true;
             _stopEpoch++;
             IsReady = false;
             _serverInfo.Invalidate();
 
-            _eventHandlers.OnStopped();
+            EventHandlers.OnStopped();
 
             return TakeConnectCompletion();
         }
@@ -740,20 +726,20 @@ public sealed class Node : IAsyncDisposable, IDisposable
 
     private void ReleaseAfterDispose(TaskCompletionSource<bool>? pendingConnect)
     {
-        lock (_eventsLock)
+        lock (EventsLock)
         {
-            _wiring.Unwire();
+            Wiring.Unwire();
             NyraMetrics.Forget(this);
         }
 
         pendingConnect?.TrySetResult(false);
-        _connection.Dispose();
+        Connection.Dispose();
         _connector.CancelGate();
     }
 
     private void MarkDisposed()
     {
-        lock (_eventsLock)
+        lock (EventsLock)
             _disposed = true;
     }
 

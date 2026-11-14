@@ -61,9 +61,9 @@ public sealed class EntityAndExceptionSurface
         var host = new Endpoint("example.com", 3000, "pass");
         await Assert.That(host.Host).IsEqualTo("example.com");
 
-        var spacedHost = Throws<ArgumentException>(() => new Endpoint("a b", 1, "p"));
-        var urlHost = Throws<ArgumentException>(() => new Endpoint("http://x", 1, "p"));
-        var colonHost = Throws<ArgumentException>(() => new Endpoint("host:1", 1, "p"));
+        Throws<ArgumentException>(() => _ = new Endpoint("a b", 1, "p"));
+        Throws<ArgumentException>(() => _ = new Endpoint("http://x", 1, "p"));
+        Throws<ArgumentException>(() => _ = new Endpoint("host:1", 1, "p"));
         using (Assert.Multiple())
         {
             await Assert
@@ -77,25 +77,26 @@ public sealed class EntityAndExceptionSurface
                 .IsEqualTo("[fe80::1%zone]");
             await Assert.That(new Endpoint("[[::1]]", 1, "p").Host).IsEqualTo("[[::1]]");
         }
-        var lowPort = Throws<ArgumentOutOfRangeException>(() => new Endpoint("127.0.0.1", 0, "p"));
+        var lowPort = Throws<ArgumentOutOfRangeException>(() =>
+            _ = new Endpoint("127.0.0.1", 0, "p")
+        );
         await Assert.That(lowPort).IsNotNull();
         var highPort = Throws<ArgumentOutOfRangeException>(() =>
-            new Endpoint("127.0.0.1", 65536, "p")
+            _ = new Endpoint("127.0.0.1", 65536, "p")
         );
         await Assert.That(highPort).IsNotNull();
         await Assert.That(new Endpoint("127.0.0.1", 1, "ção").Password).IsEqualTo("ção");
-        var blankHost = Throws<ArgumentException>(() => new Endpoint("  ", 1, "p"));
+        var blankHost = Throws<ArgumentException>(() => _ = new Endpoint("  ", 1, "p"));
         await Assert.That(blankHost).IsNotNull();
-        var blankPassword = Throws<ArgumentException>(() => new Endpoint("127.0.0.1", 1, " "));
+        var blankPassword = Throws<ArgumentException>(() => _ = new Endpoint("127.0.0.1", 1, " "));
         await Assert.That(blankPassword).IsNotNull();
     }
 
-    private static readonly WireEnumConverter<LoadTypeWire, Nyra.Entities.LoadType> LoadTypeConv =
-        new();
+    private static readonly WireEnumConverter<LoadTypeWire, LoadType> LoadTypeConv = new();
 
     private static readonly WireEnumConverter<
         LyricsLoadTypeWire,
-        Nyra.Entities.LyricsLoadType
+        LyricsLoadType
     > LyricsLoadTypeConv = new();
 
     [Test]
@@ -105,28 +106,28 @@ public sealed class EntityAndExceptionSurface
         rawReader.Read();
         var objectToken = LoadTypeConv.Read(
             ref rawReader,
-            typeof(Nyra.Entities.LoadType),
+            typeof(LoadType),
             new JsonSerializerOptions()
         );
-        await Assert.That(objectToken).IsEqualTo(Nyra.Entities.LoadType.Unknown);
+        await Assert.That(objectToken).IsEqualTo(LoadType.Unknown);
         var unknownReader = new Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes("\"bogus\""));
         unknownReader.Read();
         var unknownString = LoadTypeConv.Read(
             ref unknownReader,
-            typeof(Nyra.Entities.LoadType),
+            typeof(LoadType),
             new JsonSerializerOptions()
         );
-        await Assert.That(unknownString).IsEqualTo(Nyra.Entities.LoadType.Unknown);
+        await Assert.That(unknownString).IsEqualTo(LoadType.Unknown);
         var unknownSearchReader = new Utf8JsonReader(
             System.Text.Encoding.UTF8.GetBytes("\"bogus\"")
         );
         unknownSearchReader.Read();
         var unknownSearch = LyricsLoadTypeConv.Read(
             ref unknownSearchReader,
-            typeof(Nyra.Entities.LyricsLoadType),
+            typeof(LyricsLoadType),
             new JsonSerializerOptions()
         );
-        await Assert.That(unknownSearch).IsEqualTo(Nyra.Entities.LyricsLoadType.Unknown);
+        await Assert.That(unknownSearch).IsEqualTo(LyricsLoadType.Unknown);
     }
 
     [Test]
@@ -172,18 +173,16 @@ public sealed class EntityAndExceptionSurface
         var probeWithInner = new ProbeException("wrapped", new InvalidOperationException("cause"));
         await Assert.That(probeWithInner.InnerException is InvalidOperationException).IsTrue();
 
-        var nonObject = Throws<JsonException>(() => LavaParse<LoadResult>("5"));
+        Throws<JsonException>(() => LavaParse<LoadResult>("5"));
 
         var errorFallback = JsonSerializer.Deserialize<LoadResult>(
             """{"loadType":"error","data":{"message":"nope"}}""",
             NyraJson.OptionsFor(true)
         );
         await Assert
-            .That(
-                errorFallback is LoadResult.LoadFailed fallback && fallback.Error.Message == "nope"
-            )
+            .That(errorFallback is LoadFailed fallback && fallback.Error.Message == "nope")
             .IsTrue();
-        var errorRefuses = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<LoadResult>(
                 """{"loadType":"error","data":5}""",
                 NyraJson.OptionsFor(true)
@@ -193,13 +192,11 @@ public sealed class EntityAndExceptionSurface
             """{"loadType":"error","data":{"message":"lava"}}""",
             NyraJson.OptionsFor(false)
         );
-        await Assert
-            .That(errorLava is LoadResult.LoadFailed lava && lava.Error.Message == "lava")
-            .IsTrue();
+        await Assert.That(errorLava is LoadFailed lava && lava.Error.Message == "lava").IsTrue();
 
         const string trackJson =
             """{"encoded":"QXRsZWFzdA==","info":{"identifier":"ph8qt3dhvwo","author":"SoAD - Topic","title":"ATWA","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
-        var nullTrack = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             LavaParse<LoadResult>(
                 $$$"""{"loadType":"playlist","data":{"info":{},"tracks":[{{{trackJson}}},null]}}"""
             )
@@ -214,14 +211,11 @@ public sealed class EntityAndExceptionSurface
             """{"loadType":"error","data":{"message":"x","severity":"fault","cause":"y","exception":{"message":"boom","severity":"fault","cause":"upstream"}}}"""
         );
         await Assert
-            .That(
-                errorLoad is LoadResult.LoadFailed { LoadType: var lt }
-                    && lt == Nyra.Entities.LoadType.Error
-            )
+            .That(errorLoad is LoadFailed { LoadType: var lt } && lt == LoadType.Error)
             .IsTrue();
 
-        var serialized = Throws<JsonException>(() =>
-            System.Text.Json.JsonSerializer.Serialize(errorLoad, NyraJson.OptionsFor(false))
+        Throws<JsonException>(() =>
+            JsonSerializer.Serialize(errorLoad, NyraJson.OptionsFor(false))
         );
     }
 }

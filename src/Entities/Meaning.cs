@@ -6,9 +6,7 @@ namespace Nyra.Entities;
 public enum MeaningLoadType
 {
     /// <summary>An outcome the library does not know, reported by a newer server.</summary>
-    /// <remarks>
-    /// It is the default, a response without a load type reads as Unknown instead of fabricating a known one.
-    /// </remarks>
+    /// <remarks>Also used when the response has none.</remarks>
     Unknown,
 
     /// <summary>A provider returned a meaning for the track.</summary>
@@ -56,7 +54,7 @@ public sealed record MeaningTranslation
     public IReadOnlyList<string> Paragraphs
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>Returns the translation as its title and paragraph count.</summary>
@@ -80,8 +78,7 @@ public sealed record MeaningTranslation
 
 /// <summary>Editorial metadata of a meaning, as Letras.mus curates it.</summary>
 /// <remarks>
-/// The id-like members of this record arrive as a raw JSON value that Letras writes as a string or a number,
-/// this reads either.
+/// Ids can come as a string or a number.
 /// </remarks>
 public sealed record MeaningMeta
 {
@@ -150,7 +147,7 @@ public sealed record MeaningData
     public IReadOnlyList<string> Paragraphs
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>The URL the meaning was loaded from.</summary>
@@ -212,15 +209,14 @@ public sealed record MeaningData
     /// Present only when <see cref="MeaningResult.LoadType"/> is <see cref="MeaningLoadType.Error"/>.
     /// </summary>
     /// <remarks>
-    /// Null when the server reports the error as a bare message, set when it reports the severity in-band.
+    /// Null when the server sent no severity.
     /// </remarks>
     [JsonPropertyName("severity"), JsonInclude]
     public ErrorSeverity? ErrorSeverity { get; internal set; }
 }
 
 /// <summary>
-/// Outcome of a meaning load, the data member is present for every load type, the meaning when Meaning, an
-/// empty object when Empty, the error details when Error.
+/// Result of a meaning load.
 /// </summary>
 public sealed record MeaningResult
 {
@@ -229,10 +225,6 @@ public sealed record MeaningResult
     public MeaningLoadType LoadType { get; internal set; }
 
     /// <summary>The meaning on Meaning, an empty object on Empty, the error details on Error.</summary>
-    /// <remarks>
-    /// On <see cref="MeaningLoadType.Unknown"/> it holds whatever the server put in the envelope's data
-    /// slot, if anything.
-    /// </remarks>
     [JsonPropertyName("data"), JsonInclude]
     public MeaningData? Data { get; internal set; }
 }

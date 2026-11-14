@@ -31,20 +31,10 @@ public sealed class Adapter
     private static void Ignore<T>(T args) { }
 
     private static GatewayBridge QuietGateway(GatewayClient client) =>
-        new(
-            client,
-            Ignore<VoiceServerUpdatedEventArgs>,
-            Ignore<VoiceStateUpdatedEventArgs>,
-            Ignore<GuildRemovedEventArgs>
-        );
+        new(client, Ignore, Ignore, Ignore, Ignore);
 
     private static ShardedGatewayBridge QuietSharded(ShardedGatewayClient client) =>
-        new(
-            client,
-            Ignore<VoiceServerUpdatedEventArgs>,
-            Ignore<VoiceStateUpdatedEventArgs>,
-            Ignore<GuildRemovedEventArgs>
-        );
+        new(client, Ignore, Ignore, Ignore, Ignore);
 
     internal sealed class Recording<T>
         where T : System.EventArgs
@@ -52,7 +42,7 @@ public sealed class Adapter
         public int Count;
         public T? Last;
 
-        public void Handler(object? sender, T args)
+        public void Handler(object? _, T args)
         {
             Count++;
             Last = args;
@@ -129,15 +119,19 @@ public sealed class Adapter
         await Assert.That(ReferenceEquals(senderSeen[0], owner)).IsTrue();
     }
 
-    private sealed class TestGatewayBridge : GatewayBridgeBase
-    {
-        public TestGatewayBridge(
-            Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
-            Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
-            Action<GuildRemovedEventArgs> onGuildRemoved
+    private sealed class TestGatewayBridge(
+        Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
+        Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
+        Action<GuildRemovedEventArgs> onGuildRemoved,
+        Action<ListenerVoiceStateUpdatedEventArgs> onListenerVoiceStateUpdated
+    )
+        : GatewayBridgeBase(
+            onVoiceServerUpdated,
+            onVoiceStateUpdated,
+            onGuildRemoved,
+            onListenerVoiceStateUpdated
         )
-            : base(onVoiceServerUpdated, onVoiceStateUpdated, onGuildRemoved) { }
-
+    {
         public void RaiseServer(NcServerArgs args) =>
             HandleVoiceServerUpdateAsync(args).AsTask().GetAwaiter().GetResult();
 
@@ -157,7 +151,8 @@ public sealed class Adapter
         ulong guildId,
         ulong? channelId,
         ulong userId,
-        string sessionId
+        string sessionId,
+        bool? bot = null
     ) =>
         new(
             new JsonVoiceState
@@ -166,10 +161,42 @@ public sealed class Adapter
                 ChannelId = channelId,
                 UserId = userId,
                 SessionId = sessionId,
+                User = bot is { } isBot
+                    ? new JsonGuildUser
+                    {
+                        User = new JsonUser { Id = userId, IsBot = isBot },
+                    }
+                    : null,
             },
             guildId,
             null!
         );
+
+    [Test]
+    public async Task NetCordListeners()
+    {
+        var states = new Recording<VoiceStateUpdatedEventArgs>();
+        var listeners = new Recording<ListenerVoiceStateUpdatedEventArgs>();
+        var bridge = new TestGatewayBridge(Ignore, states.Record, Ignore, listeners.Record);
+
+        bridge.RaiseState(WireState(5, 77, 10, "s1", bot: false), 9);
+        await Assert.That(listeners.Last?.UserId).IsEqualTo(10UL);
+        await Assert.That(listeners.Last?.ChannelId).IsEqualTo(77UL);
+
+        bridge.RaiseState(WireState(5, 77, 11, "s2", bot: true), 9);
+        await Assert.That(listeners.Count).IsEqualTo(1);
+
+        bridge.RaiseState(WireState(5, null, 12, "s3"), 9);
+        bridge.RaiseState(WireState(5, 77, 9, "s4"), 9);
+
+        using (Assert.Multiple())
+        {
+            await Assert.That(states.Count).IsEqualTo(1);
+            await Assert.That(listeners.Count).IsEqualTo(2);
+            await Assert.That(listeners.Last?.UserId).IsEqualTo(12UL);
+            await Assert.That(listeners.Last?.ChannelId).IsNull();
+        }
+    }
 
     [Test]
     public async Task NetCordEvents()
@@ -177,7 +204,7 @@ public sealed class Adapter
         var servers = new Recording<VoiceServerUpdatedEventArgs>();
         var states = new Recording<VoiceStateUpdatedEventArgs>();
         var removals = new Recording<GuildRemovedEventArgs>();
-        var bridge = new TestGatewayBridge(servers.Record, states.Record, removals.Record);
+        var bridge = new TestGatewayBridge(servers.Record, states.Record, removals.Record, Ignore);
 
         bridge.RaiseServer(
             new NcServerArgs(
@@ -251,7 +278,7 @@ public sealed class Adapter
     private static async Task NetCordClientWiring()
     {
         var client = new GatewayClient(new BotToken("MTIz.ab.cd"));
-        var bridge = new Nyra.NetCord.NetCordBridge(client);
+        var bridge = new NetCordBridge(client);
 
         var fiveEvents = new[]
         {
@@ -284,7 +311,7 @@ public sealed class Adapter
         await Assert
             .That(fiveEvents.All(name => ListCount(Reflect.FieldValue(client, name)) == 0))
             .IsTrue();
-        await Assert.That(CancelsWithin(token => bridge.WaitForReadyAsync(token), 200)).IsTrue();
+        await Assert.That(CancelsWithin(bridge.WaitForReadyAsync, 200)).IsTrue();
     }
 
     private static void RaiseNetCord<T>(GatewayClient client, string fieldName, T payload)
@@ -336,7 +363,6 @@ public sealed class Adapter
 
         var sharded = new ShardedGatewayClient(new BotToken("MTIz.ab.cd"));
         using (var bridge = QuietSharded(sharded))
-        {
             await Assert
                 .That(async () =>
                     await bridge
@@ -345,7 +371,6 @@ public sealed class Adapter
                         .ConfigureAwait(false)
                 )
                 .Throws<TimeoutException>();
-        }
 
         var dspSharded = new global::DSharpPlus.DiscordShardedClient(new DiscordConfiguration());
         var dspBridge = new DspBridge(dspSharded);
@@ -377,26 +402,6 @@ public sealed class Adapter
             handler.DynamicInvoke([]);
     }
 
-    private sealed class CapturingLogger(List<LogLevel> sink) : ILogger
-    {
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            lock (sink)
-                sink.Add(logLevel);
-        }
-    }
-
     private static int SubscriptionCount(DiscordSocketClient client, string fieldName)
     {
         var container = Reflect.FieldValue(client, fieldName);
@@ -408,19 +413,18 @@ public sealed class Adapter
     public async Task DiscordNetEvents()
     {
         using var client = new DiscordSocketClient();
-        var fiveEvents = new[]
+        var bridgeEvents = new[]
         {
             "_voiceServerUpdatedEvent",
             "_userVoiceStateUpdatedEvent",
             "_readyEvent",
-            "_logEvent",
             "_leftGuildEvent",
         };
 
         using (var bridge = new DNetBridge(client))
         {
             await Assert
-                .That(fiveEvents.All(name => SubscriptionCount(client, name) >= 1))
+                .That(bridgeEvents.All(name => SubscriptionCount(client, name) >= 1))
                 .IsTrue();
 
             await Assert
@@ -473,22 +477,11 @@ public sealed class Adapter
                 await Assert.That(servers.Last!.VoiceServer.Token).IsEqualTo("tok");
             }
 
-            var logged = new List<LogLevel>();
-            using var loggedBridge = new DNetBridge(client, new CapturingLogger(logged));
-            Reflect.Invoke(
-                loggedBridge,
-                "OnClientLog",
-                new LogMessage(LogSeverity.Warning, "Gateway", "hello", null)
-            );
-            await Assert.That(logged.Count).IsEqualTo(1);
-            await Assert.That(logged[0]).IsEqualTo(LogLevel.Warning);
-
-            await Assert
-                .That(CancelsWithin(token => loggedBridge.WaitForReadyAsync(token), 200))
-                .IsTrue();
+            using var waitingBridge = new DNetBridge(client);
+            await Assert.That(CancelsWithin(waitingBridge.WaitForReadyAsync, 200)).IsTrue();
         }
 
-        var afterDispose = fiveEvents.ToDictionary(
+        var afterDispose = bridgeEvents.ToDictionary(
             name => name,
             name => SubscriptionCount(client, name)
         );
@@ -497,7 +490,6 @@ public sealed class Adapter
             await Assert.That(afterDispose["_voiceServerUpdatedEvent"]).IsEqualTo(0);
             await Assert.That(afterDispose["_userVoiceStateUpdatedEvent"]).IsEqualTo(0);
             await Assert.That(afterDispose["_readyEvent"]).IsEqualTo(0);
-            await Assert.That(afterDispose["_logEvent"]).IsEqualTo(0);
             await Assert.That(afterDispose["_leftGuildEvent"]).IsEqualTo(1);
         }
     }
@@ -539,7 +531,7 @@ public sealed class Adapter
 
         var args = Reflect.New<VoiceStateUpdateEventArgs>();
         Reflect.Set(args, "User", user);
-        Reflect.Set(args, "Guild", guildId is { } guild ? FabGuild(guild) : (DspGuild?)null);
+        Reflect.Set(args, "Guild", guildId is { } guild ? FabGuild(guild) : null);
         Reflect.Set(args, "After", state);
         Reflect.Set(args, "Before", (DspVoiceState?)null);
         Reflect.Set(args, "SessionId", sessionId);
@@ -556,7 +548,7 @@ public sealed class Adapter
     private static DspServerUpdateArgs ServerArgs(ulong? guildId, string endpoint, string token)
     {
         var args = Reflect.New<DspServerUpdateArgs>();
-        Reflect.Set(args, "Guild", guildId is { } guild ? FabGuild(guild) : (DspGuild?)null);
+        Reflect.Set(args, "Guild", guildId is { } guild ? FabGuild(guild) : null);
         Reflect.Set(args, "Endpoint", endpoint);
         Reflect.Set(args, "VoiceToken", token);
         return args;
@@ -735,11 +727,11 @@ public sealed class Adapter
             var forwardingBridge = new GatewayBridge(
                 forwardingClient,
                 _ => forwarded++,
-                Ignore<VoiceStateUpdatedEventArgs>,
-                Ignore<GuildRemovedEventArgs>
+                Ignore,
+                Ignore,
+                Ignore
             )
         )
-        {
             Reflect.Invoke(
                 forwardingBridge,
                 "HandleVoiceServerUpdateAsync",
@@ -752,7 +744,6 @@ public sealed class Adapter
                     }
                 )
             );
-        }
         await Assert.That(forwarded).IsEqualTo(1);
 
         var shardToken = new BotToken("MTIz.ab.cd");
@@ -827,21 +818,13 @@ public sealed class Adapter
         var ready = bridge.WaitForReadyAsync(CancellationToken.None).Wait(1000);
         await Assert.That(ready).IsTrue();
 
-        RaiseDsp(
-            client,
-            "_socketOpened",
-            Reflect.New<global::DSharpPlus.EventArgs.SocketEventArgs>()
-        );
+        RaiseDsp(client, "_socketOpened", Reflect.New<SocketEventArgs>());
         var sockets =
             (ConcurrentDictionary<DiscordClient, byte>)
                 Reflect.FieldValue(bridge, "_gatewaySocketsUp")!;
         await Assert.That(sockets.ContainsKey(client)).IsTrue();
 
-        RaiseDsp(
-            client,
-            "_socketClosed",
-            Reflect.New<global::DSharpPlus.EventArgs.SocketCloseEventArgs>()
-        );
+        RaiseDsp(client, "_socketClosed", Reflect.New<SocketCloseEventArgs>());
         await Assert.That(sockets.ContainsKey(client)).IsFalse();
 
         var sharded = new global::DSharpPlus.DiscordShardedClient(
@@ -869,12 +852,7 @@ public sealed class Adapter
             new DiscordConfiguration { Token = "offline" }
         );
         using var emptyBridge = new DspBridge(emptySharded);
-        RaiseDsp(
-            emptySharded,
-            "_socketOpened",
-            bareShard,
-            Reflect.New<global::DSharpPlus.EventArgs.SocketEventArgs>()
-        );
+        RaiseDsp(emptySharded, "_socketOpened", bareShard, Reflect.New<SocketEventArgs>());
         await Assert
             .That(async () =>
                 await emptyBridge
@@ -888,64 +866,41 @@ public sealed class Adapter
     [Test]
     public async Task DiscordNetEventHandlers()
     {
-        var logSink = new List<LogLevel>();
         using (var client = new DiscordSocketClient())
-        using (var bridge = new DNetBridge(client, new CapturingLogger(logSink)))
+        using (var bridge = new DNetBridge(client))
         {
-            Reflect.Invoke(
-                bridge,
-                "OnClientLog",
-                new Discord.LogMessage(Discord.LogSeverity.Warning, "probe", "watch this")
-            );
-            await Assert.That(logSink).Contains(LogLevel.Warning);
-
             Reflect.Invoke(bridge, "PublishUserId", 111UL);
             Reflect.Invoke(bridge, "PublishUserId", 222UL);
             await Assert.That(bridge.WaitForReadyAsync(CancellationToken.None).Wait(500)).IsTrue();
         }
 
-        using (var quietClient = new DiscordSocketClient())
-        using (var quietBridge = new DNetBridge(quietClient))
-        {
-            await Assert
-                .That(() =>
-                {
-                    Reflect.Invoke(
-                        quietBridge,
-                        "OnClientLog",
-                        new Discord.LogMessage(Discord.LogSeverity.Error, "probe", "quiet")
-                    );
-                })
-                .ThrowsNothing();
-        }
-
-        var guild = Reflect.New<Discord.WebSocket.SocketGuild>();
+        var guild = Reflect.New<SocketGuild>();
         Reflect.Set(guild, "Id", 5UL);
-        var channel = Reflect.New<Discord.WebSocket.SocketVoiceChannel>();
+        var channel = Reflect.New<SocketVoiceChannel>();
         Reflect.Set(channel, "Guild", guild);
         Reflect.Set(channel, "Id", 77UL);
 
         await Assert
             .That(() =>
             {
-                _ = ((Nyra.Node)null!).ConnectAsync((Discord.IVoiceChannel)channel);
+                _ = ((Node)null!).ConnectAsync(channel);
             })
             .Throws<ArgumentNullException>();
 
-        var node = new Nyra.Node(
-            new Nyra.Endpoint("127.0.0.1", 3099, "youshallnotpass"),
-            new Nyra.NodeOptions { Name = "dnet-connect" }
+        var node = new Node(
+            new Endpoint("127.0.0.1", 3099, "youshallnotpass"),
+            new NodeOptions { Name = "dnet-connect" }
         );
         await Assert
             .That(() =>
             {
-                _ = node.ConnectAsync((Discord.IVoiceChannel)null!);
+                _ = node.ConnectAsync((IVoiceChannel)null!);
             })
             .Throws<ArgumentNullException>();
 
         await Assert
             .That(async () =>
-                await node.ConnectAsync((Discord.IVoiceChannel)channel)
+                await node.ConnectAsync(channel)
                     .WaitAsync(TimeSpan.FromSeconds(2))
                     .ConfigureAwait(false)
             )
@@ -1095,7 +1050,8 @@ public sealed class Adapter
             forwardSharded,
             servers.Record,
             states.Record,
-            removals.Record
+            removals.Record,
+            Ignore
         );
 
         Reflect.Invoke(forwardBridge, "OnVoiceStateUpdate", shard, WireState(5, 77, 123, "sess"));
@@ -1130,6 +1086,6 @@ public sealed class Adapter
         var deadSharded = new ShardedGatewayClient(token);
         var deadBridge = QuietSharded(deadSharded);
         deadSharded.Dispose();
-        await Assert.That(() => deadBridge.Dispose()).ThrowsNothing();
+        await Assert.That(deadBridge.Dispose).ThrowsNothing();
     }
 }

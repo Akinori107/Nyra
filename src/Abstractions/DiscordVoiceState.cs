@@ -1,7 +1,7 @@
 namespace Nyra.Abstractions;
 
 /// <summary>
-/// The current user's voice state in a guild, a null channel id means not connected on wire-sourced bridges.
+/// The current user's voice state in a guild, a null channel id means not connected.
 /// </summary>
 /// <remarks>
 /// The cache-backed bridges (DSharpPlus 4.x, Discord.Net) also report null for a channel their cache has not
@@ -15,13 +15,12 @@ namespace Nyra.Abstractions;
 /// is the id of the session that just ended.
 /// </param>
 /// <param name="SelfDeaf">
-/// Whether the user deafened itself, null when the bridge cannot see the flag. Nyra replays the last observed
-/// value on its internal rescue re-join, an out-of-band change survives it, a fresh Nyra join sends the
-/// defaults instead.
+/// Whether the user deafened itself, null when the bridge cannot see the flag. Nyra keeps it when it rejoins
+/// after the voice connection drops.
 /// </param>
 /// <param name="SelfMute">
-/// Whether the user muted itself, null when the bridge cannot see the flag. Replayed like <paramref
-/// name="SelfDeaf"/>.
+/// Whether the user muted itself, null when the bridge cannot see the flag. Nyra keeps it when it rejoins after
+/// the voice connection drops.
 /// </param>
 public readonly record struct DiscordVoiceState(
     ulong? ChannelId,

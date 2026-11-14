@@ -6,17 +6,14 @@ namespace Nyra.Entities;
 
 /// <summary>A group of players under one id, from NodeLink's group routes.</summary>
 /// <remarks>
-/// A group only records its membership and drives the members' players, every operation fans out to each
-/// guild's player through the regular per-player paths, so the effects arrive as the ordinary per-guild events
-/// (player created, track started, and so on), there are no group-specific events. Deleting a group does not
-/// touch the players, they keep playing on their own. NodeLink only.
+/// NodeLink only. Every operation runs on each member's player, so the results arrive as the normal per-guild
+/// events. Deleting a group leaves the players playing.
 /// </remarks>
 public sealed record Group
 {
     /// <summary>The caller-chosen identifier of the group.</summary>
     /// <remarks>
-    /// Only ids of letters, digits, underscores and dashes are addressable in the group URL, the server
-    /// accepts but leaves anything else unreachable. Absorbs a null id the server sends.
+    /// Use only letters, digits, underscores and dashes, other ids cannot be reached afterwards.
     /// </remarks>
     [JsonPropertyName("id"), JsonInclude]
     public string Id
@@ -27,8 +24,7 @@ public sealed record Group
 
     /// <summary>The guilds of the group.</summary>
     /// <remarks>
-    /// A guild may belong to any number of groups at once, membership is not exclusive. The server expects
-    /// real Discord snowflake ids, a non-snowflake value is rejected.
+    /// A guild can be in many groups. Ids must be real Discord snowflakes.
     /// </remarks>
     [JsonPropertyName("guildIds"), JsonInclude]
     [JsonConverter(typeof(SnowflakeListConverter))]
@@ -39,10 +35,7 @@ public sealed record Group
     public long CreatedAt { get; internal set; }
 
     /// <summary>When the group was created, as a date.</summary>
-    /// <remarks>
-    /// <see cref="DateTimeOffset.MinValue"/> when the epoch value is out of the convertible range, which the
-    /// exact floor of the range reads as too, so the sentinel cannot be told apart from it.
-    /// </remarks>
+    /// <remarks><see cref="DateTimeOffset.MinValue"/> when the value is out of range.</remarks>
     [JsonIgnore]
     public DateTimeOffset CreatedAtTime => UnixTime.ToDateTimeOffset(CreatedAt);
 
@@ -81,36 +74,31 @@ public sealed record GroupUpdateResult
     public long CreatedAt { get; internal set; }
 
     /// <summary>When the group was created, as a date.</summary>
-    /// <remarks>
-    /// <see cref="DateTimeOffset.MinValue"/> when the epoch value is out of the convertible range, which the
-    /// exact floor of the range reads as too, so the sentinel cannot be told apart from it.
-    /// </remarks>
+    /// <remarks><see cref="DateTimeOffset.MinValue"/> when the value is out of range.</remarks>
     [JsonIgnore]
     public DateTimeOffset CreatedAtTime => UnixTime.ToDateTimeOffset(CreatedAt);
 
     /// <summary>The players of the member guilds the update reached.</summary>
     /// <remarks>
-    /// The reached players, a member that failed mid-update is in errors instead, membership itself is <see
-    /// cref="Group.GuildIds"/>. Null entries the wire carries are dropped, a null list reads as empty.
+    /// A member that failed is in the errors instead.
     /// </remarks>
     [JsonPropertyName("players"), JsonInclude]
     public IReadOnlyList<Player> Players
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>Per-guild failures of the update.</summary>
     /// <remarks>
-    /// The group update answers 200 even when individual guilds fail, each failure lands here with the
-    /// server's error text, always check this list, an empty one means every member was reached. Null entries
-    /// the wire carries are dropped, a null list reads as empty.
+    /// The update succeeds even when some guilds fail, so always check this list. Empty means every member was
+    /// reached.
     /// </remarks>
     [JsonPropertyName("errors"), JsonInclude]
     public IReadOnlyList<GroupGuildError> Errors
     {
         get;
-        internal set => field = value is null ? [] : [.. value.Where(v => v is not null)];
+        internal set => field = ContentEquality.WithoutNulls(value);
     } = [];
 
     /// <summary>Indicates whether both results carry the same id, membership, players and failures.</summary>
@@ -148,9 +136,8 @@ public sealed record GroupGuildError
 
 /// <summary>What a group update changes.</summary>
 /// <remarks>
-/// Every member is optional, the update applies only what is set, membership first, then the track and the
-/// player state on every member guild, one guild at a time. A track always replaces what the
-/// members play, there is no no-replace for groups. NodeLink only.
+/// NodeLink only. Only what is set is applied, membership first. A track always replaces what the members
+/// play.
 /// </remarks>
 public sealed record GroupUpdate
 {
@@ -169,8 +156,7 @@ public sealed record GroupUpdate
     /// every member seeks to.
     /// </summary>
     /// <remarks>
-    /// The server skips the seek for members with no track loaded (a freshly created member never seeks),
-    /// members with a track, playing or paused, seek to it.
+    /// Members without a track do not seek.
     /// </remarks>
     [JsonPropertyName("position")]
     [JsonConverter(typeof(RoundedInt64Converter))]
@@ -178,9 +164,7 @@ public sealed record GroupUpdate
 
     /// <summary>Where the played track stops, in milliseconds.</summary>
     /// <remarks>
-    /// Travels with a play when the update carries a track, otherwise the server seeks every member with a
-    /// track loaded to their current position with this as the marker, members without a track only get the
-    /// marker.
+    /// Without a track in the update, it sets where the members' current tracks stop.
     /// </remarks>
     [JsonPropertyName("endTime")]
     [JsonConverter(typeof(RoundedInt64Converter))]
@@ -197,8 +181,8 @@ public sealed record GroupUpdate
     public bool? Paused { get; init; }
 
     /// <summary>
-    /// The filters applied to every member, same bounds as a per-player update, the kind gates differ, a
-    /// volume member is rejected here.
+    /// The filters applied to every member, same bounds as a per-player update, except the volume filter is
+    /// rejected.
     /// </summary>
     /// <remarks>Null leaves the members' filters alone.</remarks>
     [JsonPropertyName("filters")]
@@ -213,10 +197,6 @@ public sealed record GroupUpdate
     public bool? LoudnessNormalizer { get; init; }
 
     /// <summary>Whether every member runs speaking-detection ducking.</summary>
-    /// <remarks>
-    /// NodeLink 3.9.0 answers this member with a 500, so the whole group update fails against that build. The
-    /// stored configuration survives the failed write.
-    /// </remarks>
     [JsonPropertyName("ducking")]
     public bool? Ducking { get; init; }
 }
@@ -226,8 +206,7 @@ public sealed record GroupMembership
 {
     /// <summary>The guilds added to the group.</summary>
     /// <remarks>
-    /// Adding a guild neither creates nor connects its player, the group update that follows does. The server
-    /// expects real Discord snowflake ids, a non-snowflake value is rejected.
+    /// Adding a guild does not create its player, the update does. Ids must be real Discord snowflakes.
     /// </remarks>
     [JsonPropertyName("add")]
     [JsonConverter(typeof(SnowflakeListConverter))]
@@ -235,9 +214,7 @@ public sealed record GroupMembership
 
     /// <summary>The guilds removed from the group.</summary>
     /// <remarks>
-    /// Removal only drops the membership, the guild's player keeps playing whatever it played. The server
-    /// accepts any string here, only the add path validates snowflakes, a non-member id is a silent
-    /// no-op.
+    /// The guild's player keeps playing. Removing a guild that is not a member does nothing.
     /// </remarks>
     [JsonPropertyName("remove")]
     [JsonConverter(typeof(SnowflakeListConverter))]
@@ -258,8 +235,8 @@ public sealed record GroupMembership
 
 /// <summary>The track a <see cref="GroupUpdate"/> makes every member play.</summary>
 /// <remarks>
-/// Exactly one of <see cref="Encoded"/> or <see cref="Identifier"/> must be set, or neither, the all-null form
-/// is the stop, it stops every member, the same <see cref="Stop"/> instance.
+/// Set <see cref="Encoded"/> or <see cref="Identifier"/>, not both. With neither set it stops every member,
+/// like <see cref="Stop"/>.
 /// </remarks>
 public sealed record GroupTrack
 {
@@ -270,10 +247,7 @@ public sealed record GroupTrack
 
     /// <summary>The load identifier, such as a search.</summary>
     /// <remarks>
-    /// Mutually exclusive with <see cref="Encoded"/>, prefer <see cref="Encoded"/>. NodeLink, the only server
-    /// with groups today, never resolves identifiers in its loader, so Nyra rejects this up front with <see
-    /// cref="NotSupportedException"/>. The per-player path gates identifiers as Lavalink-only for the same
-    /// reason.
+    /// Not supported yet, Nyra throws <see cref="NotSupportedException"/>. Use <see cref="Encoded"/>.
     /// </remarks>
     [JsonPropertyName("identifier")]
     public string? Identifier { get; init; }

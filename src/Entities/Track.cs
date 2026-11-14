@@ -53,10 +53,7 @@ public sealed record Track
     public const int MaxDecodeVersion = 3;
 
     /// <summary>Base64-encoded track string, used to play it back.</summary>
-    /// <remarks>
-    /// Absorbs a null encoded the server sends, the setter substitutes the empty string, so a consumer
-    /// reading its length or comparing it never dereferences null.
-    /// </remarks>
+    /// <remarks>Never null, a missing value reads as an empty string.</remarks>
     [JsonPropertyName("encoded"), JsonInclude]
     public string Encoded
     {
@@ -65,10 +62,7 @@ public sealed record Track
     } = string.Empty;
 
     /// <summary>The descriptive info of the track.</summary>
-    /// <remarks>
-    /// Absorbs a null info the server sends, the setter substitutes a fresh instance, so comparisons and
-    /// printing never read null.
-    /// </remarks>
+    /// <remarks>Never null, a missing value reads as an empty instance.</remarks>
     [JsonPropertyName("info"), JsonInclude]
     public TrackInfo Info
     {
@@ -86,16 +80,9 @@ public sealed record Track
 
     /// <summary>Start offset from the source link's <c>t</c>/<c>start</c> parameter, client-side only.</summary>
     /// <remarks>
-    /// It travels as the position of the play update on every play of the instance (an explicit <see
-    /// cref="PlayOptions.StartPosition"/> wins) and is consumed per instance. Only a play that could not have
-    /// been refused (no <see cref="PlayOptions.NoReplace"/>, or a player with nothing playing) nulls it on the
-    /// track itself. A track shared between guilds therefore loses the offset for all of them, so clone the
-    /// track (record <c>with</c>) per consumer.
-    /// <para>
-    /// The consumption is best-effort on the play's echo, a play the server silently ignored (NodeLink drops
-    /// a re-sent identical track) can consume it without a restart, and a NoReplace refusal caused by a
-    /// concurrent same-track play consumes it too. The next accepted play then starts from zero.
-    /// </para>
+    /// A play without <see cref="PlayOptions.StartPosition"/> starts from it and clears it once the track plays. A
+    /// <see cref="PlayOptions.NoReplace"/> play over a playing track keeps it. Sharing one track between guilds
+    /// clears it for all of them, so copy the track with <c>with</c> for each guild.
     /// </remarks>
     [JsonIgnore]
     public TimeSpan? StartPosition { get; internal set; }
@@ -120,10 +107,7 @@ public sealed record Track
 
     /// <summary>Decodes a base64 track locally, without contacting the server.</summary>
     /// <remarks>
-    /// The size word of the header delimits the message, and the position is read from the message's final
-    /// 8 bytes. Source-specific data before it and any appendix an encoder wrote after the message are ignored.
-    /// Spaces inside the base64 are ignored, a track that does not decode that way is read again with each
-    /// space as the plus a query string turned into one, a trailing one included.
+    /// Source-specific data is ignored. A track copied from a URL, where a plus became a space, still decodes.
     /// </remarks>
     /// <param name="encodedTrack">The base64 track to decode.</param>
     /// <returns>The decoded track, position included.</returns>
@@ -177,10 +161,7 @@ public sealed record Track
                     payloadLength: raw.Length
                 );
 
-            var message = TrimLegacyNodeLinkTrailer(
-                raw.AsSpan(4, messageSize),
-                out var nodeLinkSeekable
-            );
+            var message = raw.AsSpan(4, messageSize);
             var reader = new JavaBinaryReader(message);
 
             var canonicalEncoded = Convert.ToBase64String(raw);
@@ -228,7 +209,7 @@ public sealed record Track
                     LengthMilliseconds = length,
                     Identifier = identifier,
                     IsStream = isStream,
-                    IsSeekable = nodeLinkSeekable ?? !isStream,
+                    IsSeekable = !isStream,
                     Uri = uri,
                     ArtworkUrl = artworkUrl,
                     Isrc = isrc,
@@ -248,27 +229,6 @@ public sealed record Track
                 exception
             );
         }
-    }
-
-    private static ReadOnlySpan<byte> TrimLegacyNodeLinkTrailer(
-        ReadOnlySpan<byte> raw,
-        out bool? nodeLinkSeekable
-    )
-    {
-        var marker = "NLK:seekable"u8;
-        nodeLinkSeekable = null;
-
-        if (raw.Length < 16 || raw[^1] is not (byte)'Y' and not (byte)'N')
-            return raw;
-
-        if (!raw.Slice(raw.Length - 13, marker.Length).SequenceEqual(marker))
-            return raw;
-
-        if (raw[^16] != 1 || raw[^15] != 0 || raw[^14] != 13)
-            return raw;
-
-        nodeLinkSeekable = raw[^1] == (byte)'Y';
-        return raw[..^16];
     }
 }
 
@@ -296,9 +256,7 @@ public sealed record TrackInfo
 
     /// <summary>Duration in milliseconds.</summary>
     /// <remarks>
-    /// For streams, Lavalink sends <see cref="long.MaxValue"/> and NodeLink 0 (or -1 for YouTube lives and the
-    /// HTTP source's streams), <see cref="Length"/> returns zero for all. A stream marker echoed back as a
-    /// floating-point number is clamped to the marker instead of failing the parse.
+    /// The raw value on a stream differs per server, <see cref="Length"/> is zero for all of them.
     /// </remarks>
     [JsonPropertyName("length"), JsonInclude]
     [JsonConverter(typeof(RoundedInt64Converter))]

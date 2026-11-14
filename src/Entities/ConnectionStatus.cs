@@ -22,7 +22,7 @@ public enum ConnectionQuality
     /// <summary>Every speed test attempted so far has failed.</summary>
     Disconnected,
 
-    /// <summary>The connection manager is unavailable in the process that served the REST request.</summary>
+    /// <summary>Connection checks are not available on the node.</summary>
     Disabled,
 }
 
@@ -35,9 +35,7 @@ public sealed record ConnectionStatus
 {
     /// <summary>The connection quality the node reports.</summary>
     /// <remarks>
-    /// A null token reads as <see cref="ConnectionQuality.Unknown"/>, the same degradation an absent member
-    /// and an unknown string already get, so a server that pushes a null status mid-degradation keeps its
-    /// frame alive instead of losing it whole.
+    /// A null or unknown value reads as <see cref="ConnectionQuality.Unknown"/>.
     /// </remarks>
     [JsonPropertyName("status"), JsonInclude]
     public ConnectionQuality Status { get; internal set; }
@@ -51,11 +49,9 @@ public sealed record ConnectionStatus
 
     /// <summary>Machine-readable reason for the disabled state.</summary>
     /// <remarks>
-    /// Only present when <see cref="Status"/> is <see cref="ConnectionQuality.Disabled"/>. A token that is
-    /// not a string reads as null instead of failing the whole frame.
+    /// Only set when <see cref="Status"/> is <see cref="ConnectionQuality.Disabled"/>.
     /// </remarks>
     [JsonPropertyName("reason"), JsonInclude]
-    [JsonConverter(typeof(NullableTolerantStringConverter))]
     public string? Reason { get; internal set; }
 
     /// <summary>Indicates whether the statuses report the same quality and reason.</summary>

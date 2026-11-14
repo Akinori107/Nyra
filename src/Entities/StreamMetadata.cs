@@ -6,7 +6,7 @@ namespace Nyra.Entities;
 /// <remarks>NodeLink only.</remarks>
 public sealed record IcyMetadata
 {
-    /// <summary>Raw metadata block, with ICY NUL padding and surrounding whitespace stripped by the server.</summary>
+    /// <summary>Raw metadata block, trimmed.</summary>
     [JsonPropertyName("raw"), JsonInclude]
     public string? Raw { get; internal set; }
 
@@ -19,9 +19,7 @@ public sealed record IcyMetadata
     public string? StreamUrl { get; internal set; }
 
     /// <summary>
-    /// The key='value' pairs the server's parser recognizes, alphanumeric keys with apostrophe-delimited
-    /// values, keys lowercased by the server, null values dropped by this client. Raw carries the
-    /// untouched block for anything the parser misses.
+    /// The key='value' pairs the server found, keys in lowercase. <see cref="Raw"/> has the full block.
     /// </summary>
     [JsonPropertyName("fields"), JsonInclude]
     public IReadOnlyDictionary<string, string>? Fields
@@ -94,9 +92,7 @@ public sealed record StreamMetadata
 
     /// <summary>When the server received the metadata, null when it sent no timestamp.</summary>
     /// <remarks>
-    /// A value outside the <see cref="DateTimeOffset"/> range (a hostile host) reads as <see
-    /// cref="DateTimeOffset.MinValue"/>, which the exact floor of the range reads as too, so the sentinel
-    /// cannot be told apart from it.
+    /// <see cref="DateTimeOffset.MinValue"/> when the value is out of range.
     /// </remarks>
     [JsonIgnore]
     public DateTimeOffset? ReceivedAt =>

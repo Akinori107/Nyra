@@ -11,9 +11,15 @@ internal sealed class ShardedGatewayBridge : GatewayBridgeBase
         ShardedGatewayClient client,
         Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
         Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
-        Action<GuildRemovedEventArgs> onGuildRemoved
+        Action<GuildRemovedEventArgs> onGuildRemoved,
+        Action<ListenerVoiceStateUpdatedEventArgs> onListenerVoiceStateUpdated
     )
-        : base(onVoiceServerUpdated, onVoiceStateUpdated, onGuildRemoved)
+        : base(
+            onVoiceServerUpdated,
+            onVoiceStateUpdated,
+            onGuildRemoved,
+            onListenerVoiceStateUpdated
+        )
     {
         _client = client;
 
@@ -27,7 +33,7 @@ internal sealed class ShardedGatewayBridge : GatewayBridgeBase
         foreach (var shard in client)
             if (shard.Status is WebSocketStatus.Ready)
             {
-                MarkReady(client.Id);
+                SetReady(client.Id);
                 break;
             }
     }
@@ -50,8 +56,7 @@ internal sealed class ShardedGatewayBridge : GatewayBridgeBase
                 "The sharded client has no started shards, start it before sending voice updates."
             );
 
-        var shard =
-            clients[0].Shard
+        var shard = clients[0].Shard
             ?? throw new InvalidOperationException(
                 "The shard range of this sharded client is not available."
             );

@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using Nyra.Abstractions;
+using Nyra.Entities;
 using Nyra.EventArgs;
 using Nyra.Internal;
 
@@ -11,7 +12,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 {
     private readonly Lock _lock = new();
     private readonly List<Node> _nodes = [];
-    private readonly Dictionary<ulong, Node> _guildClaims = new();
+    private readonly Dictionary<ulong, Node> _guildClaims = [];
     private readonly EventPump _events;
 
     private static readonly TimeSpan GatewayReadyTimeout = TimeSpan.FromSeconds(60);
@@ -51,7 +52,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         get
         {
             lock (_lock)
-                return _nodes.ToArray();
+                return [.. _nodes];
         }
     }
 
@@ -125,10 +126,8 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
     /// <summary>Removes a node and disconnects it, guild connections living on it are left untouched.</summary>
     /// <remarks>
-    /// The disconnect unwires the node's Discord events, so the guild connections left on the removed node
-    /// lose the Discord-side tracking (a kick, a move, a voice server re-target) until the node is connected
-    /// again, a removal that lands during the dormancy finds no subscriber, and the connection stays
-    /// registered until then (see <see cref="Node.DisconnectAsync"/> for the same rule on a plain stop).
+    /// Like <see cref="Node.DisconnectAsync"/>, those connections stop following Discord changes until the node
+    /// connects again.
     /// </remarks>
     /// <param name="node">The node to remove.</param>
     /// <param name="cancellationToken">A token to cancel the node's teardown.</param>
@@ -183,10 +182,8 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
     /// logger.
     /// </summary>
     /// <remarks>
-    /// Skipped is not stopped, a node whose initial connect failed keeps retrying in the background and
-    /// connects by itself once its server is reachable again, only <see cref="Node.DisconnectAsync"/> (or
-    /// removing and disposing the node) stops it. Calling this again while that node is still unreachable
-    /// skips it again right away, it does not wait for the node.
+    /// A skipped node keeps retrying in the background until it connects or <see cref="Node.DisconnectAsync"/>
+    /// stops it.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when every node settled.</returns>
@@ -242,27 +239,36 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         catch (Exception) { }
     }
 
-    /// <summary>The ready node with the fewest playing players, nodes without stats yet rank last.</summary>
+    /// <summary>The ready node with the lowest load, nodes without stats yet rank last.</summary>
     /// <remarks>
-    /// A node whose last REST request failed (unreachable, timed out, 429 or a 5xx) in the past 30 seconds
-    /// ranks after the others, it is still returned when it is the only ready node. Null while no node is
-    /// ready.
+    /// The load counts the playing players, the CPU load of the server (NodeLink's load average is divided by
+    /// its cores) and, on Lavalink, the frames that went out late or as silence in the last minute. A busy CPU
+    /// weighs more than a few players, a fully loaded one more than a thousand. A node whose last REST request
+    /// failed (unreachable, timed out, 429 or a 5xx) in the past 30 seconds ranks after the others, it is still
+    /// returned when it is the only ready node. Null while no node is ready.
     /// </remarks>
     /// <returns>The best node, null while none is ready.</returns>
-    public Node? GetNode()
+    public Node? GetNode() => GetNode(null);
+
+    internal Node? GetNode(
+        Func<Node, bool>? eligible,
+        IReadOnlyDictionary<Node, int>? pending = null
+    )
     {
         Node? best = null;
-        var bestScore = long.MaxValue;
+        (int Rank, double Load) bestScore = (int.MaxValue, double.MaxValue);
         lock (_lock)
             foreach (var node in _nodes)
             {
-                if (!node.IsReady)
+                if (!node.IsReady || eligible?.Invoke(node) == false)
                     continue;
 
-                var score =
-                    (node.RestDegraded ? 1L << 32 : 0L)
-                    + (node.Stats?.PlayingPlayers ?? int.MaxValue);
-                if (best is null || score < bestScore)
+                var stats = node.Stats;
+                var score = (
+                    (node.RestDegraded ? 2 : 0) + (stats is null ? 1 : 0),
+                    stats is null ? 0 : Load(node, stats) + (pending?.GetValueOrDefault(node) ?? 0)
+                );
+                if (best is null || score.CompareTo(bestScore) < 0)
                 {
                     bestScore = score;
                     best = node;
@@ -271,6 +277,25 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
         return best;
     }
+
+    private static double Load(Node node, Stats stats)
+    {
+        var cpu = node.IsNodeLink
+            ? stats.Cpu.SystemLoad / Math.Max(1, stats.Cpu.Cores)
+            : stats.Cpu.SystemLoad;
+        var load = stats.PlayingPlayers + Penalty(1.05, 100 * Fraction(cpu), 10);
+        if (!node.IsNodeLink && stats.FrameStats is { } frames)
+            load +=
+                Penalty(1.03, 500 * Fraction(frames.Deficit / 3000.0), 600)
+                + (2 * Penalty(1.03, 500 * Fraction(frames.Nulled / 3000.0), 300));
+        return load;
+    }
+
+    private static double Fraction(double value) =>
+        double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
+
+    private static double Penalty(double growth, double exponent, double scale) =>
+        (Math.Pow(growth, exponent) * scale) - scale;
 
     /// <summary>
     /// The connection playing in the guild, on whatever node it lives, or null when the guild is not
@@ -330,8 +355,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
 
     /// <summary>Disconnects and disposes every node of the extension and the bridge it routes through.</summary>
     /// <remarks>
-    /// Blocks on the guild teardown roundtrips of every node at once (each bounded by the HTTP timeout),
-    /// prefer <see cref="DisposeAsync"/> wherever the caller can await.
+    /// Blocks until every node is torn down, prefer <see cref="DisposeAsync"/> where you can await.
     /// </remarks>
     public void Dispose()
     {
@@ -524,7 +548,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         try
         {
             Client.Logger?.LogError(
-                LogEvents.Node,
+                LogEvents.Extension,
                 exception,
                 "An event handler of the Nyra extension threw (origin {Origin}).",
                 origin?.GetType().Name ?? "none"

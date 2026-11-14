@@ -7,18 +7,16 @@ namespace Nyra.Entities;
 /// cref="GuildConnection.PlayIdentifierAsync"/>.
 /// </summary>
 /// <param name="StartPosition">
-/// Starts playback at the given position, null falls back to the track's own start offset (a timestamped link)
-/// or the beginning when it has none. Must not be negative and must come before the end time, every play entry
-/// point validates and throws up front.
+/// Where playback starts, null uses the track's own start offset (from a timestamped link) or the beginning.
+/// Must not be negative and must come before the end time.
 /// </param>
 /// <param name="EndTime">
-/// Stops playback at the given position, null plays to the end. Must be greater than zero and after the start
-/// position, every play entry point validates and throws up front.
+/// Where playback stops, null plays to the end. Must be greater than zero and after the start position.
 /// </param>
 /// <param name="NoReplace">When true, does not replace a track that is already playing.</param>
 /// <param name="UserData">
-/// Client data the server attaches to the track and echoes back. Must be a JSON object when set. Lavalink
-/// rejects any other kind, so the play methods throw <see cref="ArgumentException"/> up front.
+/// Your own data the server attaches to the track and sends back. Must be a JSON object, anything else throws
+/// <see cref="ArgumentException"/>.
 /// </param>
 /// <param name="AudioTrackId">
 /// Selects a dub or alternate audio track on sources that expose more than one. NodeLink only, not with <see

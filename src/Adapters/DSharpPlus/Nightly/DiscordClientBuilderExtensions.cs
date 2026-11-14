@@ -12,31 +12,17 @@ public static class DiscordClientBuilderExtensions
     private static readonly ConditionalWeakTable<
         DiscordClientBuilder,
         NyraExtension
-    > BuilderExtensions = new();
-    private static readonly ConditionalWeakTable<DiscordClient, NyraExtension> Extensions = new();
+    > BuilderExtensions = [];
+    private static readonly ConditionalWeakTable<DiscordClient, NyraExtension> Extensions = [];
 
     /// <summary>Enables Nyra on a DSharpPlus client being built.</summary>
     /// <remarks>
-    /// The DSharpPlus nightly line only accepts event handlers at build time (<c>ConfigureEventHandlers</c>),
-    /// so Nyra must be enabled on the <see cref="DiscordClientBuilder"/> before <c>Build</c>. The extension is
-    /// retrieved from the built client with <see cref="GetNyra"/>.
+    /// DSharpPlus nightly only takes event handlers at build time, so call this before <c>Build</c> and get the
+    /// extension from the built client with <see cref="GetNyra"/>. A sharded client needs one call, and running
+    /// only part of the shards in a process is not supported.
     /// <para>
-    /// A sharded client built with <c>CreateSharded</c> needs exactly one registration, its orchestrator
-    /// routes guild-scoped payloads by the guild's shard slot. A guild outside this process's shard set
-    /// throws, and with a nonzero stride a guild inside the set can be routed to the wrong shard.
-    /// </para>
-    /// <para>
-    /// Disposal is yours, the container only disposes the services it created itself. The nodes keep running
-    /// until <see cref="NyraExtension.DisposeAsync"/> is called on the instance this method registered.
-    /// </para>
-    /// <para>
-    /// The event handler collection accepts registrations only, no removal. Enabling Nyra again on the same
-    /// builder after disposing the extension leaves the disposed pair registered as no-ops, so build a fresh
-    /// builder to re-enable Nyra.
-    /// </para>
-    /// <para>
-    /// Build the builder at most once while this Nyra pair is alive. Every Build constructs a new client and the
-    /// shared pair binds to the first one, so the later clients' voice and session events never arrive.
+    /// You dispose the extension with <see cref="NyraExtension.DisposeAsync"/>, the container does not. Build the
+    /// builder only once, and use a new builder to enable Nyra again after disposing it.
     /// </para>
     /// </remarks>
     /// <param name="builder">The client builder to enable Nyra on.</param>
@@ -52,8 +38,7 @@ public static class DiscordClientBuilderExtensions
 
             var bridge = new DSharpPlusBridge();
             var extension = new NyraExtension(bridge);
-            BuilderExtensions.Remove(builder);
-            BuilderExtensions.Add(builder, extension);
+            BuilderExtensions.AddOrUpdate(builder, extension);
 
             builder.ConfigureServices(services =>
             {
@@ -90,8 +75,7 @@ public static class DiscordClientBuilderExtensions
         {
             lock (UseNyraGate)
             {
-                Extensions.Remove(client);
-                Extensions.Add(client, live);
+                Extensions.AddOrUpdate(client, live);
             }
             return live;
         }
@@ -100,11 +84,6 @@ public static class DiscordClientBuilderExtensions
     }
 
     /// <summary>Gets the Nyra extension of a sharded client, one built through the sharded builder.</summary>
-    /// <remarks>
-    /// <see cref="DiscordClient.AllShardsConnected"/> is a live flag, not an awaitable, callers that need
-    /// every shard online before subscribing nodes can poll it, the extension itself is safe to read as soon
-    /// as the client is built.
-    /// </remarks>
     /// <param name="client">The sharded client (built with CreateSharded) to read the extension of.</param>
     /// <returns>
     /// A single entry under key 0, regardless of the client's shard ids, the one extension covers every shard.

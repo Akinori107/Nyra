@@ -267,7 +267,7 @@ internal sealed class FiltersConverter(
 
         if (filter is null)
         {
-            WriteNull(writer, key);
+            writer.WriteNull(key);
             return false;
         }
 
@@ -301,12 +301,6 @@ internal sealed class FiltersConverter(
             writer.WriteStartArray();
             writer.WriteEndArray();
         }
-    }
-
-    private static void WriteNull(Utf8JsonWriter writer, string name)
-    {
-        writer.WritePropertyName(name);
-        writer.WriteNullValue();
     }
 
     private bool ShouldWrite(string key) => enabledFilters is null || enabledFilters.Contains(key);
@@ -375,7 +369,6 @@ internal sealed class FiltersConverter(
             if (name.ValueTextEquals("volume"u8))
                 if (reader.TokenType == JsonTokenType.StartObject)
                     while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-                    {
                         if (reader.ValueTextEquals("value"u8))
                         {
                             reader.Read();
@@ -383,7 +376,6 @@ internal sealed class FiltersConverter(
                         }
                         else
                             reader.Skip();
-                    }
                 else
                     ReadVolumeScalar(ref reader, ref volume);
             else if (name.ValueTextEquals("equalizer"u8))
@@ -480,7 +472,7 @@ internal sealed class FiltersConverter(
         [property: JsonPropertyName("gain")] float? Gain
     );
 
-    private static IReadOnlyList<EqualizerBand>? ReadBands(
+    private static List<EqualizerBand>? ReadBands(
         ref Utf8JsonReader reader,
         JsonSerializerOptions options
     )
@@ -544,7 +536,6 @@ internal sealed class FiltersConverter(
         IReadOnlyList<EqualizerBand>? bands = null;
         FilterTransition? transition = null;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-        {
             if (reader.ValueTextEquals("bands"u8))
             {
                 reader.Read();
@@ -563,7 +554,6 @@ internal sealed class FiltersConverter(
             }
             else
                 reader.Skip();
-        }
 
         return (bands, bands is null ? null : transition);
     }
@@ -582,7 +572,6 @@ internal sealed class FiltersConverter(
 
         var peek = reader;
         while (peek.Read() && peek.TokenType != JsonTokenType.EndObject)
-        {
             if (peek.ValueTextEquals("_disabled"u8))
             {
                 peek.Read();
@@ -596,7 +585,6 @@ internal sealed class FiltersConverter(
             }
             else
                 peek.Skip();
-        }
 
         return ReadFiniteFilter<TFilter>(ref reader, options);
     }

@@ -5,19 +5,13 @@ namespace Nyra.Entities.Filters;
 /// <summary>Quickly oscillates the volume.</summary>
 /// <remarks>
 /// Defaults on Lavalink, frequency 2.0, depth 0.5.
-/// <para>
-/// NodeLink reads a missing member as 0 and runs the filter inert, a partial object from a co-client stays
-/// inactive there, and a full-chain write by this side fills the unset members with the defaults above,
-/// activating it. Send explicit values to pin the sound you intend.
-/// </para>
+/// Unset members are sent as these defaults. Set explicit values to get the sound you want.
 /// </remarks>
 /// <param name="Frequency">Hz, greater than 0.</param>
 /// <param name="Depth">
 /// Greater than 0 and up to 1.0, Lavalink rejects a larger value, NodeLink clamps it.
 /// </param>
-/// <param name="Transition">
-/// Fades the filter in or out instead of stepping, NodeLink only. Parameter changes still step.
-/// </param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record TremoloFilter(
     [property: JsonPropertyName("frequency")] float? Frequency = null,
     [property: JsonPropertyName("depth")] float? Depth = null,

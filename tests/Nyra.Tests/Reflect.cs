@@ -24,15 +24,14 @@ internal static class Reflect
     {
         var declared =
             typeof(TObj) == typeof(object) && target is not null ? target.GetType() : typeof(TObj);
-        var info =
-            declared.GetProperty(
-                property,
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
-            ) ?? throw new MissingMemberException(declared.Name, property);
+        var info = declared.GetProperty(
+            property,
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+        ) ?? throw new MissingMemberException(declared.Name, property);
         var setter = info.GetSetMethod(true);
         if (setter is not null)
         {
-            setter.Invoke(target, new object?[] { value });
+            setter.Invoke(target, [value]);
             return;
         }
 
@@ -76,13 +75,9 @@ internal static class Reflect
 
     internal static object? Invoke(object target, string method, params object?[]? arguments)
     {
-        var info =
-            target
-                .GetType()
-                .GetMethod(
-                    method,
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
-                )
+        var info = target
+            .GetType()
+            .GetMethod(method, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new MissingMethodException(target.GetType().Name, method);
         return info.Invoke(target, arguments);
     }

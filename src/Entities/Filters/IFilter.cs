@@ -2,10 +2,8 @@ namespace Nyra.Entities.Filters;
 
 /// <summary>Marks an audio filter applicable to a player.</summary>
 /// <remarks>
-/// Implementations are limited to the sealed filter records of this library, applied one at a time by <see
-/// cref="GuildFilters.AddAsync"/> or as a member of a FilterChain through GuildFilters.ApplyAsync, and
-/// removed by the GuildFilters.RemoveAsync overloads. A user-defined implementation is rejected with <see
-/// cref="ArgumentException"/>.
+/// Only the filter records of this library work, your own implementation throws
+/// <see cref="ArgumentException"/>.
 /// </remarks>
 public interface IFilter { }
 

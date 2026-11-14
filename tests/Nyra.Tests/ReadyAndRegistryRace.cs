@@ -17,7 +17,7 @@ public sealed class ReadyAndRegistryRace
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
 
-        public RecordingList<string> Messages { get; } = new();
+        public RecordingList<string> Messages { get; } = [];
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -129,7 +129,7 @@ public sealed class ReadyAndRegistryRace
 
             try
             {
-                var disposal = Task.Run(() => stack.Extension.Dispose());
+                var disposal = Task.Run(stack.Extension.Dispose);
                 await AdvanceUntilAsync(
                         time,
                         disposal,
@@ -155,7 +155,7 @@ public sealed class ReadyAndRegistryRace
         var bridge = new FaultingAsyncBridge();
         var extension = new NyraExtension(bridge);
         await Assert
-            .That(() => extension.Dispose())
+            .That(extension.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessage("bridge dispose refused");
     }
@@ -174,7 +174,7 @@ public sealed class ReadyAndRegistryRace
             remove { }
         }
 
-        public ILogger? Logger { get; set; }
+        public ILogger? Logger => null;
 
         public Task<ClientInformation> WaitForReadyAsync(
             CancellationToken cancellationToken = default
@@ -188,8 +188,6 @@ public sealed class ReadyAndRegistryRace
             CancellationToken cancellationToken = default
         ) => Task.CompletedTask;
 
-        public ClientInformation Identification => new(7);
-
         public ValueTask DisposeAsync() =>
             ValueTask.FromException(new InvalidOperationException("bridge dispose refused"));
     }
@@ -200,23 +198,19 @@ public sealed class ReadyAndRegistryRace
         var stack = await StartAsync("rest-premature").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/sessions/fake-session/groups",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-                        + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream
-                        .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the body"))
-                        .ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                    await Task.Delay(700).ConfigureAwait(false);
-                    stream.Close();
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/sessions/fake-session/groups", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                    + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream
+                    .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the body"))
+                    .ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+                await Task.Delay(700).ConfigureAwait(false);
+                stream.Close();
+            });
 
             await Assert
                 .That(async () =>
@@ -230,13 +224,22 @@ public sealed class ReadyAndRegistryRace
     }
 
     [Test]
-    public async Task RetryAfterPastDate()
+    public async Task RetryAfterDateFollowsTheNodeClock()
     {
-        var response = new HttpResponseMessage();
-        response.Headers.RetryAfter = new RetryConditionHeaderValue(
-            DateTimeOffset.UtcNow - TimeSpan.FromHours(1)
+        var time = new FakeTimeProvider();
+        using var past = new HttpResponseMessage();
+        past.Headers.RetryAfter = new RetryConditionHeaderValue(
+            time.GetUtcNow() - TimeSpan.FromHours(1)
         );
-        await Assert.That(RestClient.ReadRetryAfter(response)).IsNull();
+        using var future = new HttpResponseMessage();
+        future.Headers.RetryAfter = new RetryConditionHeaderValue(
+            time.GetUtcNow() + TimeSpan.FromSeconds(30)
+        );
+
+        await Assert.That(RestClient.ReadRetryAfter(past, time)).IsNull();
+        await Assert
+            .That(RestClient.ReadRetryAfter(future, time))
+            .IsEqualTo(TimeSpan.FromSeconds(30));
     }
 
     [Test]
@@ -245,18 +248,14 @@ public sealed class ReadyAndRegistryRace
         var stack = await StartAsync("stream-cancel").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/loadstream",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
-                        + "Content-Length: 500\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/loadstream", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
+                    + "Content-Length: 500\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+            });
 
             using var cancelled = new CancellationTokenSource();
             cancelled.Cancel();

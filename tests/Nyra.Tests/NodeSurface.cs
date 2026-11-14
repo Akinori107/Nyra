@@ -86,8 +86,24 @@ public sealed class NodeSurface
             "a zero ready timeout"
         );
         yield return Case(
+            new NodeOptions { Name = "x", RescueTimeout = TimeSpan.Zero },
+            "a zero rescue timeout"
+        );
+        yield return Case(
+            new NodeOptions { Name = "x", RescueTimeout = TimeSpan.FromSeconds(-1) },
+            "a negative rescue timeout"
+        );
+        yield return Case(
             new NodeOptions { Name = "x", ReadyTimeout = TimeSpan.FromDays(41) },
             "a ready timeout past the ceiling"
+        );
+        yield return Case(
+            new NodeOptions { Name = "x", FailoverAfter = TimeSpan.FromSeconds(-1) },
+            "a negative failover delay"
+        );
+        yield return Case(
+            new NodeOptions { Name = "x", FailoverAfter = TimeSpan.FromDays(41) },
+            "a failover delay past the ceiling"
         );
     }
 
@@ -133,7 +149,7 @@ public sealed class NodeSurface
             var track = JsonSerializer.Deserialize<Track>(TrackJson, NyraJson.SerializerOptions)!;
             const string groupPath = "/v4/sessions/fake-session/groups/g1";
 
-            string PatchBody(string body) =>
+            string PatchBody() =>
                 server.RestCalls.Last(c => c is { Method: "PATCH", Path: groupPath }).Body
                 ?? string.Empty;
 
@@ -148,18 +164,11 @@ public sealed class NodeSurface
             await Assert.That(groups[0].Id).IsEqualTo("g1");
 
             var created = new TaskCompletionSource<string?>();
-            server.On(
-                "POST",
-                "/v4/sessions/fake-session/groups",
-                call =>
-                {
-                    created.TrySetResult(call.Body);
-                    return new FakeRestResponse(
-                        200,
-                        """{"id":"g2","guildIds":[777],"createdAt":1}"""
-                    );
-                }
-            );
+            server.On("POST", "/v4/sessions/fake-session/groups", call =>
+            {
+                created.TrySetResult(call.Body);
+                return new FakeRestResponse(200, """{"id":"g2","guildIds":[777],"createdAt":1}""");
+            });
             var made = await node
                 .Groups.CreateAsync("g2", new List<ulong> { 777 }.Where(_ => true))
                 .ConfigureAwait(false);
@@ -185,19 +194,18 @@ public sealed class NodeSurface
                 .That(server.RestCalls)
                 .Contains(c => c is { Method: "DELETE", Path: groupPath });
 
-            server.On(
-                "PATCH",
-                groupPath,
-                _ => new FakeRestResponse(200, """{"id":"g1","createdAt":1}""")
-            );
+            server.On("PATCH", groupPath, _ => new FakeRestResponse(
+                200,
+                """{"id":"g1","createdAt":1}"""
+            ));
             await node.Groups.StopAsync("g1").ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"encoded\":null");
+            await Assert.That(PatchBody()).Contains("\"encoded\":null");
             await node.Groups.PauseAsync("g1").ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"paused\":true");
+            await Assert.That(PatchBody()).Contains("\"paused\":true");
             await node.Groups.ResumeAsync("g1").ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"paused\":false");
+            await Assert.That(PatchBody()).Contains("\"paused\":false");
             await node.Groups.SetVolumeAsync("g1", 250).ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"volume\":250");
+            await Assert.That(PatchBody()).Contains("\"volume\":250");
 
             await Assert
                 .That(async () =>
@@ -238,7 +246,7 @@ public sealed class NodeSurface
             await node
                 .Groups.PlayTrackAsync("g1", track, position: TimeSpan.FromSeconds(2))
                 .ConfigureAwait(false);
-            var playBody = PatchBody(string.Empty);
+            var playBody = PatchBody();
             await Assert.That(playBody).Contains("QXRsZWFzdA==");
             await Assert.That(playBody).Contains("\"position\":2000");
 
@@ -258,27 +266,23 @@ public sealed class NodeSurface
             await node
                 .Groups.AddPlayersAsync("g1", new List<ulong> { 111 }.Where(_ => true))
                 .ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"add\":[\"111\"]");
+            await Assert.That(PatchBody()).Contains("\"add\":[\"111\"]");
             await node.Groups.RemovePlayersAsync("g1", [222]).ConfigureAwait(false);
-            await Assert.That(PatchBody(string.Empty)).Contains("\"remove\":[\"222\"]");
+            await Assert.That(PatchBody()).Contains("\"remove\":[\"222\"]");
 
             string? lastSessionBody = null;
-            server.On(
-                "PATCH",
-                "/v4/sessions/fake-session",
-                call =>
-                {
-                    lastSessionBody = call.Body;
-                    return new FakeRestResponse(200, """{"resuming":true,"timeout":90}""");
-                }
-            );
+            server.On("PATCH", "/v4/sessions/fake-session", call =>
+            {
+                lastSessionBody = call.Body;
+                return new FakeRestResponse(200, """{"resuming":true,"timeout":90}""");
+            });
             var fractional = await node.UpdateSessionAsync(true, TimeSpan.FromMilliseconds(1500))
                 .ConfigureAwait(false);
             using (Assert.Multiple())
             {
                 await Assert.That(fractional).IsNotNull();
-                await Assert.That(fractional!.Resuming).IsTrue();
-                await Assert.That(fractional!.Timeout).IsEqualTo(90);
+                await Assert.That(fractional.Resuming).IsTrue();
+                await Assert.That(fractional.Timeout).IsEqualTo(90);
             }
             await Assert.That(lastSessionBody?.Contains("\"timeout\":1")).IsTrue();
             await Assert
@@ -293,8 +297,8 @@ public sealed class NodeSurface
             using (Assert.Multiple())
             {
                 await Assert.That(session).IsNotNull();
-                await Assert.That(session!.Resuming).IsTrue();
-                await Assert.That(session!.Timeout).IsEqualTo(90);
+                await Assert.That(session.Resuming).IsTrue();
+                await Assert.That(session.Timeout).IsEqualTo(90);
             }
             await Assert.That(lastSessionBody?.Contains("\"timeout\":90")).IsTrue();
         }

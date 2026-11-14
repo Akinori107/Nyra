@@ -6,11 +6,12 @@ using Nyra.WebSocket;
 
 namespace Nyra.Internal;
 
-internal sealed class NodeConnection : IDisposable
+internal sealed class NodeConnection(
+    Node node,
+    NodeEventDispatcher dispatcher,
+    Func<CancellationToken, Task> preConnect
+) : IDisposable
 {
-    private readonly Node _node;
-    private readonly NodeEventDispatcher _dispatcher;
-    private readonly Func<CancellationToken, Task> _preConnect;
     private readonly Lock _lock = new();
 
     private WiredClient? _wired;
@@ -28,6 +29,7 @@ internal sealed class NodeConnection : IDisposable
     private volatile bool _stopped;
     private bool _everConnected;
     private int _reconnectAttempts;
+    private int _attemptsSinceReady;
 
     private volatile int _generation;
 
@@ -61,17 +63,6 @@ internal sealed class NodeConnection : IDisposable
         }
     }
 
-    public NodeConnection(
-        Node node,
-        NodeEventDispatcher dispatcher,
-        Func<CancellationToken, Task> preConnect
-    )
-    {
-        _node = node;
-        _dispatcher = dispatcher;
-        _preConnect = preConnect;
-    }
-
     public bool IsConnected
     {
         get
@@ -94,6 +85,7 @@ internal sealed class NodeConnection : IDisposable
 
             _stopped = false;
             _reconnectAttempts = 0;
+            _attemptsSinceReady = 0;
             _everConnected = false;
             _initialConnectFailure = null;
             _lastCloseInfo = default;
@@ -128,10 +120,13 @@ internal sealed class NodeConnection : IDisposable
         return true;
     }
 
-    internal void NoteReady()
+    internal int NoteReady()
     {
         lock (_lock)
+        {
             _reconnectAttempts = 0;
+            return Interlocked.Exchange(ref _attemptsSinceReady, 0);
+        }
     }
 
     internal bool IsCurrentGeneration(int generation)
@@ -172,7 +167,7 @@ internal sealed class NodeConnection : IDisposable
         if (supervisionTask is not null)
         {
             await supervisionTask
-                .WaitAsync(TimeSpan.FromSeconds(5), _node.Time)
+                .WaitAsync(TimeSpan.FromSeconds(5), node.Time, CancellationToken.None)
                 .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             if (!supervisionTask.IsCompleted)
                 supervisionTask.ObserveFaults();
@@ -210,7 +205,7 @@ internal sealed class NodeConnection : IDisposable
         }
         catch (Exception stopException)
         {
-            _node.HandleError(stopException);
+            node.HandleError(stopException);
         }
 
         disconnectSignal.TrySetResult();
@@ -243,16 +238,17 @@ internal sealed class NodeConnection : IDisposable
 
     private async Task<bool> ConnectOnceAsync(int generation, CancellationToken lifetimeCt)
     {
-        using var probeCts = new TimeoutLink(_node.Time, _node.Options.ReadyTimeout, lifetimeCt);
+        Interlocked.Increment(ref _attemptsSinceReady);
+        using var probeCts = new TimeoutLink(node.Time, node.Options.ReadyTimeout, lifetimeCt);
         try
         {
-            await _preConnect(probeCts.Token).ConfigureAwait(false);
+            await preConnect(probeCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
             when (probeCts.IsCancellationRequested && !lifetimeCt.IsCancellationRequested)
         {
             throw new TimeoutException(
-                $"The server at {_node.Endpoint} did not answer the pre-connect probe within {_node.Options.ReadyTimeout}."
+                $"The server at {node.Endpoint} did not answer the pre-connect probe within {node.Options.ReadyTimeout}."
             );
         }
 
@@ -273,15 +269,15 @@ internal sealed class NodeConnection : IDisposable
             client.TextMessageReceived += OnText;
             client.Closed += OnClosed;
             using var handshakeCts = new TimeoutLink(
-                _node.Time,
-                _node.Options.ReadyTimeout,
+                node.Time,
+                node.Options.ReadyTimeout,
                 lifetimeCt
             );
             try
             {
                 await client
                     .ConnectAsync(
-                        _node.Endpoint.ToWebSocketUri(),
+                        node.Endpoint.ToWebSocketUri(),
                         BuildHeaders(),
                         handshakeCts.Token
                     )
@@ -291,7 +287,7 @@ internal sealed class NodeConnection : IDisposable
                 when (handshakeCts.IsCancellationRequested && !lifetimeCt.IsCancellationRequested)
             {
                 throw new TimeoutException(
-                    $"The server at {_node.Endpoint} did not complete the websocket upgrade within {_node.Options.ReadyTimeout}."
+                    $"The server at {node.Endpoint} did not complete the websocket upgrade within {node.Options.ReadyTimeout}."
                 );
             }
         }
@@ -331,7 +327,7 @@ internal sealed class NodeConnection : IDisposable
             if (_stopped || _generation != generation)
                 return true;
 
-        connectionEpoch = _node.EventHandlers.HandleConnected(generation);
+        connectionEpoch = node.EventHandlers.HandleConnected(generation);
         if (connectionEpoch < 0)
         {
             wired.Detach();
@@ -341,7 +337,6 @@ internal sealed class NodeConnection : IDisposable
 
         var poisonedTail = false;
         lock (_lock)
-        {
             if (_stopped || _generation != generation)
             {
                 wired.Detach();
@@ -349,7 +344,6 @@ internal sealed class NodeConnection : IDisposable
             }
             else
                 _publishedConnectionEpoch = connectionEpoch;
-        }
 
         if (poisonedTail)
         {
@@ -357,13 +351,16 @@ internal sealed class NodeConnection : IDisposable
             return false;
         }
 
-        _node.EventHandlers.ArmReadyWatchdog(connectionEpoch, generation);
+        node.EventHandlers.ArmReadyWatchdog(connectionEpoch, generation);
 
         client.StartReceiving();
         return true;
     }
 
-    private async Task StopClientAsync(WiredClient wired, CancellationToken cancellationToken)
+    private static async Task StopClientAsync(
+        WiredClient wired,
+        CancellationToken cancellationToken
+    )
     {
         wired.Detach();
         try
@@ -417,55 +414,55 @@ internal sealed class NodeConnection : IDisposable
                 if (_stopped)
                     return;
 
+                Exception? failure = null;
                 if (wasEverConnected)
-                {
-                    try
-                    {
-                        _node.Logger?.LogWarning(
-                            LogEvents.Node,
-                            closeException,
-                            "Node {NodeName} disconnected ({CloseStatus} {CloseDescription}).",
-                            _node.Name,
-                            closeStatus,
-                            closeDescription
-                        );
-                    }
-                    catch { }
-                    _node.EventHandlers.HandleDisconnected(
+                    node.EventHandlers.HandleDisconnected(
                         closeStatus,
                         closeDescription,
                         closeException,
                         final: false,
                         ownerGeneration: generation
                     );
-                }
                 else
-                    ConnectionFailure.Log(
-                        _node.Logger,
-                        _node.Name,
-                        _node.Endpoint,
-                        initial: true,
-                        initialConnectException
-                            ?? closeException
-                            ?? new InvalidOperationException(
-                                "The websocket closed before the connection was established."
-                            )
-                    );
+                    failure = initialConnectException
+                        ?? closeException
+                        ?? new InvalidOperationException(
+                            "The websocket closed before the connection was established."
+                        );
 
                 Exception? lastConnectFailure = null;
+                string? lastFailureKey = null;
+
+                string? LogFailure(
+                    Exception exception,
+                    TimeSpan? retryIn = null,
+                    string? attemptText = null
+                ) =>
+                    ConnectionFailure.Log(
+                        node.Logger,
+                        node.Name,
+                        node.Endpoint,
+                        initial: !wasEverConnected,
+                        exception,
+                        retryIn,
+                        attemptText,
+                        lastFailureKey
+                    );
 
                 while (!lifetimeCt.IsCancellationRequested && !_stopped)
                 {
                     var attempt = Interlocked.Increment(ref _reconnectAttempts);
                     if (
-                        _node.Options.MaxReconnectAttempts >= 0
-                        && attempt > _node.Options.MaxReconnectAttempts
+                        node.Options.MaxReconnectAttempts >= 0
+                        && attempt > node.Options.MaxReconnectAttempts
                     )
                     {
+                        if (failure is not null)
+                            LogFailure(failure);
                         EndSupervision(generation);
                         if (_generation != generation)
                             return;
-                        _node.EventHandlers.HandleDisconnected(
+                        node.EventHandlers.HandleDisconnected(
                             closeStatus,
                             closeDescription,
                             lastConnectFailure ?? initialConnectException ?? closeException,
@@ -476,25 +473,30 @@ internal sealed class NodeConnection : IDisposable
                     }
 
                     var delay = ComputeReconnectDelay(attempt);
-                    try
-                    {
-                        _node.Logger?.LogInformation(
-                            LogEvents.Node,
-                            wasEverConnected
-                                ? "Node {NodeName} reconnecting in {Delay} (attempt {Attempt})."
-                                : "Node {NodeName} connecting in {Delay} (attempt {Attempt}).",
-                            _node.Name,
-                            TimeSpan.FromSeconds(Math.Round(delay.TotalSeconds)),
-                            _node.Options.MaxReconnectAttempts < 0
-                                ? attempt.ToString()
-                                : $"{attempt}/{_node.Options.MaxReconnectAttempts}"
-                        );
-                    }
-                    catch { }
+                    var shownDelay = TimeSpan.FromSeconds(Math.Round(delay.TotalSeconds));
+                    var attemptText =
+                        node.Options.MaxReconnectAttempts < 0
+                            ? attempt.ToString(CultureInfo.InvariantCulture)
+                            : $"{attempt}/{node.Options.MaxReconnectAttempts}";
+                    if (failure is null)
+                        try
+                        {
+                            node.Logger?.LogDebug(
+                                LogEvents.Node,
+                                "Node {NodeName} reconnecting in {Delay} (attempt {Attempt}).",
+                                node.Name,
+                                shownDelay,
+                                attemptText
+                            );
+                        }
+                        catch { }
+                    else
+                        lastFailureKey = LogFailure(failure, shownDelay, attemptText);
+                    failure = null;
 
                     try
                     {
-                        await Task.Delay(delay, _node.Time, lifetimeCt).ConfigureAwait(false);
+                        await Task.Delay(delay, node.Time, lifetimeCt).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -509,17 +511,6 @@ internal sealed class NodeConnection : IDisposable
                             return;
                         }
 
-                        try
-                        {
-                            _node.Logger?.LogInformation(
-                                LogEvents.Node,
-                                wasEverConnected
-                                    ? "Node {NodeName} reconnected."
-                                    : "Node {NodeName} connected.",
-                                _node.Name
-                            );
-                        }
-                        catch { }
                         break;
                     }
                     catch (OperationCanceledException) when (lifetimeCt.IsCancellationRequested)
@@ -529,15 +520,12 @@ internal sealed class NodeConnection : IDisposable
                     catch (Exception exception)
                     {
                         lastConnectFailure = exception;
-                        ConnectionFailure.Log(
-                            _node.Logger,
-                            _node.Name,
-                            _node.Endpoint,
-                            initial: !wasEverConnected,
-                            exception
-                        );
+                        failure = exception;
                     }
                 }
+
+                if (failure is not null)
+                    LogFailure(failure);
             }
         }
         catch (OperationCanceledException) { }
@@ -545,7 +533,7 @@ internal sealed class NodeConnection : IDisposable
         {
             TaskCompletionSource<bool>? loopCompletion = null;
             WiredClient? wired = null;
-            lock (_node.EventsLock)
+            lock (node.EventsLock)
             {
                 bool ownsGeneration;
                 lock (_lock)
@@ -553,7 +541,7 @@ internal sealed class NodeConnection : IDisposable
 
                 if (ownsGeneration)
                 {
-                    loopCompletion = _node.TakeConnectCompletion(generation);
+                    loopCompletion = node.TakeConnectCompletion(generation);
                     wired = _wired;
                     _wired = null;
                 }
@@ -566,15 +554,15 @@ internal sealed class NodeConnection : IDisposable
                 }
                 catch (Exception stopException)
                 {
-                    _node.HandleError(stopException);
+                    node.HandleError(stopException);
                 }
 
             EndSupervision(generation);
             loopCompletion?.TrySetResult(false);
-            _node.HandleError(exception);
+            node.HandleError(exception);
 
             if (wired is not null && _generation == generation)
-                _node.EventHandlers.HandleDisconnected(
+                node.EventHandlers.HandleDisconnected(
                     null,
                     "the connection's supervision loop failed",
                     exception,
@@ -605,10 +593,10 @@ internal sealed class NodeConnection : IDisposable
     private TimeSpan ComputeReconnectDelay(int attempt)
     {
         var exponent = Math.Min(attempt - 1, 62);
-        var delay = _node.Options.ReconnectDelay.TotalMilliseconds * Math.Pow(2, exponent);
+        var delay = node.Options.ReconnectDelay.TotalMilliseconds * Math.Pow(2, exponent);
         delay *= 0.8 + (Random.Shared.NextDouble() * 0.4);
         return TimeSpan.FromMilliseconds(
-            Math.Max(1.0, Math.Min(delay, _node.Options.MaxReconnectDelay.TotalMilliseconds))
+            Math.Max(1.0, Math.Min(delay, node.Options.MaxReconnectDelay.TotalMilliseconds))
         );
     }
 
@@ -616,14 +604,14 @@ internal sealed class NodeConnection : IDisposable
     {
         var headers = new Dictionary<string, string>
         {
-            ["Authorization"] = _node.Endpoint.Password,
-            ["User-Id"] = _node.CurrentUserId.ToString(CultureInfo.InvariantCulture),
+            ["Authorization"] = node.Endpoint.Password,
+            ["User-Id"] = node.CurrentUserId.ToString(CultureInfo.InvariantCulture),
             ["Client-Name"] = ClientHeaders.UserAgent,
             ["User-Agent"] = ClientHeaders.UserAgent,
         };
 
-        if (_node.ResumingEnabled && !string.IsNullOrEmpty(_node.SessionId))
-            headers["Session-Id"] = _node.SessionId;
+        if (node.ResumingEnabled && !string.IsNullOrEmpty(node.SessionId))
+            headers["Session-Id"] = node.SessionId;
 
         return headers;
     }
@@ -635,11 +623,11 @@ internal sealed class NodeConnection : IDisposable
 
         try
         {
-            _dispatcher.Dispatch(data.Span, connectionEpoch);
+            dispatcher.Dispatch(data.Span, connectionEpoch);
         }
         catch (Exception exception)
         {
-            _node.HandleError(exception);
+            node.HandleError(exception);
         }
     }
 

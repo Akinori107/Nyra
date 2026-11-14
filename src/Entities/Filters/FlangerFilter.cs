@@ -5,26 +5,19 @@ namespace Nyra.Entities.Filters;
 /// <summary>Sweeps a comb delay for a jet-plane effect.</summary>
 /// <remarks>NodeLink only.</remarks>
 /// <param name="Rate">
-/// Sweep rate in Hz. 0.0 and the null default (sent as 0) are rejected before the wire, since they leave the
-/// filter inactive and the server would accept and remember that.
+/// Sweep rate in Hz. 0.0 and null are rejected, since they leave the filter silent.
 /// </param>
 /// <param name="Depth">
-/// Sweep depth, 0.0-1.0. 0.0 and the null default (sent as 0) are rejected before the wire, since they leave
-/// the filter inactive and the server would accept and remember that.
+/// Sweep depth, 0.0-1.0. 0.0 and null are rejected, since they leave the filter silent.
 /// </param>
 /// <param name="Feedback">
-/// How much of the output is fed back in, 0.0-1.0. The server clamps out-of-range values and echoes the request
-/// back unclamped.
+/// How much of the output is fed back in, 0.0-1.0.
 /// </param>
-/// <param name="DelayMilliseconds">
-/// Base delay of the comb. NodeLink ignores it, the server just echoes it back.
-/// </param>
+/// <param name="DelayMilliseconds">Base delay of the comb. NodeLink ignores it.</param>
 /// <param name="Mix">
-/// Effect loudness, 0.0-1.0. NodeLink ignores it and just echoes it back, null is sent as 0.5.
+/// Effect loudness, 0.0-1.0, null is sent as 0.5. NodeLink ignores it.
 /// </param>
-/// <param name="Transition">
-/// NodeLink currently accepts but ignores this transition, the change always snaps instantly.
-/// </param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record FlangerFilter(
     [property: JsonPropertyName("rate")] float? Rate = null,
     [property: JsonPropertyName("depth")] float? Depth = null,

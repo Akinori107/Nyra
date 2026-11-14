@@ -31,27 +31,6 @@ public sealed class ConnectorAndTransportEdge
         using (var writer2 = new Utf8JsonWriter(stringStream))
             new StringOrNumberConverter().Write(writer2, null, options);
         await Assert.That(Encoding.UTF8.GetString(stringStream.ToArray())).IsEqualTo("null");
-
-        var tolerantReader = new Utf8JsonReader("null"u8);
-        tolerantReader.Read();
-        await Assert
-            .That(
-                new NullableTolerantStringConverter().Read(
-                    ref tolerantReader,
-                    typeof(string),
-                    options
-                )
-            )
-            .IsNull();
-        using var tolerantStream = new MemoryStream();
-        using (var writer3 = new Utf8JsonWriter(tolerantStream))
-            new NullableTolerantStringConverter().Write(writer3, null, options);
-        await Assert.That(Encoding.UTF8.GetString(tolerantStream.ToArray())).IsEqualTo("null");
-
-        using var boolStream = new MemoryStream();
-        using (var writer4 = new Utf8JsonWriter(boolStream))
-            new NullableTolerantBooleanConverter().Write(writer4, null, options);
-        await Assert.That(Encoding.UTF8.GetString(boolStream.ToArray())).IsEqualTo("null");
     }
 
     [Test]
@@ -156,20 +135,16 @@ public sealed class ConnectorAndTransportEdge
         var stack = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/sessions/fake-session/groups",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
-                        + "Content-Length: 100\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes("short")).ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                    stream.Close();
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/sessions/fake-session/groups", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
+                    + "Content-Length: 100\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream.WriteAsync(Encoding.UTF8.GetBytes("short")).ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+                stream.Close();
+            });
             var truncated = await Assert
                 .That(async () =>
                     await stack
@@ -178,7 +153,7 @@ public sealed class ConnectorAndTransportEdge
                 )
                 .Throws<RestException>();
             await Assert.That(truncated!.StatusCode).IsEqualTo(404);
-            await Assert.That(truncated!.ResponseBody).IsEqualTo(string.Empty);
+            await Assert.That(truncated.ResponseBody).IsEqualTo(string.Empty);
         }
     }
 
@@ -188,10 +163,8 @@ public sealed class ConnectorAndTransportEdge
         var stack = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                PlayerPath,
-                (_, stream) => WriteTruncatedReplyAsync(stream, "404 Not Found")
+            stack.Server.OnRaw("GET", PlayerPath, (_, stream) =>
+                WriteTruncatedReplyAsync(stream, "404 Not Found")
             );
 
             var unreadable = await Assert
@@ -211,22 +184,18 @@ public sealed class ConnectorAndTransportEdge
         var stack = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/sessions/fake-session/groups",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-                        + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream
-                        .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the payload"))
-                        .ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                    stream.Close();
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/sessions/fake-session/groups", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                    + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream
+                    .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the payload"))
+                    .ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+                stream.Close();
+            });
             var unreachable = await Assert
                 .That(async () =>
                     await stack
@@ -246,7 +215,7 @@ public sealed class ConnectorAndTransportEdge
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
 
-        public RecordingList<string> Messages { get; } = new();
+        public RecordingList<string> Messages { get; } = [];
 
         public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
 
@@ -346,7 +315,7 @@ public sealed class ConnectorAndTransportEdge
             remove { }
         }
 
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public Microsoft.Extensions.Logging.ILogger? Logger => null;
 
         public Task SendVoiceUpdateAsync(
             ulong guildId,
@@ -411,7 +380,7 @@ public sealed class ConnectorAndTransportEdge
         var extension = new NyraExtension(bridge);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
         await Assert
-            .That(async () => await ((IAsyncDisposable)bridge).DisposeAsync().ConfigureAwait(false))
+            .That(async () => await bridge.DisposeAsync().ConfigureAwait(false))
             .Throws<InvalidOperationException>()
             .WithMessageContaining("exploded");
         await Assert
@@ -496,7 +465,8 @@ public sealed class ConnectorAndTransportEdge
     public async Task HandshakeDoublePending()
     {
         var bridge = new FakeBridge();
-        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2));
+        var time = new FakeTimeProvider();
+        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2), time);
         var first = coordinator.WaitForUpdatesAsync(777, 555, bridge, CancellationToken.None);
         await Task.Delay(100).ConfigureAwait(false);
         await Assert
@@ -506,6 +476,7 @@ public sealed class ConnectorAndTransportEdge
                     .ConfigureAwait(false)
             )
             .Throws<InvalidOperationException>();
+        time.Advance(TimeSpan.FromSeconds(2));
         try
         {
             await first.ConfigureAwait(false);
@@ -533,7 +504,8 @@ public sealed class ConnectorAndTransportEdge
     public async Task HandshakeSecondEchoSkip()
     {
         var bridge = new FakeBridge();
-        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2));
+        var time = new FakeTimeProvider();
+        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2), time);
         var pending = coordinator.WaitForUpdatesAsync(999, 555, bridge, CancellationToken.None);
         await Task.Delay(100).ConfigureAwait(false);
         var firstEcho = coordinator.HandleVoiceStateUpdate(
@@ -546,6 +518,7 @@ public sealed class ConnectorAndTransportEdge
         );
         await Assert.That(firstEcho).IsTrue();
         await Assert.That(secondEcho).IsTrue();
+        time.Advance(TimeSpan.FromSeconds(2));
         await Assert
             .That(async () => await pending.ConfigureAwait(false))
             .Throws<VoiceHandshakeException>();
@@ -558,23 +531,19 @@ public sealed class ConnectorAndTransportEdge
         var stack = await StartAsync(time: time).ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/loadstream",
-                async (_, stream) =>
-                {
-                    var head =
-                        "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
-                        + "Content-Length: 500\r\nConnection: close\r\n\r\n";
-                    await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                    await stream
-                        .WriteAsync(Encoding.UTF8.GetBytes("{\"message\":"))
-                        .ConfigureAwait(false);
-                    await stream.FlushAsync().ConfigureAwait(false);
-                    stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
-                    stream.Close();
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/loadstream", async (_, stream) =>
+            {
+                var head =
+                    "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
+                    + "Content-Length: 500\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+                await stream
+                    .WriteAsync(Encoding.UTF8.GetBytes("{\"message\":"))
+                    .ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+                stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
+                stream.Close();
+            });
             var open = stack.Node.Rest.Tracks.OpenLoadStreamAsync(
                 "track",
                 100,

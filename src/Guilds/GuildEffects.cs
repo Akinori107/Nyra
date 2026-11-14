@@ -27,10 +27,7 @@ public sealed class GuildEffects
         CancellationToken cancellationToken = default
     )
     {
-        if (options?.Ducking is not null)
-            NodeGuards.RequireNodeLink(_node, "ducking");
-        else
-            NodeGuards.RequireNodeLink(_node, "fading");
+        NodeGuards.RequireNodeLink(_node, options?.Ducking is not null ? "ducking" : "fading");
         FilterValidation.ThrowIfOutOfRange(
             options?.Ducking?.TargetVolume,
             0.0f,
@@ -39,12 +36,9 @@ public sealed class GuildEffects
         );
         _connection.EnsureActive();
 
-        await _connection
-            .Patches.UpdateAsync(
-                new PlayerUpdatePayload { Fading = options ?? new FadingOptions() },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var payload = new PlayerUpdatePayload { Fading = options ?? new FadingOptions() };
+        await _connection.Patches.UpdateAsync(payload, cancellationToken).ConfigureAwait(false);
+        _connection.RememberEffects(payload);
     }
 
     /// <summary>Turns loudness normalization on or off.</summary>
@@ -66,11 +60,6 @@ public sealed class GuildEffects
     /// Turns speaking-detection ducking on or off, the depth and timing live in <see
     /// cref="FadingOptions.Ducking"/> instead.
     /// </summary>
-    /// <remarks>
-    /// NodeLink 3.9.0 answers this switch with a 500, which surfaces as a <see
-    /// cref="Nyra.Exceptions.RestException"/> against that build. The stored configuration survives the failed
-    /// write.
-    /// </remarks>
     /// <param name="enabled">Whether ducking is on.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when ducking was switched.</returns>
@@ -96,7 +85,6 @@ public sealed class GuildEffects
     /// <summary>
     /// Preloads the next track for a gapless/crossfaded transition when the current one ends, null clears it.
     /// </summary>
-    /// <remarks>The encoded track is self-contained on the wire, no node pairing is required or enforced.</remarks>
     /// <param name="nextTrack">The track to crossfade into, null clears it.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the next track was set.</returns>
@@ -138,5 +126,6 @@ public sealed class GuildEffects
         _connection.EnsureActive();
 
         await _connection.Patches.UpdateAsync(payload, cancellationToken).ConfigureAwait(false);
+        _connection.RememberEffects(payload);
     }
 }

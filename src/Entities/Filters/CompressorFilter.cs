@@ -4,28 +4,22 @@ namespace Nyra.Entities.Filters;
 
 /// <summary>Squashes the dynamic range of the audio.</summary>
 /// <remarks>
-/// NodeLink only. An instance with every member null is not a no-op, the server applies its own defaults, send
-/// explicit values to pin the sound you intend.
+/// NodeLink only. With every member null the server defaults apply, so the effect is audible. Set explicit
+/// values to get the sound you want.
 /// </remarks>
 /// <param name="Threshold">Level above which compression kicks in, in dB, null uses the server default.</param>
 /// <param name="Ratio">
-/// How much the level above the threshold is reduced, 1.0 or more, null uses the server default. Values below
-/// 1.0 are rejected client-side before the wire.
+/// How much the level above the threshold is reduced, 1.0 or more, null uses the server default.
 /// </param>
 /// <param name="Attack">
-/// How fast the compressor engages, in seconds, null uses the server default. The server clamps values below
-/// its minimum. Negative values are rejected client-side before the wire.
+/// How fast the compressor engages, in seconds, null uses the server default. Negative values are rejected.
 /// </param>
 /// <param name="Release">
-/// How fast the compressor lets go, in seconds, null uses the server default. The server clamps values below
-/// its minimum. Negative values are rejected client-side before the wire.
+/// How fast the compressor lets go, in seconds, null uses the server default. Negative values are rejected.
 /// </param>
-/// <param name="Gain">Input gain in dB. NodeLink ignores it and just echoes it back, null is sent as 0.</param>
+/// <param name="Gain">Input gain in dB, null is sent as 0. NodeLink ignores it.</param>
 /// <param name="MakeupGain">Output gain in dB, null is sent as 0.</param>
-/// <param name="Transition">
-/// Fades the filter in instead of stepping, the out leg has no reachable idiom for this filter, parameter
-/// changes still step.
-/// </param>
+/// <param name="Transition">Fades the change instead of switching at once, NodeLink only.</param>
 public sealed record CompressorFilter(
     [property: JsonPropertyName("threshold")] float? Threshold = null,
     [property: JsonPropertyName("ratio")] float? Ratio = null,

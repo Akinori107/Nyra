@@ -2,9 +2,7 @@ namespace Nyra;
 
 /// <summary>The container format of a track audio stream.</summary>
 /// <remarks>
-/// Only the two members are defined, any other value (an undefined enum cast, a bad config mapping) is
-/// rejected by every load stream call with an <see cref="System.ArgumentOutOfRangeException"/> before the
-/// first request.
+/// Any other value throws <see cref="System.ArgumentOutOfRangeException"/>.
 /// </remarks>
 public enum LoadStreamFormat
 {

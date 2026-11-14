@@ -36,6 +36,28 @@ internal sealed class GuildVoiceForwarder
         }
     }
 
+    internal async Task<bool> ForwardWithAsync(PlayerVoiceState voice, Func<Task<bool>> send)
+    {
+        await _forwardLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_connection.IsTearingDown)
+                return false;
+
+            _pendingVoiceForward = voice;
+            if (!await send().ConfigureAwait(false))
+                return false;
+
+            _pendingVoiceForward = null;
+            Interlocked.Exchange(ref _lastForwardTick, _connection.Time.GetMilliseconds());
+            return true;
+        }
+        finally
+        {
+            _forwardLock.Release();
+        }
+    }
+
     internal async Task ResendPendingAsync()
     {
         if (_connection.IsTearingDown)
@@ -85,16 +107,12 @@ internal sealed class GuildVoiceForwarder
         _pendingVoiceForward = voice;
         try
         {
-            using var attemptCts = new TimeoutLink(
-                _connection.Time,
-                VoiceSendDeadline,
-                _sendCts.Token
-            );
             await _connection
                 .Node.Rest.Players.UpdateAsync(
                     _connection.GuildId,
                     new PlayerUpdatePayload { Voice = voice },
-                    attemptCts.Token
+                    _sendCts.Token,
+                    timeout: VoiceSendDeadline
                 )
                 .ConfigureAwait(false);
             _pendingVoiceForward = null;

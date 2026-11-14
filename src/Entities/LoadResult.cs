@@ -5,7 +5,7 @@ namespace Nyra.Entities;
 
 /// <summary>Strategy for resolving a track query on <see cref="Node.LoadTracksAsync"/>.</summary>
 /// <remarks>
-/// Direct http(s) and <c>ftts</c> URLs are always sent as-is, since prefixing a URL is never valid.
+/// Direct http(s) and <c>ftts</c> URLs are always sent as-is.
 /// </remarks>
 public enum SearchType
 {
@@ -29,10 +29,7 @@ public enum SearchType
     Spotify,
 
     /// <summary>Prefixes the query with <c>sprec</c>.</summary>
-    /// <remarks>
-    /// NodeLink, or Lavalink with the LavaSrc plugin. NodeLink's Audius source registers the same prefix, so
-    /// with both enabled either may answer.
-    /// </remarks>
+    /// <remarks>NodeLink, or Lavalink with the LavaSrc plugin.</remarks>
     SpotifyRecommendations,
 
     /// <summary>
@@ -216,9 +213,7 @@ public enum LoadType
 
     /// <summary>Not a server value.</summary>
     /// <remarks>
-    /// Nyra's fallback for a load type the library does not recognize. The load path itself degrades unknown
-    /// types into <see cref="LoadResult.LoadFailed"/> instead, this member only exists so a future payload
-    /// that deserializes the enum directly degrades the same way instead of throwing mid-parse.
+    /// A load type Nyra does not know. Loads with one come back as <see cref="LoadType.Error"/>.
     /// </remarks>
     Unknown,
 }
@@ -273,8 +268,7 @@ public sealed record PlaylistInfo
 
     /// <summary>Zero-based index of the selected track, or -1 when none is selected.</summary>
     /// <remarks>
-    /// The index is whatever the server reported, no bounds against the playlist's track count are guaranteed,
-    /// guard the upper bound before indexing with it.
+    /// Check it against the track count before indexing.
     /// </remarks>
     [JsonPropertyName("selectedTrack"), JsonInclude]
     public int SelectedTrack { get; internal set; } = -1;
@@ -285,72 +279,72 @@ public abstract record LoadResult
 {
     /// <summary>The outcome of the load.</summary>
     public abstract LoadType LoadType { get; }
+}
 
-    /// <summary>One track was loaded.</summary>
-    /// <param name="Track">The track that was loaded.</param>
-    public sealed record TrackLoaded(Track Track) : LoadResult
-    {
-        /// <summary>The load type of the result, always Track.</summary>
-        public override LoadType LoadType => LoadType.Track;
-    }
+/// <summary>One track was loaded.</summary>
+/// <param name="Track">The track that was loaded.</param>
+public sealed record TrackLoaded(Track Track) : LoadResult
+{
+    /// <summary>The load type of the result, always Track.</summary>
+    public override LoadType LoadType => LoadType.Track;
+}
 
-    /// <summary>A playlist was loaded.</summary>
-    /// <param name="PlaylistInfo">The metadata of the playlist.</param>
-    /// <param name="Tracks">The tracks of the playlist.</param>
-    /// <param name="PluginInfo">The plugin data the server attached to the playlist, raw JSON.</param>
-    public sealed record PlaylistLoaded(
-        PlaylistInfo PlaylistInfo,
-        IReadOnlyList<Track> Tracks,
-        JsonElement? PluginInfo = null
-    ) : LoadResult
-    {
-        /// <summary>The load type of the result, always Playlist.</summary>
-        public override LoadType LoadType => LoadType.Playlist;
+/// <summary>A playlist was loaded.</summary>
+/// <param name="PlaylistInfo">The metadata of the playlist.</param>
+/// <param name="Tracks">The tracks of the playlist.</param>
+/// <param name="PluginInfo">The plugin data the server attached to the playlist, raw JSON.</param>
+public sealed record PlaylistLoaded(
+    PlaylistInfo PlaylistInfo,
+    IReadOnlyList<Track> Tracks,
+    JsonElement? PluginInfo = null
+) : LoadResult
+{
+    /// <summary>The load type of the result, always Playlist.</summary>
+    public override LoadType LoadType => LoadType.Playlist;
 
-        /// <summary>Indicates whether the loads carry the same members.</summary>
-        /// <param name="other">The load to compare with.</param>
-        /// <returns>Whether the members match, the tracks compared by content.</returns>
-        public bool Equals(PlaylistLoaded? other) =>
-            other is not null
-            && PlaylistInfo.Equals(other.PlaylistInfo)
-            && ContentEquality.ListEquals(Tracks, other.Tracks)
-            && ContentEquality.JsonElementEquals(PluginInfo, other.PluginInfo);
+    /// <summary>Indicates whether the loads carry the same members.</summary>
+    /// <param name="other">The load to compare with.</param>
+    /// <returns>Whether the members match, the tracks compared by content.</returns>
+    public bool Equals(PlaylistLoaded? other) =>
+        other is not null
+        && PlaylistInfo.Equals(other.PlaylistInfo)
+        && ContentEquality.ListEquals(Tracks, other.Tracks)
+        && ContentEquality.JsonElementEquals(PluginInfo, other.PluginInfo);
 
-        /// <summary>Returns a hash of the load's comparable members.</summary>
-        /// <returns>The hash code.</returns>
-        public override int GetHashCode() => HashCode.Combine(PlaylistInfo, Tracks?.Count ?? 0);
-    }
+    /// <summary>Returns a hash of the load's comparable members.</summary>
+    /// <returns>The hash code.</returns>
+    public override int GetHashCode() => HashCode.Combine(PlaylistInfo, Tracks?.Count ?? 0);
+}
 
-    /// <summary>Search results were loaded.</summary>
-    /// <param name="Tracks">The tracks the search found.</param>
-    public sealed record SearchLoaded(IReadOnlyList<Track> Tracks) : LoadResult
-    {
-        /// <summary>The load type of the result, always Search.</summary>
-        public override LoadType LoadType => LoadType.Search;
+/// <summary>Search results were loaded.</summary>
+/// <param name="Tracks">The tracks the search found.</param>
+public sealed record SearchLoaded(IReadOnlyList<Track> Tracks) : LoadResult
+{
+    /// <summary>The load type of the result, always Search.</summary>
+    public override LoadType LoadType => LoadType.Search;
 
-        /// <summary>Indicates whether the loads carry the same tracks.</summary>
-        /// <param name="other">The load to compare with.</param>
-        /// <returns>Whether the tracks match by content.</returns>
-        public bool Equals(SearchLoaded? other) =>
-            other is not null && ContentEquality.ListEquals(Tracks, other.Tracks);
+    /// <summary>Indicates whether the loads carry the same tracks.</summary>
+    /// <param name="other">The load to compare with.</param>
+    /// <returns>Whether the tracks match by content.</returns>
+    public bool Equals(SearchLoaded? other) =>
+        other is not null && ContentEquality.ListEquals(Tracks, other.Tracks);
 
-        /// <summary>Returns a hash of the load's comparable members.</summary>
-        /// <returns>The hash code.</returns>
-        public override int GetHashCode() => HashCode.Combine(Tracks?.Count ?? 0);
-    }
+    /// <summary>Returns a hash of the load's comparable members.</summary>
+    /// <returns>The hash code.</returns>
+    public override int GetHashCode() => HashCode.Combine(Tracks?.Count ?? 0);
+}
 
-    /// <summary>The load matched nothing.</summary>
-    public sealed record NoMatches : LoadResult
-    {
-        /// <summary>The load type of the result, always Empty.</summary>
-        public override LoadType LoadType => LoadType.Empty;
-    }
+/// <summary>The load matched nothing.</summary>
+public sealed record NoMatches : LoadResult
+{
+    /// <summary>The load type of the result, always Empty.</summary>
+    public override LoadType LoadType => LoadType.Empty;
+}
 
-    /// <summary>The load failed.</summary>
-    /// <param name="Error">The error the load failed with.</param>
-    public sealed record LoadFailed(ErrorInfo Error) : LoadResult
-    {
-        /// <summary>The load type of the result, always Error.</summary>
-        public override LoadType LoadType => LoadType.Error;
-    }
+/// <summary>The load failed.</summary>
+/// <param name="Error">The error the load failed with.</param>
+public sealed record LoadFailed(ErrorInfo Error) : LoadResult
+{
+    /// <summary>The load type of the result, always Error.</summary>
+    public override LoadType LoadType => LoadType.Error;
 }

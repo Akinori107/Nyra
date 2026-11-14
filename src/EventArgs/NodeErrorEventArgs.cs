@@ -1,13 +1,11 @@
 namespace Nyra.EventArgs;
 
 /// <summary>
-/// Raised for internal client errors, malformed payloads from the server, ready timeouts, failed REST calls to
-/// the node, gateway leave failures, filter chains the server keeps diverging from and fatal supervision
-/// failures.
+/// Raised for client errors, like bad payloads from the server, ready timeouts and failed REST calls.
 /// </summary>
 /// <remarks>
-/// Reconnect failures log separately, a throwing handler is caught and logged, playback errors surface through
-/// the guild connection instead.
+/// Reconnect failures are only logged, a handler that throws is caught and logged, and playback errors come
+/// through the guild connection.
 /// </remarks>
 public sealed class NodeErrorEventArgs : System.EventArgs
 {

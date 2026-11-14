@@ -29,14 +29,10 @@ public sealed class GuildRemoval
         var extension = new NyraExtension(bridge);
         var node = await MakeNodeAsync(extension, server, "removal-hostile").ConfigureAwait(false);
 
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ => new FakeRestResponse(
-                200,
-                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-            )
-        );
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+            200,
+            """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+        ));
 
         var recorder = new RecordingLogger();
         bridge.Logger = recorder;
@@ -48,13 +44,9 @@ public sealed class GuildRemoval
         await Assert.That(conn.IsConnected).IsTrue();
 
         bridge.FireVoiceState(777, null, "vsess");
-        var left = false;
-        for (var i = 0; i < 80 && !left; i++)
-        {
-            await Task.Delay(25).ConfigureAwait(false);
-            left = node.GetConnection(777) is null;
-        }
-        await Assert.That(left).IsTrue();
+        await Assert
+            .That(() => node.GetConnection(777) is null)
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(2));
 
         bridge.Logger = new HostileDebugLogger();
         var reconnect = node.ConnectAsync(777, 555);
@@ -65,14 +57,9 @@ public sealed class GuildRemoval
         await Assert.That(second.IsConnected).IsTrue();
 
         bridge.FireVoiceState(777, null, "vsess2");
-        var removed = false;
-        for (var i = 0; i < 80 && !removed; i++)
-        {
-            await Task.Delay(25).ConfigureAwait(false);
-            removed = node.GetConnection(777) is null;
-        }
-        await Assert.That(removed).IsTrue();
-        await Assert.That(second.IsConnected).IsFalse();
+        await Assert
+            .That(() => node.GetConnection(777) is null && !second.IsConnected)
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(2));
 
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
@@ -189,14 +176,10 @@ public sealed class GuildRemoval
         var extension = new NyraExtension(bridge);
         var node = await MakeNodeAsync(extension, server, "removal").ConfigureAwait(false);
 
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ => new FakeRestResponse(
-                200,
-                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-            )
-        );
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+            200,
+            """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+        ));
         var connect = node.ConnectAsync(777, 555);
         await Task.Delay(100).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
@@ -205,14 +188,9 @@ public sealed class GuildRemoval
         await Assert.That(conn.IsConnected).IsTrue();
 
         bridge.FireGuildRemoved(777);
-        var removed = false;
-        for (var i = 0; i < 80 && !removed; i++)
-        {
-            await Task.Delay(25).ConfigureAwait(false);
-            removed = node.GetConnection(777) is null;
-        }
-        await Assert.That(removed).IsTrue();
-        await Assert.That(conn.IsConnected).IsFalse();
+        await Assert
+            .That(() => node.GetConnection(777) is null && !conn.IsConnected)
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(2));
         await Assert.That(!bridge.VoiceSends.Contains((777, null))).IsTrue();
 
         await extension.DisposeAsync().ConfigureAwait(false);
@@ -281,7 +259,7 @@ public sealed class GuildRemoval
             remove { }
         }
 
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public Microsoft.Extensions.Logging.ILogger? Logger => null;
 
         public Task SendVoiceUpdateAsync(
             ulong guildId,

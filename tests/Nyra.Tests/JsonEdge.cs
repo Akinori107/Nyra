@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Nyra.Entities;
@@ -8,16 +7,16 @@ namespace Nyra.Tests;
 
 public sealed class JsonEdge
 {
-    private static T Throws<T>(Action action)
+    private static void Throws<T>(Action action)
         where T : Exception
     {
         try
         {
             action();
         }
-        catch (T exception)
+        catch (T)
         {
-            return exception;
+            return;
         }
         throw new InvalidOperationException($"the expected {typeof(T).Name} never came");
     }
@@ -26,7 +25,7 @@ public sealed class JsonEdge
 
     private sealed record RoundedProbe(
         [property: JsonConverter(typeof(RoundedInt64Converter))] long L,
-        [property: JsonConverter(typeof(TolerantRoundedInt64Converter))] long? LN,
+        [property: JsonConverter(typeof(RoundedInt64Converter))] long? LN,
         [property: JsonConverter(typeof(RoundedInt32Converter))] int I
     );
 
@@ -34,15 +33,15 @@ public sealed class JsonEdge
     public async Task RoundedRefuses()
     {
         var options = new JsonSerializerOptions();
-        var longString = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":"abc","LN":null,"I":0}""", options)
         );
 
-        var longToken = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":true,"LN":null,"I":0}""", options)
         );
 
-        var intString = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":0,"LN":null,"I":"abc"}""", options)
         );
 
@@ -84,10 +83,8 @@ public sealed class JsonEdge
 
         using var stream = new MemoryStream();
         using var writer = new Utf8JsonWriter(stream);
-        var write = Throws<JsonException>(() => converter.Write(writer, float.NaN, options));
+        Throws<JsonException>(() => converter.Write(writer, float.NaN, options));
     }
-
-    private sealed class PlainSegment : ReadOnlySequenceSegment<byte> { }
 
     [Test]
     public async Task ChainHash()
@@ -154,7 +151,7 @@ public sealed class JsonEdge
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
-        Node NodeFor(FakeNodeServer server, string name) =>
+        static Node NodeFor(FakeNodeServer server, string name) =>
             new(
                 new Endpoint("127.0.0.1", server.Port, server.Password),
                 new NodeOptions
@@ -189,14 +186,6 @@ public sealed class JsonEdge
         [property: JsonConverter(typeof(StringOrNumberConverter))] string? X
     );
 
-    private sealed record NullableStringProbe(
-        [property: JsonConverter(typeof(NullableTolerantStringConverter))] string? S
-    );
-
-    private sealed record NullableBooleanProbe(
-        [property: JsonConverter(typeof(NullableTolerantBooleanConverter))] bool? B
-    );
-
     private sealed record FiniteProbe(
         [property: JsonConverter(typeof(FiniteFloatConverter))] float F
     );
@@ -206,24 +195,12 @@ public sealed class JsonEdge
     {
         var options = new JsonSerializerOptions();
 
-        var objectToken = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<StringOrNumberProbe>("""{"X":{}}""", options)
         );
 
         var rawText = JsonSerializer.Deserialize<StringOrNumberProbe>("""{"X":1e400}""", options);
         await Assert.That(rawText?.X).IsEqualTo("1e400");
-
-        var nullAsNull = JsonSerializer.Deserialize<NullableStringProbe>("""{"S":null}""", options);
-        await Assert.That(nullAsNull?.S).IsNull();
-
-        var nullableWritten = JsonSerializer.Serialize(new NullableStringProbe(null), options);
-        await Assert.That(nullableWritten).Contains(""""S":null"""");
-
-        var boolObject = JsonSerializer.Deserialize<NullableBooleanProbe>("""{"B":{}}""", options);
-        await Assert.That(boolObject?.B is false or null).IsTrue();
-
-        var boolWritten = JsonSerializer.Serialize(new NullableBooleanProbe(null), options);
-        await Assert.That(boolWritten).Contains(""""B":null"""");
 
         var intBoundaries = JsonSerializer.Deserialize<RoundedProbe>(
             """{"L":9223372036854775807.5,"LN":null,"I":2.5}""",
@@ -232,32 +209,27 @@ public sealed class JsonEdge
         await Assert.That(intBoundaries?.L).IsEqualTo(long.MaxValue);
         await Assert.That(intBoundaries?.I).IsEqualTo(3);
 
-        var intOverflow = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":-9.3e18,"LN":null,"I":0}""", options)
         );
 
-        var floatRefusesText = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Serialize(new FiniteProbe(float.PositiveInfinity), options)
         );
     }
 
     [Test]
-    public async Task JsonToleratedShapes()
+    public async Task JsonShapes()
     {
         var options = new JsonSerializerOptions();
         var entityOptions = NyraJson.OptionsFor(true);
 
-        var toleratedBool = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":[],"categories":[]}""",
-            entityOptions
+        Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<SponsorBlockState>(
+                """{"enabled":[],"categories":[]}""",
+                entityOptions
+            )
         );
-        await Assert.That(toleratedBool?.Enabled).IsFalse();
-
-        var stringless = JsonSerializer.Deserialize<NullableStringProbe>(
-            """{"S":[1,2]}""",
-            options
-        );
-        await Assert.That(stringless?.S).IsNull();
 
         var roundedFromString = JsonSerializer.Deserialize<RoundedProbe>(
             """{"L":"9.5","LN":null,"I":"2.5"}""",
@@ -266,7 +238,7 @@ public sealed class JsonEdge
         await Assert.That(roundedFromString?.L).IsEqualTo(10);
         await Assert.That(roundedFromString!.I).IsEqualTo(3);
 
-        var intBadToken = Throws<JsonException>(() =>
+        Throws<JsonException>(() =>
             JsonSerializer.Deserialize<RoundedProbe>("""{"L":0,"LN":null,"I":{}}""", options)
         );
 

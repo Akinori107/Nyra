@@ -7,11 +7,11 @@ using Nyra.Abstractions;
 namespace Nyra.DiscordNet;
 
 /// <summary>Wraps a <see cref="DiscordSocketClient"/> or <see cref="DiscordShardedClient"/> for Nyra.</summary>
-/// <remarks>
-/// The voice state update goes through Discord.Net's public external-audio route, so the bridge keeps the
-/// audio channel of each guild to disconnect from later.
-/// </remarks>
-public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDisposable
+public sealed class DiscordNetBridge
+    : IDiscordBridge,
+        IGuildRemovalSource,
+        IVoiceListenerSource,
+        IDisposable
 {
     private readonly BaseSocketClient _client;
     private readonly ConcurrentDictionary<ulong, IAudioChannel> _audioChannels = new();
@@ -36,9 +36,12 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
     /// <remarks>Not raised for guild outages.</remarks>
     public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
 
+    /// <summary>Raised when a user who is not a bot joins, leaves or changes a voice channel.</summary>
+    public event EventHandler<ListenerVoiceStateUpdatedEventArgs>? ListenerVoiceStateUpdated;
+
     /// <summary>Wraps a <see cref="DiscordSocketClient"/>, forwarding its voice events.</summary>
     /// <param name="client">The client to wrap.</param>
-    /// <param name="logger">The logger to write the library's messages through, Discord.Net ships no logger.</param>
+    /// <param name="logger">The logger to write Nyra's messages to, Discord.Net has no ILogger.</param>
     public DiscordNetBridge(DiscordSocketClient client, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -49,7 +52,6 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
         client.VoiceServerUpdated += OnVoiceServerUpdated;
         client.UserVoiceStateUpdated += OnVoiceStateUpdated;
         client.Ready += OnClientReady;
-        client.Log += OnClientLog;
         client.LeftGuild += OnLeftGuild;
 
         if (client.CurrentUser is { } user)
@@ -58,7 +60,7 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
 
     /// <summary>Wraps a <see cref="DiscordShardedClient"/>, forwarding the voice events of every shard.</summary>
     /// <param name="client">The sharded client to wrap.</param>
-    /// <param name="logger">The logger to write the library's messages through, Discord.Net ships no logger.</param>
+    /// <param name="logger">The logger to write Nyra's messages to, Discord.Net has no ILogger.</param>
     public DiscordNetBridge(DiscordShardedClient client, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -69,7 +71,6 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
         client.VoiceServerUpdated += OnVoiceServerUpdated;
         client.UserVoiceStateUpdated += OnVoiceStateUpdated;
         client.ShardReady += OnShardReady;
-        client.Log += OnClientLog;
         client.LeftGuild += OnLeftGuild;
 
         if (client.CurrentUser is { } shardedUser)
@@ -78,6 +79,21 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
 
     /// <inheritdoc />
     public ILogger? Logger { get; }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<ulong>? GetListeners(ulong guildId, ulong channelId)
+    {
+        if (_client.GetGuild(guildId)?.GetVoiceChannel(channelId) is not { } channel)
+            return null;
+
+        var self = _client.CurrentUser?.Id;
+        return
+        [
+            .. channel
+                .ConnectedUsers.Where(user => !user.IsBot && user.Id != self)
+                .Select(user => user.Id),
+        ];
+    }
 
     /// <inheritdoc />
     public async Task SendVoiceUpdateAsync(
@@ -105,14 +121,12 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
             return;
         }
 
-        var guild =
-            GetGuildOrNull(guildId)
+        var guild = GetGuildOrNull(guildId)
             ?? throw new InvalidOperationException(
                 $"Could not find the guild {guildId}, it is not available to the Discord.Net client."
             );
 
-        var resolvedChannel =
-            guild.GetChannel(channelId.Value)
+        var resolvedChannel = guild.GetChannel(channelId.Value)
             ?? throw new InvalidOperationException(
                 $"The channel {channelId.Value} was not found in guild {guildId}, it may have been deleted."
             );
@@ -191,7 +205,6 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
     {
         _client.VoiceServerUpdated -= OnVoiceServerUpdated;
         _client.UserVoiceStateUpdated -= OnVoiceStateUpdated;
-        _client.Log -= OnClientLog;
         _client.LeftGuild -= OnLeftGuild;
 
         if (_client is DiscordSocketClient socketClient)
@@ -243,15 +256,28 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
         SocketVoiceState state
     )
     {
+        var guildId = oldState.VoiceChannel?.Guild?.Id
+            ?? state.VoiceChannel?.Guild?.Id
+            ?? (user as SocketGuildUser)?.Guild?.Id;
+
         if (user.Id != _client.CurrentUser?.Id)
+        {
+            if (guildId is { } listenerGuildId && !user.IsBot)
+                BridgeEvent.RaiseIsolated(
+                    ListenerVoiceStateUpdated,
+                    this,
+                    new ListenerVoiceStateUpdatedEventArgs(
+                        listenerGuildId,
+                        user.Id,
+                        state.VoiceChannelId
+                    ),
+                    Logger
+                );
             return Task.CompletedTask;
+        }
 
         _removalFence.Sweep();
 
-        var guildId =
-            oldState.VoiceChannel?.Guild?.Id
-            ?? state.VoiceChannel?.Guild?.Id
-            ?? (user as SocketGuildUser)?.Guild?.Id;
         if (guildId is null)
             return Task.CompletedTask;
 
@@ -291,31 +317,4 @@ public sealed class DiscordNetBridge : IDiscordBridge, IGuildRemovalSource, IDis
         );
         return Task.CompletedTask;
     }
-
-    private Task OnClientLog(LogMessage message)
-    {
-        try
-        {
-            Logger?.Log(
-                ToLogLevel(message.Severity),
-                default,
-                message,
-                message.Exception,
-                static (state, _) => $"Discord.Net ({state.Source}): {state.Message}"
-            );
-        }
-        catch { }
-        return Task.CompletedTask;
-    }
-
-    private static LogLevel ToLogLevel(LogSeverity severity) =>
-        severity switch
-        {
-            LogSeverity.Critical => LogLevel.Critical,
-            LogSeverity.Error => LogLevel.Error,
-            LogSeverity.Warning => LogLevel.Warning,
-            LogSeverity.Info => LogLevel.Information,
-            LogSeverity.Verbose => LogLevel.Debug,
-            _ => LogLevel.Trace,
-        };
 }

@@ -1,8 +1,6 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
-using Nyra.Exceptions;
 using Nyra.Internal;
 
 namespace Nyra;
@@ -108,8 +106,6 @@ public sealed class GuildFilters
     private readonly SemaphoreSlim _filterGate = new(1, 1);
 
     private readonly CancellationTokenSource _filterSendCts = new();
-    private FilterChain _filters = new();
-    private FilterChain? _pendingFilters;
 
     internal GuildFilters(GuildConnection connection)
     {
@@ -121,13 +117,10 @@ public sealed class GuildFilters
 
     /// <summary>The filter chain as last written or refreshed.</summary>
     /// <remarks>
-    /// An out-of-band change by a co-client only reaches this surface through the next refresh, the server
-    /// confirms those through the websocket event, which this surface does not ingest. A filter write does not
-    /// pick the change up either, it re-sends from Nyra's own view and replaces the co-client's change.
+    /// A change made by another client on the same node only shows up here after a refresh. The next filter
+    /// write from Nyra replaces it.
     /// </remarks>
-    public FilterChain Applied => _filters;
-
-    internal bool HasPendingFilters => _pendingFilters is not null;
+    public FilterChain Applied { get; private set; } = new();
 
     internal async Task DrainAsync(CancellationToken cancellationToken = default)
     {
@@ -142,13 +135,10 @@ public sealed class GuildFilters
     /// <returns>A task that completes when the filter was applied.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="filter"/> is null.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="filter"/> is a user-defined implementation of <see cref="IFilter"/>, the supported set
-    /// is limited to this library's sealed filter records.
+    /// <paramref name="filter"/> is your own implementation of <see cref="IFilter"/>.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// A member of the filter is outside the bounds the record documents, is not a finite number, or a no-op
-    /// form (every gating member null) of the rate-guarded filters (echo, chorus, phaser, flanger) was
-    /// sent.
+    /// A member is out of bounds or not a finite number, or a filter that needs values was sent with none.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The node is not NodeLink, for the filter kinds and transitions it alone supports, or the filter is
@@ -157,11 +147,7 @@ public sealed class GuildFilters
     public async Task AddAsync(IFilter filter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
-        if (!FilterSlots.TryGetValue(filter.GetType(), out var place))
-            throw new ArgumentException(
-                $"The filter type '{filter.GetType().Name}' is not supported.",
-                nameof(filter)
-            );
+        var place = SlotOf(filter.GetType(), nameof(filter));
         RequireNodeLinkFilters(place(new FilterChain(), filter));
 
         await WriteAsync(
@@ -220,15 +206,11 @@ public sealed class GuildFilters
     public bool IsApplied(IFilter filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
-        if (!FilterSlots.TryGetValue(filter.GetType(), out var place))
-            throw new ArgumentException(
-                $"The filter type '{filter.GetType().Name}' is not supported.",
-                nameof(filter)
-            );
+        var place = SlotOf(filter.GetType(), nameof(filter));
 
         using var blank = Wire(place(new FilterChain(), null));
         using var wanted = Wire(place(new FilterChain(), filter), NyraJson.ComparisonOptions);
-        using var held = Wire(_filters);
+        using var held = Wire(Applied);
 
         foreach (var member in wanted.RootElement.EnumerateObject())
         {
@@ -271,8 +253,7 @@ public sealed class GuildFilters
 
     /// <summary>Sets the equalizer bands, replacing the previous ones, an empty list clears the equalizer.</summary>
     /// <param name="bands">
-    /// The bands to apply, null clears the equalizer. Band ids are map keys, a list carrying the same id twice
-    /// sends both entries, the server collapses them, the last one wins.
+    /// The bands to apply, null clears the equalizer. With the same band twice, the last one wins.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the equalizer was applied.</returns>
@@ -323,8 +304,7 @@ public sealed class GuildFilters
     /// <returns>A task that completes when the chain was applied.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="filters"/> is null.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// A member of the chain is outside the bounds the record documents, is not a finite number, or a no-op
-    /// form (every gating member null) was sent.
+    /// A member is out of bounds or not a finite number, or a filter that needs values was sent with none.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The node is not NodeLink, for the filter kinds and transitions it alone supports, or a member of the
@@ -339,9 +319,9 @@ public sealed class GuildFilters
         await WriteAsync(
                 () =>
                 {
-                    FilterValidation.ValidateFilterBounds(filters, _filters, _node.IsNodeLink);
+                    FilterValidation.ValidateFilterBounds(filters, Applied, _node.IsNodeLink);
 
-                    if (filters.Volume is not null && filters.Volume != _filters.Volume)
+                    if (filters.Volume is not null && filters.Volume != Applied.Volume)
                     {
                         NodeGuards.RequireLavalink(_node, "volume filter");
                         FilterValidation.ThrowIfOutOfRange(
@@ -359,7 +339,7 @@ public sealed class GuildFilters
             .ConfigureAwait(false);
     }
 
-    private FilterChain DesiredFilters() => _pendingFilters ?? _filters;
+    private FilterChain DesiredFilters() => Applied;
 
     private async Task WriteAsync(Func<FilterChain> compose, CancellationToken cancellationToken)
     {
@@ -381,10 +361,6 @@ public sealed class GuildFilters
     private long _lastWriteTicket;
 
     private long _lastCaptureTicket;
-
-    private const int MaxPendingFilterDivergences = 3;
-
-    private int _pendingFilterDivergences;
 
     internal static long NextTicket() => Interlocked.Increment(ref _ticket);
 
@@ -424,14 +400,21 @@ public sealed class GuildFilters
         CancellationToken cancellationToken
     )
     {
-        if (!FilterSlots.TryGetValue(filterType, out var place))
-            throw new ArgumentException(
-                $"The filter type '{filterType.Name}' is not supported.",
-                paramName
-            );
+        var place = SlotOf(filterType, paramName);
         await WriteAsync(() => place(DesiredFilters(), null), cancellationToken)
             .ConfigureAwait(false);
     }
+
+    private static Func<FilterChain, IFilter?, FilterChain> SlotOf(
+        Type filterType,
+        string? paramName
+    ) =>
+        FilterSlots.TryGetValue(filterType, out var place)
+            ? place
+            : throw new ArgumentException(
+                $"The filter type '{filterType.Name}' is not supported.",
+                paramName
+            );
 
     private async Task SendFiltersAsync(FilterChain raw, CancellationToken cancellationToken)
     {
@@ -439,10 +422,7 @@ public sealed class GuildFilters
 
         var desired = Normalize(raw);
 
-        if (_connection.IsTearingDown)
-            throw new InvalidOperationException(
-                "The connection is being torn down, it no longer accepts operations."
-            );
+        _connection.EnsureNotTearingDown();
 
         try
         {
@@ -450,8 +430,7 @@ public sealed class GuildFilters
                 cancellationToken,
                 _filterSendCts.Token
             );
-            await PatchAndLandAsync(desired, countDivergence: false, linked.Token)
-                .ConfigureAwait(false);
+            await PatchAndLandAsync(desired, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
             when (_filterSendCts.IsCancellationRequested
@@ -465,15 +444,11 @@ public sealed class GuildFilters
         }
     }
 
-    private async Task<bool> PatchAndLandAsync(
-        FilterChain desired,
-        bool countDivergence,
-        CancellationToken cancellationToken
-    )
+    private async Task PatchAndLandAsync(FilterChain desired, CancellationToken cancellationToken)
     {
         TimescaleFilter? oldTimescale;
         lock (_connection.PlaybackPositionLock)
-            oldTimescale = _filters.Timescale;
+            oldTimescale = Applied.Timescale;
 
         var player = await _node
             .Rest.Players.UpdateAsync(
@@ -483,40 +458,27 @@ public sealed class GuildFilters
             )
             .ConfigureAwait(false);
 
-        return Land(player, desired, oldTimescale, countDivergence);
+        Land(player, desired, oldTimescale);
     }
 
-    private bool Land(
-        Player player,
-        FilterChain desired,
-        TimescaleFilter? oldTimescale,
-        bool countDivergence
-    )
+    private void Land(Player player, FilterChain desired, TimescaleFilter? oldTimescale)
     {
-        var stillPending =
-            _node.IsNodeLink
-            && player.Filters is { } echoed
-            && !FilterComparer.FiltersEqual(echoed, desired);
-
-        bool gaveUp;
         lock (_connection.PlaybackPositionLock)
         {
-            _filters =
+            Applied =
                 _node.IsNodeLink && player.Filters is { } effective
                     ? effective
                     : StripConfigDisabledFilters(desired);
-            gaveUp = CommitPendingUnderLock(desired, stillPending, countDivergence);
 
             ReanchorIfPaceChanged(oldTimescale);
         }
 
         _lastWriteTicket = NextTicket();
-        return gaveUp;
     }
 
     private void ReanchorIfPaceChanged(TimescaleFilter? oldTimescale)
     {
-        var applied = _filters.Timescale;
+        var applied = Applied.Timescale;
         if (
             (oldTimescale?.Speed ?? 1.0) == (applied?.Speed ?? 1.0)
             && (oldTimescale?.Rate ?? 1.0) == (applied?.Rate ?? 1.0)
@@ -524,95 +486,6 @@ public sealed class GuildFilters
             return;
 
         _connection.ReanchorTimescaleUnderLock(oldTimescale);
-    }
-
-    private static readonly TimeSpan ResendDeadline = TimeSpan.FromSeconds(10);
-
-    private readonly StrongBox<long> _resendNotBefore = new();
-
-    internal async Task ResendPendingFiltersAsync()
-    {
-        if (_node.Time.GetMilliseconds() < Volatile.Read(ref _resendNotBefore.Value))
-            return;
-
-        await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-        try
-        {
-            if (
-                _pendingFilters is not { } desired
-                || !_node.IsReady
-                || !_connection.IsConnected
-                || _connection.IsTearingDown
-            )
-                return;
-
-            using var attemptCts = new TimeoutLink(
-                _node.Time,
-                ResendDeadline,
-                _filterSendCts.Token
-            );
-            if (
-                await PatchAndLandAsync(desired, countDivergence: true, attemptCts.Token)
-                    .ConfigureAwait(false)
-            )
-                _node.HandleError(
-                    new InvalidOperationException(
-                        $"The server of guild {GuildId} keeps echoing a different filter chain after {MaxPendingFilterDivergences} attempts, giving up re-sending it."
-                    )
-                );
-        }
-        catch (OperationCanceledException) when (_filterSendCts.IsCancellationRequested) { }
-        catch (RestException restFailure) when (restFailure.RetryAfter is { } retryAfter)
-        {
-            Volatile.Write(
-                ref _resendNotBefore.Value,
-                _node.Time.GetMilliseconds() + (long)retryAfter.TotalMilliseconds
-            );
-            _node.HandleError(
-                new InvalidOperationException(
-                    $"The server of guild {GuildId} answered the filter re-send with {restFailure.StatusCode}, waiting the retry-after before the next attempt.",
-                    restFailure
-                )
-            );
-        }
-        catch (Exception exception)
-        {
-            bool gaveUp;
-            lock (_connection.PlaybackPositionLock)
-                gaveUp = CountFailedResendUnderLock();
-
-            _node.HandleError(
-                gaveUp
-                    ? new InvalidOperationException(
-                        $"The server of guild {GuildId} keeps failing to re-apply its filters after {MaxPendingFilterDivergences} attempts, giving up re-sending them.",
-                        exception
-                    )
-                    : new InvalidOperationException(
-                        $"Failed to re-apply the filters of guild {GuildId}: {exception.Message}",
-                        exception
-                    )
-            );
-        }
-        finally
-        {
-            _filterGate.Release();
-        }
-    }
-
-    private bool CountFailedResendUnderLock()
-    {
-        return _pendingFilters is not null && GiveUpAfterDivergenceUnderLock();
-    }
-
-    private bool GiveUpAfterDivergenceUnderLock()
-    {
-        _pendingFilterDivergences++;
-        if (_pendingFilterDivergences < MaxPendingFilterDivergences)
-            return false;
-
-        _pendingFilters = null;
-        _pendingFilterDivergences = 0;
-        return true;
     }
 
     internal async Task CaptureServerFiltersAsync(
@@ -636,8 +509,8 @@ public sealed class GuildFilters
                 TimescaleFilter? oldTimescale;
                 lock (_connection.PlaybackPositionLock)
                 {
-                    oldTimescale = _filters.Timescale;
-                    _filters = serverFilters;
+                    oldTimescale = Applied.Timescale;
+                    Applied = serverFilters;
                     ReanchorIfPaceChanged(oldTimescale);
                 }
             }
@@ -653,7 +526,7 @@ public sealed class GuildFilters
         await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            Land(player, desired, oldTimescale: null, countDivergence: false);
+            Land(player, desired, oldTimescale: null);
         }
         finally
         {
@@ -666,9 +539,7 @@ public sealed class GuildFilters
         await _filterGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            _pendingFilters = null;
-            _pendingFilterDivergences = 0;
-            _filters = new();
+            Applied = new();
         }
         finally
         {
@@ -680,31 +551,6 @@ public sealed class GuildFilters
     {
         _filterSendCts.Cancel();
         await ResetForNewSessionAsync().ConfigureAwait(false);
-    }
-
-    private bool CommitPendingUnderLock(
-        FilterChain desired,
-        bool stillPending,
-        bool countDivergence
-    )
-    {
-        if (!stillPending)
-        {
-            _pendingFilters = null;
-            _pendingFilterDivergences = 0;
-            return false;
-        }
-
-        if (countDivergence)
-        {
-            if (GiveUpAfterDivergenceUnderLock())
-                return true;
-        }
-        else
-            _pendingFilterDivergences = 0;
-
-        _pendingFilters = desired;
-        return false;
     }
 
     private void ThrowIfConfigDisabled(FilterChain chain, FilterChain landed)

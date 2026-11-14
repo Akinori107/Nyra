@@ -34,9 +34,6 @@ internal sealed class GuildPlayback
     private long _lastPlayRequestSequence;
     private long _lastPauseRequestSequence;
     private long _lastResumeRequestSequence;
-
-    private readonly Lock _positionLock = new();
-
     private Track? _anchorTrack;
 
     private readonly TimeProvider _time;
@@ -72,7 +69,7 @@ internal sealed class GuildPlayback
 
     internal void RestoreRequestTicks(RequestTicks stamped)
     {
-        lock (_positionLock)
+        lock (PositionLock)
         {
             ref var tick = ref _lastPlayRequestTick;
             ref var ownerSequence = ref _lastPlayRequestSequence;
@@ -98,7 +95,7 @@ internal sealed class GuildPlayback
 
     private RequestTicks Stamp(RequestKind kind, ref long tick, out long ownerSequence)
     {
-        lock (_positionLock)
+        lock (PositionLock)
         {
             var stamp = new RequestTicks(kind, _time.GetMilliseconds(), tick, ++_requestSequence);
             tick = stamp.Stamped;
@@ -107,13 +104,13 @@ internal sealed class GuildPlayback
         }
     }
 
-    internal Lock PositionLock => _positionLock;
+    internal Lock PositionLock { get; } = new();
 
     internal TimeSpan? Position
     {
         get
         {
-            lock (_positionLock)
+            lock (PositionLock)
             {
                 if (!_hasPosition)
                     return null;
@@ -167,11 +164,10 @@ internal sealed class GuildPlayback
             return;
 
         bool pauseHoldsOverStart;
-        lock (_positionLock)
+        lock (PositionLock)
         {
             pauseHoldsOverStart =
-                !_connection.IsNodeLinkServer
-                && _lastPauseRequestSequence > _lastPlayRequestSequence
+                _lastPauseRequestSequence > _lastPlayRequestSequence
                 && _lastPauseRequestSequence > _lastResumeRequestSequence;
 
             if (!pauseHoldsOverStart)
@@ -181,7 +177,7 @@ internal sealed class GuildPlayback
         if (!pauseHoldsOverStart)
             _connection.IsPaused = false;
 
-        lock (_positionLock)
+        lock (PositionLock)
         {
             _connection.CurrentTrack = eventArgs.Track;
 
@@ -219,7 +215,7 @@ internal sealed class GuildPlayback
                 or TrackEndReason.Gapless
                 or TrackEndReason.Crossfading;
 
-        lock (_positionLock)
+        lock (PositionLock)
         {
             if (eventArgs.Track is { } emptyTrack && string.IsNullOrEmpty(emptyTrack.Encoded))
                 eventArgs.Track = null;
@@ -268,7 +264,7 @@ internal sealed class GuildPlayback
         if (!eventArgs.StateCarried)
             return;
 
-        lock (_positionLock)
+        lock (PositionLock)
         {
             if (_connection.CurrentTrack is null)
             {
@@ -292,7 +288,7 @@ internal sealed class GuildPlayback
 
     internal void OnTrackSought(TrackSoughtEventArgs eventArgs)
     {
-        lock (_positionLock)
+        lock (PositionLock)
         {
             if (_connection.CurrentTrack is null)
                 return;
@@ -308,7 +304,7 @@ internal sealed class GuildPlayback
 
     internal void OnPauseChanged(PauseChangedEventArgs eventArgs)
     {
-        lock (_positionLock)
+        lock (PositionLock)
         {
             _lastPauseEventTick = _time.GetMilliseconds();
             _connection.IsPaused = eventArgs.IsPaused;
@@ -326,7 +322,7 @@ internal sealed class GuildPlayback
 
     internal void OnVolumeChanged(VolumeChangedEventArgs eventArgs)
     {
-        lock (_positionLock)
+        lock (PositionLock)
             _lastVolumeEventTick = _time.GetMilliseconds();
 
         _connection.Volume = eventArgs.Volume;
@@ -334,7 +330,7 @@ internal sealed class GuildPlayback
 
     internal void Capture(Player player, long requestTick, long? startMilliseconds = null)
     {
-        lock (_positionLock)
+        lock (PositionLock)
         {
             if (_connection.IsTearingDown)
                 return;
@@ -361,17 +357,15 @@ internal sealed class GuildPlayback
 
             if (player.State is { } state)
             {
+                _connection.State = state;
                 if (player.Track is not null && !holdsPreSeekPosition)
                 {
-                    _connection.State = state;
                     _lastCaptureTime = state.TimeMilliseconds;
                     if (startMilliseconds is { } start)
                         Anchor(start, player.Track, requestTick);
                     else
                         Anchor(state.PositionMilliseconds, player.Track);
                 }
-                else
-                    _connection.State = state;
             }
 
             _positionAdvancing =
@@ -392,7 +386,7 @@ internal sealed class GuildPlayback
 
     private void FreezePosition()
     {
-        lock (_positionLock)
+        lock (PositionLock)
         {
             if (!_positionAdvancing)
                 return;
@@ -405,7 +399,7 @@ internal sealed class GuildPlayback
 
     internal void Clear()
     {
-        lock (_positionLock)
+        lock (PositionLock)
         {
             _connection.CurrentTrack = null;
             _lastCaptureTime = 0;

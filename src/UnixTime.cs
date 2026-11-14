@@ -10,4 +10,7 @@ internal static class UnixTime
         milliseconds is >= MinMilliseconds and <= MaxMilliseconds
             ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)
             : DateTimeOffset.MinValue;
+
+    public static DateTimeOffset ToDateTimeOffsetAfterEpoch(long milliseconds) =>
+        milliseconds > 0 ? ToDateTimeOffset(milliseconds) : DateTimeOffset.MinValue;
 }

@@ -3,10 +3,7 @@ using System.Text.Json.Serialization;
 namespace Nyra.Entities;
 
 /// <summary>A single equalizer band adjustment.</summary>
-/// <remarks>
-/// Band ids are map keys, a chain carrying the same id twice sends both entries, the server collapses them,
-/// the last one wins.
-/// </remarks>
+/// <remarks>With the same band id twice in a chain, the last one wins.</remarks>
 public readonly record struct EqualizerBand
 {
     /// <summary>Number of equalizer bands, ids run 0 to <see cref="BandCount"/> - 1.</summary>
@@ -18,8 +15,7 @@ public readonly record struct EqualizerBand
 
     /// <summary>The band gain, -0.25 to +1.0, 0.0 is unchanged.</summary>
     /// <remarks>
-    /// Lavalink, -0.25 mutes and +0.25 doubles the band, NodeLink applies gain as a linear offset around unity
-    /// instead.
+    /// On Lavalink -0.25 mutes and +0.25 doubles the band, the same gain sounds different on NodeLink.
     /// </remarks>
     [JsonPropertyName("gain")]
     public float Gain { get; }

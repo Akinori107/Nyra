@@ -17,9 +17,10 @@ public sealed record NodeOptions
     /// </summary>
     /// <remarks>
     /// A last resort. When the connection is restored on the new session, Nyra sends the volume,
-    /// the filters, the track from where it was when the node dropped, and the pause back to the node. The
-    /// position is an estimate. What Nyra does not keep, like the end time, the audio track, the crossfade,
-    /// the ducking and the mix, is not restored, and the queue lives in your app and is not affected. <see
+    /// the filters, the <see cref="GuildConnection.Effects"/>, the track from where it was when the node dropped
+    /// with its end time and audio track, and the pause back to the node. The position is an estimate. What Nyra
+    /// does not keep, like the mix, the SponsorBlock categories and the lyrics subscription, is not restored, and
+    /// a queue of your own is not affected. <see
     /// cref="Nyra.EventArgs.GuildConnectionRestoredEventArgs.PlaybackResent"/> says whether the track was sent
     /// again.
     /// </remarks>
@@ -37,29 +38,73 @@ public sealed record NodeOptions
     /// </remarks>
     public TimeSpan RescueTimeout { get; init; } = TimeSpan.FromMinutes(3);
 
+    /// <summary>
+    /// How long the node can stay down before its guild connections move to another node of the extension, off
+    /// by default.
+    /// </summary>
+    /// <remarks>
+    /// Counted from the moment the node dropped, a node that is ready again before that keeps its connections.
+    /// Each connection moves to the best ready node of the same kind, see <see cref="NyraExtension.GetNode()"/>,
+    /// and the bot stays in its voice channel. The track goes on from where it was, with what <see
+    /// cref="RescuePlayback"/> sends back even when it is off, and the <see cref="Queue.GuildQueue"/> follows it.
+    /// The old connection raises <see cref="GuildConnection.GuildConnectionMigrated"/> with the new one. A
+    /// connection never moves between NodeLink and Lavalink, a track one encoded may not decode on the other, so
+    /// it waits until a node of its kind is ready. Nyra cannot tell a dead node from a lost websocket, so a node
+    /// that was still playing loses its connections too, and the players it has when it comes back are
+    /// destroyed. <see cref="TimeSpan.Zero"/> moves as soon as the node drops. <see
+    /// cref="Timeout.InfiniteTimeSpan"/>, the default, never moves.
+    /// </remarks>
+    public TimeSpan FailoverAfter { get; init; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
+    /// How long a guild connection can go without a track before it leaves its voice channel, off by default.
+    /// </summary>
+    /// <remarks>
+    /// Counted from the moment nothing is playing, a paused track still counts as playing. When the time runs out
+    /// the connection raises <see cref="GuildConnection.IdleTimedOut"/> and then disconnects, unless a handler
+    /// started a track. <see cref="Timeout.InfiniteTimeSpan"/>, the default, never leaves.
+    /// </remarks>
+    public TimeSpan IdleTimeout { get; init; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
+    /// How long a guild connection can stay without <see cref="GuildConnection.Listeners"/> before it leaves its
+    /// voice channel, off by default.
+    /// </summary>
+    /// <remarks>
+    /// Counted from the moment no user who is not a bot is in the channel, someone joining stops it. When the
+    /// time runs out the connection raises <see cref="GuildConnection.AloneTimedOut"/> and then disconnects.
+    /// Needs a bridge that reports listeners, which the built-in bridges do, see
+    /// <see cref="Abstractions.IVoiceListenerSource"/>. <see cref="Timeout.InfiniteTimeSpan"/>, the default,
+    /// never leaves.
+    /// </remarks>
+    public TimeSpan AloneTimeout { get; init; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
+    /// Whether a guild connection pauses when no <see cref="GuildConnection.Listeners"/> are left and resumes
+    /// when someone joins again, off by default.
+    /// </summary>
+    /// <remarks>
+    /// It only resumes a pause it made itself, a call to <see cref="GuildConnection.PauseAsync"/> or
+    /// <see cref="GuildConnection.ResumeAsync"/> in between hands the pause back to the caller. Needs a bridge
+    /// that reports listeners, the same as <see cref="AloneTimeout"/>.
+    /// </remarks>
+    public bool PauseWhenAlone { get; init; }
+
     /// <summary>How long the server keeps a disconnected resumable session alive.</summary>
     /// <remarks>
-    /// Only used while <see cref="Resuming"/> is enabled, with resuming disabled the server drops the session
-    /// on disconnect and this value is never read past validation. The wire form is whole seconds, a fraction
-    /// is truncated.
+    /// Only used while <see cref="Resuming"/> is enabled. Sent in whole seconds.
     /// </remarks>
     public TimeSpan ResumeTimeout { get; init; } = TimeSpan.FromSeconds(60);
 
     /// <summary>Delay before the first reconnect attempt, doubles with every failed attempt.</summary>
     /// <remarks>
-    /// Every wait is jittered by ±20% before the cap applies, so the actual wait may be up to 20% shorter or
-    /// longer than the configured value. With MaxReconnectDelay set equal to this value the wait never exceeds
-    /// the configuration and can run 20% below it.
-    /// <para>
-    /// A sub-millisecond value would degenerate the backoff into a zero-delay retry loop, so the delay is
-    /// floored at one millisecond.
-    /// </para>
+    /// Each wait varies by up to 20% either way, then <see cref="MaxReconnectDelay"/> caps it. The delay is at
+    /// least one millisecond.
     /// </remarks>
     public TimeSpan ReconnectDelay { get; init; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Upper bound of the reconnect delay, the wait is jittered first and then capped here, so a reconnecting
-    /// client never waits longer than this bound, except that every wait is floored at one millisecond.
+    /// The longest a reconnect waits.
     /// </summary>
     public TimeSpan MaxReconnectDelay { get; init; } = TimeSpan.FromSeconds(60);
 
@@ -70,22 +115,14 @@ public sealed record NodeOptions
     /// How long to wait for Discord's voice state and voice server updates before a handshake fails.
     /// </summary>
     /// <remarks>
-    /// The same bound also covers the gateway sends of the join and leave voice updates (a stuck gateway fails
-    /// the handshake even while the updates are still pending). It also sizes the window in which a late echo
-    /// of a compensatory leave is absorbed, so a longer timeout tolerates later echoes.
+    /// It also covers sending the join and leave updates to the gateway.
     /// </remarks>
     public TimeSpan VoiceHandshakeTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
     /// <summary>How long the server may take to send ready after the websocket connected.</summary>
     /// <remarks>
-    /// A node that takes longer is torn down and retried by the reconnect loop, so an edge proxy that
-    /// completes the upgrade against a dead origin fails the connect instead of leaving it (and every node
-    /// after it in a serial ConnectAllNodesAsync) waiting forever on a perfectly healthy socket.
-    /// <para>
-    /// The same budget also bounds the pre-connect REST probe (GET /v4/info) and the websocket upgrade itself
-    /// (TCP, TLS and the HTTP upgrade handshake), each phase with its own full share. Tightening it for fast
-    /// detection of a dead node also tightens the upgrade on a slow link.
-    /// </para>
+    /// A node that takes longer is dropped and retried. The same time also limits the first REST check and the
+    /// websocket connect, each on its own.
     /// </remarks>
     public TimeSpan ReadyTimeout { get; init; } = TimeSpan.FromSeconds(15);
 

@@ -220,7 +220,7 @@ internal sealed class InfoRest
                     : "The server returned an empty route planner status."
             );
 
-        return _rest.DeserializeOrThrow<RoutePlannerStatus>(
+        return RestClient.DeserializeOrThrow<RoutePlannerStatus>(
             json,
             Routes.RoutePlannerStatus,
             "route planner status",

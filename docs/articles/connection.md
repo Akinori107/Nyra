@@ -10,6 +10,37 @@ After that, `nyra.GetConnection(guildId)` returns `null`, and `connection.IsConn
 
 Nothing breaks. The connection stays, and `connection.ChannelId` changes to the new channel.
 
+## Nothing plays for a while
+
+Set `IdleTimeout` in [NodeOptions](../api/Nyra.NodeOptions.yml) to leave the voice channel when nothing plays for that long. The count starts when the connection has no track, a paused track still counts as playing. When the time runs out the connection raises `IdleTimedOut` and then disconnects, unless a handler started a track. It is off by default.
+
+```csharp
+var node = new Node(endpoint, new NodeOptions { IdleTimeout = TimeSpan.FromMinutes(5) });
+
+connection.IdleTimedOut += (sender, args) =>
+{
+    Console.WriteLine($"Left channel {args.ChannelId} of guild {args.GuildId}, nothing was playing.");
+    return Task.CompletedTask;
+};
+```
+
+## Nobody is listening
+
+`connection.Listeners` counts the users in the voice channel who are not bots, and `ListenersChanged` is raised when it changes. The built-in bridges read it from the library's cache, a custom bridge reports it by implementing `IVoiceListenerSource`, without one it stays `null`.
+
+Two options in [NodeOptions](../api/Nyra.NodeOptions.yml) act on it, both off by default:
+
+```csharp
+var node = new Node(endpoint, new NodeOptions
+{
+    AloneTimeout = TimeSpan.FromMinutes(2),
+    PauseWhenAlone = true,
+});
+```
+
+- `AloneTimeout` leaves the channel when nobody listened for that long. The connection raises `AloneTimedOut` and then disconnects, unless someone joined in the meantime.
+- `PauseWhenAlone` pauses when the last listener leaves and resumes when someone joins. It only resumes its own pause, a `PauseAsync` or `ResumeAsync` in between leaves the pause to you.
+
 ## The server drops
 
 Nyra reconnects by itself, waiting longer after each failure. It never stops unless you set `MaxReconnectAttempts` in [NodeOptions](../api/Nyra.NodeOptions.yml).
@@ -38,7 +69,7 @@ connection.GuildConnectionRestored += (sender, args) =>
 };
 ```
 
-If you can't lose what was playing, set `RescuePlayback = true` in [NodeOptions](../api/Nyra.NodeOptions.yml). Nyra then sends the track from where it was when the node dropped, the volume, the filters and the pause back to the node, and `args.PlaybackResent` says if the track was sent again. It is a last resort. If the node stays down for longer than `RescueTimeout` (3 minutes by default), Nyra only restores the voice and `PlaybackResent` is false. The position is an estimate, and what Nyra doesn't keep, like the end time, the audio track, the crossfade, the ducking and the mix, is not restored. Your queue lives in your app, so it keeps working.
+If you can't lose what was playing, set `RescuePlayback = true` in [NodeOptions](../api/Nyra.NodeOptions.yml). Nyra then sends the track from where it was when the node dropped with its end time and audio track, the volume, the filters, `connection.Effects` and the pause back to the node, and `args.PlaybackResent` says if the track was sent again. It is a last resort. If the node stays down for longer than `RescueTimeout` (3 minutes by default), Nyra only restores the voice and `PlaybackResent` is false. The position is an estimate, and what Nyra doesn't keep, like the mix, the SponsorBlock categories and the lyrics subscription, is not restored. A queue of your own keeps working. The [queue](queue.md) of Nyra goes on if `PlaybackResent` is true and is cleared if it is false.
 
 If the restore fails, or a NodeLink worker crashes, the connection is lost instead. It raises `GuildConnectionInvalidated`. `args.LastChannelId` is the channel it was in, so you can rejoin:
 
@@ -52,6 +83,25 @@ connection.GuildConnectionInvalidated += async (sender, args) =>
     // fresh is a new connection, subscribe to its events here
 };
 ```
+
+## Another node takes over
+
+With more than one node, set `FailoverAfter` in [NodeOptions](../api/Nyra.NodeOptions.yml) and the guilds of a node that drops move to the best ready node of the same kind. The bot stays in the voice channel. The track goes on from where it was, with what `RescuePlayback` sends back even when it is off, and the [queue](queue.md) of Nyra follows the guild. `TimeSpan.Zero` moves as soon as the node drops, a longer time gives the node that long to come back:
+
+```csharp
+var node = new Node(endpoint, new NodeOptions { FailoverAfter = TimeSpan.Zero });
+
+connection.GuildConnectionMigrated += (sender, args) =>
+{
+    var moved = args.Connection;
+    // moved is the connection on args.To, subscribe to its events here
+    return Task.CompletedTask;
+};
+```
+
+Nyra can't tell a dead node from a lost websocket, so a node that was still playing loses its guilds too, with a short gap in the audio. The players it has when it comes back are destroyed. If no other node of the same kind is ready, the guilds wait and move once one is.
+
+Guilds never move between NodeLink and Lavalink. A track NodeLink encoded may not decode on Lavalink, which answers `Could not decode the provided track`, so the guild would come back without its track, and the rest of its queue would fail the same way. The filters differ too, NodeLink has filters Lavalink lacks and accepts values Lavalink refuses, and the mix and the crossfade only exist on NodeLink. To fail over, run at least two nodes of the same kind.
 
 ## The node gives up
 

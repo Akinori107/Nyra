@@ -7,11 +7,7 @@ namespace Nyra.Exceptions;
 /// <remarks>
 /// A request that died in flight may still have landed, the inner exception holds the transport's own cause.
 /// </remarks>
-public sealed class NodeUnreachableException : NyraException
-{
-    /// <summary>Creates the exception.</summary>
-    /// <param name="message">The message that describes the error.</param>
-    /// <param name="innerException">The transport exception that caused this one.</param>
-    public NodeUnreachableException(string message, Exception innerException)
-        : base(message, innerException) { }
-}
+/// <param name="message">The message that describes the error.</param>
+/// <param name="innerException">The transport exception that caused this one.</param>
+public sealed class NodeUnreachableException(string message, Exception innerException)
+    : NyraException(message, innerException) { }

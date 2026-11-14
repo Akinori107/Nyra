@@ -54,15 +54,11 @@ public sealed class RemovalRace
             bridge.FireVoiceState(777, 555, "vsess");
             bridge.FireVoiceServer(777, "tok", "127.0.0.1");
 
-            Nyra.Exceptions.VoiceHandshakeException? kicked = null;
             try
             {
                 await connect.ConfigureAwait(false);
             }
-            catch (Nyra.Exceptions.VoiceHandshakeException exception)
-            {
-                kicked = exception;
-            }
+            catch (Exceptions.VoiceHandshakeException) { }
             await Assert
                 .That(server.RestCalls.Any(c => c is { Method: "PATCH", Path: PlayerPath }))
                 .IsFalse();

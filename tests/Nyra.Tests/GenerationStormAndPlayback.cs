@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -96,32 +97,24 @@ public sealed class GenerationStormAndPlayback
         };
         var holder = new List<string> { PlayerJson(null) };
         var gate = new List<TaskCompletionSource?> { null };
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ => new FakeRestResponse(200, holder[0])
-        );
-        server.OnRaw(
-            "GET",
-            "/v4/sessions/fake-session/players/777",
-            async (_, stream) =>
-            {
-                var pending = gate[0];
-                if (pending is not null)
-                    await pending.Task.ConfigureAwait(false);
-                var body = System.Text.Encoding.UTF8.GetBytes(holder[0]);
-                var head =
-                    $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
-                await stream
-                    .WriteAsync(System.Text.Encoding.UTF8.GetBytes(head))
-                    .ConfigureAwait(false);
-                await stream.WriteAsync(body).ConfigureAwait(false);
-                await stream.FlushAsync().ConfigureAwait(false);
-                stream.Close();
-            }
-        );
-        if (multiGuild)
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+            200,
+            holder[0]
+        ));
+        server.OnRaw("GET", "/v4/sessions/fake-session/players/777", async (_, stream) =>
         {
+            var pending = gate[0];
+            if (pending is not null)
+                await pending.Task.ConfigureAwait(false);
+            var body = System.Text.Encoding.UTF8.GetBytes(holder[0]);
+            var head =
+                $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
+            await stream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+            await stream.WriteAsync(body).ConfigureAwait(false);
+            await stream.FlushAsync().ConfigureAwait(false);
+            stream.Close();
+        });
+        if (multiGuild)
             for (var guild = 0; guild < 12; guild++)
             {
                 var guildId = 900_000UL + (ulong)guild;
@@ -136,13 +129,12 @@ public sealed class GenerationStormAndPlayback
                     _ => new FakeRestResponse(200, PlayerJson(null))
                 );
             }
-        }
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge, time);
         var node = new Node(
-            new Nyra.Endpoint("127.0.0.1", server.Port, server.Password),
-            new Nyra.NodeOptions
+            new Endpoint("127.0.0.1", server.Port, server.Password),
+            new NodeOptions
             {
                 Name = "storm",
                 TimeProvider = time ?? TimeProvider.System,
@@ -210,6 +202,14 @@ public sealed class GenerationStormAndPlayback
             rig,
             $$"""{"op":"event","guildId":"777","type":"PauseEvent","paused":{{(paused ? "true" : "false")}}}"""
         );
+
+    private static async Task FlushAsync(Rig rig, int volume)
+    {
+        await PushVolumeAsync(rig, volume).ConfigureAwait(false);
+        await Assert
+            .That(() => rig.Connection.Volume)
+            .WaitsFor(assert => assert.IsEqualTo(volume), TimeSpan.FromSeconds(5));
+    }
 
     private static Task PushVolumeAsync(Rig rig, int volume) =>
         PushAsync(
@@ -299,9 +299,8 @@ public sealed class GenerationStormAndPlayback
                 catch { }
                 await Task.Delay(10).ConfigureAwait(false);
             }
-            rig.Server.KillCaptured(hung!);
+            FakeNodeServer.KillCaptured(hung!);
             await Task.Delay(300).ConfigureAwait(false);
-            await Assert.That(rig.Node.IsConnected).IsTrue();
             await Assert.That(rig.Node.IsConnected).IsTrue();
         }
         finally
@@ -430,7 +429,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => rig.Connection.Position?.TotalMilliseconds == 7000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushStartAsync(rig, TrackJson).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(rig, 1).ConfigureAwait(false);
             await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(7000);
 
             await PushUpdateAsync(rig, 8000, true, 200).ConfigureAwait(false);
@@ -453,7 +452,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => rig.Connection.Position?.TotalMilliseconds == 8000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushStartAsync(rig, TrackJson).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(rig, 2).ConfigureAwait(false);
             await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(8000);
             await Assert.That(rig.Connection.CurrentTrack).IsNotNull();
 
@@ -469,10 +468,10 @@ public sealed class GenerationStormAndPlayback
                 .That(() => rig.Connection.CurrentTrack is null)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushUpdateAsync(rig, 1500, false, 500).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(rig, 3).ConfigureAwait(false);
             var beforeNullStart = rig.Connection.Position?.TotalMilliseconds ?? 0;
             await PushStartAsync(rig, null).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(rig, 4).ConfigureAwait(false);
             await Assert
                 .That(rig.Connection.Position?.TotalMilliseconds)
                 .IsEqualTo(beforeNullStart);
@@ -495,7 +494,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => endRig.Connection.Position?.TotalMilliseconds == 6000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushEndAsync(endRig, null, "finished").ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(endRig, 5).ConfigureAwait(false);
             await Assert.That(endRig.Connection.CurrentTrack?.Encoded).IsEqualTo(Encoded);
 
             await PushEndAsync(endRig, TrackJson, "finished").ConfigureAwait(false);
@@ -503,7 +502,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => endRig.Connection.CurrentTrack is null)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushEndAsync(endRig, null, "finished").ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(endRig, 6).ConfigureAwait(false);
             await Assert.That(endRig.Connection.CurrentTrack).IsNull();
             await Assert.That(endRig.Connection.Position?.TotalMilliseconds).IsEqualTo(6000);
 
@@ -513,7 +512,7 @@ public sealed class GenerationStormAndPlayback
                 .That(() => endRig.Connection.Position?.TotalMilliseconds == 9000)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await PushEndAsync(endRig, TrackJson, "replaced").ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(endRig, 7).ConfigureAwait(false);
             await Assert.That(endRig.Connection.CurrentTrack?.Encoded).IsEqualTo(Encoded);
             await PushEndAsync(endRig, null, "finished").ConfigureAwait(false);
             await Assert
@@ -521,7 +520,7 @@ public sealed class GenerationStormAndPlayback
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
 
             await PushSeekAsync(endRig, 999).ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
+            await FlushAsync(endRig, 8).ConfigureAwait(false);
             await Assert.That(endRig.Connection.Position?.TotalMilliseconds).IsEqualTo(9000);
 
             await PlayAsync(endRig, track).ConfigureAwait(false);
@@ -709,7 +708,7 @@ public sealed class GenerationStormAndPlayback
             await Assert
                 .That(() => pauseRig.Connection.IsPaused)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await Task.Delay(300).ConfigureAwait(false);
+            await RunForAsync(pauseTime, TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             await Assert
                 .That(pauseRig.Connection.Position?.TotalMilliseconds is >= 176_000 and <= 176_900)
                 .IsTrue();
@@ -779,7 +778,7 @@ public sealed class GenerationStormAndPlayback
                 return Task.CompletedTask;
             };
             var seen = 0L;
-            var sink = new List<string>();
+            var sink = new ConcurrentQueue<string>();
             rig.Bridge.Logger = new ListLogger(sink);
             rig.Extension.NodeDisconnected += (_, _) =>
             {
@@ -825,7 +824,7 @@ public sealed class GenerationStormAndPlayback
 
     private sealed class AsyncThrowerBridge : IDiscordBridge, IAsyncDisposable
     {
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public ILogger? Logger { get; set; }
 
         public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
@@ -859,7 +858,7 @@ public sealed class GenerationStormAndPlayback
 
     private sealed class PlainBridge : IDiscordBridge
     {
-        public Microsoft.Extensions.Logging.ILogger? Logger => null;
+        public ILogger? Logger => null;
 
         public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
@@ -886,7 +885,7 @@ public sealed class GenerationStormAndPlayback
         ) => Task.FromResult(new ClientInformation(1UL));
     }
 
-    private sealed class ListLogger(List<string> sink) : ILogger
+    private sealed class ListLogger(ConcurrentQueue<string> sink) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
@@ -904,7 +903,7 @@ public sealed class GenerationStormAndPlayback
             var text = formatter(state, exception);
             if (exception is not null)
                 text += " " + exception.GetType().Name + " " + exception.Message;
-            sink.Add(text);
+            sink.Enqueue(text);
         }
     }
 
@@ -926,7 +925,7 @@ public sealed class GenerationStormAndPlayback
 
     private sealed class LoudBridge : IDiscordBridge, IDisposable
     {
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public ILogger? Logger { get; set; }
 
         public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
@@ -961,7 +960,7 @@ public sealed class GenerationStormAndPlayback
     [Test]
     public async Task DisposeFailure()
     {
-        var loudSink = new List<string>();
+        var loudSink = new ConcurrentQueue<string>();
         var loud = new NyraExtension(new LoudBridge { Logger = new ListLogger(loudSink) });
         await Assert
             .That(async () =>
@@ -998,11 +997,16 @@ public sealed class GenerationStormAndPlayback
         for (var round = 0; round < 10; round++)
         {
             var stormRig = await RigAsync().ConfigureAwait(false);
+            using var stopPushing = new CancellationTokenSource();
             try
             {
                 var pushing = Task.Run(async () =>
                 {
-                    for (var frame = 0; frame < 250; frame++)
+                    for (
+                        var frame = 0;
+                        frame < 250 && !stopPushing.IsCancellationRequested;
+                        frame++
+                    )
                     {
                         try
                         {
@@ -1033,6 +1037,7 @@ public sealed class GenerationStormAndPlayback
                         await Task.WhenAll(asyncDispose, drop).ConfigureAwait(false);
                     })
                     .ThrowsNothing();
+                await stopPushing.CancelAsync().ConfigureAwait(false);
                 await pushing.ConfigureAwait(false);
             }
             finally
@@ -1045,39 +1050,33 @@ public sealed class GenerationStormAndPlayback
     [Test]
     public async Task SyncDispose()
     {
-        var loudSink = new List<string>();
+        var loudSink = new ConcurrentQueue<string>();
         var loud = new NyraExtension(new LoudBridge { Logger = new ListLogger(loudSink) });
         await Assert
-            .That(() =>
-            {
-                loud.Dispose();
-            })
+            .That(loud.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("generation storm: the loud bridge dies");
         await Assert.That(loudSink.Count).IsEqualTo(0);
 
-        var asyncSink = new List<string>();
+        var asyncSink = new ConcurrentQueue<string>();
         var asyncThrower = new NyraExtension(
             new AsyncThrowerBridge { Logger = new ListLogger(asyncSink) }
         );
         await Assert
-            .That(() =>
-            {
-                asyncThrower.Dispose();
-            })
+            .That(asyncThrower.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("generation storm: the async bridge dies");
         await Assert.That(asyncSink.Count).IsEqualTo(0);
 
         var plain = new NyraExtension(new PlainBridge());
-        await Assert.That(() => plain.Dispose()).ThrowsNothing();
+        await Assert.That(plain.Dispose).ThrowsNothing();
 
         var rig = await RigAsync().ConfigureAwait(false);
         try
         {
             rig.Server.Dispose();
             await Task.Delay(300).ConfigureAwait(false);
-            await Assert.That(() => rig.Extension.Dispose()).ThrowsNothing();
+            await Assert.That(rig.Extension.Dispose).ThrowsNothing();
         }
         finally
         {

@@ -78,8 +78,7 @@ public sealed class NodeTracks
     {
         _node.ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(info);
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "track encoding");
+        await _node.RequireNodeLinkAsync("track encoding", cancellationToken).ConfigureAwait(false);
 
         return await _node
             .Rest.Tracks.EncodeAsync(ToEncodeRequest(info), cancellationToken)
@@ -110,8 +109,7 @@ public sealed class NodeTracks
                 nameof(infos)
             );
 
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "track encoding");
+        await _node.RequireNodeLinkAsync("track encoding", cancellationToken).ConfigureAwait(false);
 
         var requests = list.Select(ToEncodeRequest).ToList();
 
@@ -150,7 +148,7 @@ public sealed class NodeTracks
     private async Task<TrackStreamUrl> GetStreamUrlAsyncCore(
         string encodedTrack,
         int? itag,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         _node.ThrowIfDisposed();
@@ -158,8 +156,9 @@ public sealed class NodeTracks
         if (itag is < 0)
             throw new ArgumentOutOfRangeException(nameof(itag), itag, "Must be 0 or greater.");
 
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "the track stream route");
+        await _node
+            .RequireNodeLinkAsync("the track stream route", cancellationToken)
+            .ConfigureAwait(false);
 
         return await _node
             .Rest.Tracks.GetStreamUrlAsync(encodedTrack, itag, cancellationToken)
@@ -177,7 +176,7 @@ public sealed class NodeTracks
     /// <param name="filters">The filter chain applied to the stream, null streams unfiltered.</param>
     /// <param name="format">
     /// The container format of the stream, raw PCM by default. Only <see cref="LoadStreamFormat.Raw"/> and
-    /// <see cref="LoadStreamFormat.Wav"/> are valid, any other value is rejected before the first request.
+    /// <see cref="LoadStreamFormat.Wav"/> are valid.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The audio stream of the track, the caller must dispose it.</returns>
@@ -224,9 +223,9 @@ public sealed class NodeTracks
         string encodedTrack,
         int volume,
         long positionMilliseconds,
-        FilterChain? filters = null,
-        LoadStreamFormat format = LoadStreamFormat.Raw,
-        CancellationToken cancellationToken = default
+        FilterChain? filters,
+        LoadStreamFormat format,
+        CancellationToken cancellationToken
     )
     {
         _node.ThrowIfDisposed();
@@ -244,8 +243,9 @@ public sealed class NodeTracks
                 "The load stream format must be Raw or Wav."
             );
 
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "the load stream route");
+        await _node
+            .RequireNodeLinkAsync("the load stream route", cancellationToken)
+            .ConfigureAwait(false);
         if (format is LoadStreamFormat.Wav)
             NodeGuards.RequireNodeLink(
                 _node,

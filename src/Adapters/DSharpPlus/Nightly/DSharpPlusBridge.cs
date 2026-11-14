@@ -1,3 +1,4 @@
+using System.Globalization;
 using DSharpPlus;
 using DSharpPlus.EventArgs;
 using DSharpPlus.Net.Abstractions;
@@ -13,19 +14,18 @@ namespace Nyra.DSharpPlus.Nightly;
 /// raw gateway voice state update.
 /// </summary>
 /// <remarks>
-/// The DSharpPlus nightly line (5.0.0-nightly-*) removed the C# events from the built client, subscriptions
-/// happen through <c>DiscordClientBuilder.ConfigureEventHandlers</c> at build time only. This bridge is
-/// therefore created empty, wired into the builder by <see cref="DiscordClientBuilderExtensions.UseNyra"/>,
-/// and bound to the built client on the first dispatched event.
+/// DSharpPlus nightly only takes event handlers at build time, so this bridge is added to the builder by
+/// <see cref="DiscordClientBuilderExtensions.UseNyra"/> and binds to the client on its first event.
 /// <para>
-/// Sharded clients built with <c>CreateSharded</c> are plain <see cref="DiscordClient"/>s whose
-/// <c>IShardOrchestrator</c> routes guild-scoped payloads by the guild's shard slot internally, so one
-/// bridge covers plain and sharded setups alike. The slot math carries no shard offset, so a guild outside
-/// this process's shard set throws (KeyNotFoundException or ArgumentOutOfRangeException, depending on the
-/// shard id) and, with a nonzero stride, a guild inside the set can be routed to the wrong shard.
+/// One bridge covers plain and sharded clients. With only part of the shards in this process, a guild can throw
+/// or reach the wrong shard.
 /// </para>
 /// </remarks>
-public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDisposable
+public sealed class DSharpPlusBridge
+    : IDiscordBridge,
+        IGuildRemovalSource,
+        IVoiceListenerSource,
+        IDisposable
 {
     private DiscordClient? _client;
     private readonly TaskCompletionSource<ClientInformation> _ready = new(
@@ -42,6 +42,9 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     /// <summary>Raised when the bot was removed from a guild.</summary>
     /// <remarks>Not raised for guild outages.</remarks>
     public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
+
+    /// <summary>Raised when a user who is not a bot joins, leaves or changes a voice channel.</summary>
+    public event EventHandler<ListenerVoiceStateUpdatedEventArgs>? ListenerVoiceStateUpdated;
 
     internal DSharpPlusBridge() { }
 
@@ -94,16 +97,14 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var client = Volatile.Read(ref _client);
-        if (client is null)
-            throw new InvalidOperationException(
+        var client = Volatile.Read(ref _client)
+            ?? throw new InvalidOperationException(
                 "The Nyra bridge has not been bound to a DiscordClient yet, the event handlers only run after the client connects."
             );
-
         var payload = new Dictionary<string, object?>
         {
-            ["guild_id"] = guildId.ToString(),
-            ["channel_id"] = channelId?.ToString(),
+            ["guild_id"] = guildId.ToString(CultureInfo.InvariantCulture),
+            ["channel_id"] = channelId?.ToString(CultureInfo.InvariantCulture),
             ["self_mute"] = selfMute,
             ["self_deaf"] = selfDeaf,
         };
@@ -126,6 +127,31 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
     }
 
     /// <inheritdoc />
+    public IReadOnlyCollection<ulong>? GetListeners(ulong guildId, ulong channelId)
+    {
+        if (
+            Volatile.Read(ref _client) is not { } client
+            || !client.Guilds.TryGetValue(guildId, out var guild)
+        )
+            return null;
+
+        var self = client.CurrentUser?.Id;
+        return
+        [
+            .. guild
+                .VoiceStates.Values.Where(state =>
+                    state.ChannelId == channelId
+                    && state.UserId != self
+                    && !IsBot(guild, state.UserId)
+                )
+                .Select(state => state.UserId),
+        ];
+    }
+
+    private static bool IsBot(global::DSharpPlus.Entities.DiscordGuild guild, ulong userId) =>
+        guild.Members.TryGetValue(userId, out var member) && member.IsBot;
+
+    /// <inheritdoc />
     public Task<ClientInformation> WaitForReadyAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -139,7 +165,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
         _ready.TrySetCanceled();
     }
 
-    internal Task OnClientStarted(DiscordClient sender, ClientStartedEventArgs eventArgs)
+    internal Task OnClientStarted(DiscordClient sender, ClientStartedEventArgs _)
     {
         if (_disposed)
             return Task.CompletedTask;
@@ -161,7 +187,7 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
         return Task.CompletedTask;
     }
 
-    internal Task OnSessionCreated(DiscordClient sender, SessionCreatedEventArgs eventArgs)
+    internal Task OnSessionCreated(DiscordClient sender, SessionCreatedEventArgs _)
     {
         if (_disposed)
             return Task.CompletedTask;
@@ -197,12 +223,29 @@ public sealed class DSharpPlusBridge : IDiscordBridge, IGuildRemovalSource, IDis
 
         Bind(sender);
 
-        if (
-            eventArgs.GuildId is not { } guildId
-            || sender.CurrentUser is not { } self
-            || eventArgs.UserId != self.Id
-        )
+        if (eventArgs.GuildId is not { } guildId || sender.CurrentUser is not { } self)
             return Task.CompletedTask;
+
+        if (eventArgs.UserId != self.Id)
+        {
+            if (
+                !(
+                    sender.Guilds.TryGetValue(guildId, out var guild)
+                    && IsBot(guild, eventArgs.UserId)
+                )
+            )
+                BridgeEvent.RaiseIsolated(
+                    ListenerVoiceStateUpdated,
+                    this,
+                    new ListenerVoiceStateUpdatedEventArgs(
+                        guildId,
+                        eventArgs.UserId,
+                        eventArgs.ChannelId
+                    ),
+                    Logger
+                );
+            return Task.CompletedTask;
+        }
 
         BridgeEvent.RaiseIsolated(
             VoiceStateUpdated,

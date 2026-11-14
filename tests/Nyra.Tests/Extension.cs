@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
@@ -12,8 +13,6 @@ public sealed class Extension
     {
         public int DisposeCount;
 
-        public bool Disposed => DisposeCount > 0;
-
         public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
             add { }
@@ -26,7 +25,7 @@ public sealed class Extension
             remove { }
         }
 
-        public ILogger? Logger { get; set; }
+        public ILogger? Logger => null;
 
         public Task SendVoiceUpdateAsync(
             ulong guildId,
@@ -96,7 +95,7 @@ public sealed class Extension
             remove { }
         }
 
-        public ILogger? Logger { get; set; }
+        public ILogger? Logger => null;
 
         public Task SendVoiceUpdateAsync(
             ulong guildId,
@@ -347,7 +346,7 @@ public sealed class Extension
         var seen = new TaskCompletionSource<string>();
         extension.NodeStatsUpdated += (_, args) =>
         {
-            seen.TrySetResult(args.Stats.PlayingPlayers.ToString());
+            seen.TrySetResult(args.Stats.PlayingPlayers.ToString(CultureInfo.InvariantCulture));
             return Task.CompletedTask;
         };
         await heavyServer
@@ -367,14 +366,10 @@ public sealed class Extension
         await Task.Delay(200).ConfigureAwait(false);
         await Assert.That(ReferenceEquals(extension.GetNode(), light)).IsTrue();
 
-        heavyServer.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ => new FakeRestResponse(
-                200,
-                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-            )
-        );
+        heavyServer.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+            200,
+            """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+        ));
         var connect = heavy.ConnectAsync(777, 555);
         await Task.Delay(100).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
@@ -489,10 +484,7 @@ public sealed class Extension
         var throwing = new ThrowingSyncBridge();
         var throwingExtension = new NyraExtension(throwing);
         await Assert
-            .That(() =>
-            {
-                throwingExtension.Dispose();
-            })
+            .That(throwingExtension.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("the bridge broke on dispose");
         await Assert.That(throwing.Threw).IsTrue();
@@ -596,7 +588,7 @@ public sealed class Extension
         var bridge = new ThrowingSyncBridge { Logger = new ThrowingLogger() };
         var extension = new NyraExtension(bridge);
         await Assert
-            .That(() => extension.Dispose())
+            .That(extension.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("the bridge broke on dispose");
         await Assert.That(extension.IsDisposed).IsTrue();

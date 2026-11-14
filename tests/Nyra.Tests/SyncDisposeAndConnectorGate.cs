@@ -22,7 +22,7 @@ public sealed class SyncDisposeAndConnectorGate
             remove { }
         }
 
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public Microsoft.Extensions.Logging.ILogger? Logger => null;
 
         public Task SendVoiceUpdateAsync(
             ulong guildId,
@@ -50,7 +50,7 @@ public sealed class SyncDisposeAndConnectorGate
         var extension = new NyraExtension(bridge);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
         await Assert
-            .That(() => extension.Dispose())
+            .That(extension.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("exploded");
     }
@@ -60,7 +60,7 @@ public sealed class SyncDisposeAndConnectorGate
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
 
-        public RecordingList<string> Messages { get; } = new();
+        public RecordingList<string> Messages { get; } = [];
 
         public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
 
