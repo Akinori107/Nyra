@@ -267,7 +267,7 @@ internal sealed class NodeEventHandlers
             _ = FetchFirstStatsAsync();
 
         if (effectiveResumed)
-            _ = _node.GuardAsync(_node.Registry.DestroyOrphanPlayersAsync(CancellationToken.None));
+            _ = _node.GuardAsync(_node.Registry.ReconcileAfterResumeAsync(CancellationToken.None));
 
         if (!_node.ResumingEnabled || effectiveResumed)
             return;

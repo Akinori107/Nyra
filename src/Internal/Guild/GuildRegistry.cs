@@ -464,9 +464,17 @@ internal sealed class GuildRegistry
             .ConfigureAwait(false);
     }
 
-    internal async Task DestroyOrphanPlayersAsync(CancellationToken cancellationToken)
+    internal async Task ReconcileAfterResumeAsync(CancellationToken cancellationToken)
     {
+        var playing = Connections
+            .Values.Select(connection => (Connection: connection, Track: connection.CurrentTrack))
+            .Where(entry => entry.Track is not null)
+            .ToArray();
         var players = await _node.Rest.Players.ListAsync(cancellationToken).ConfigureAwait(false);
+        var byGuild = players.ToDictionary(player => player.GuildId);
+        foreach (var (connection, track) in playing)
+            connection.EndLostTrack(track!, byGuild.GetValueOrDefault(connection.GuildId));
+
         var destroyed = 0;
         foreach (var player in players.Where(player => !Connections.ContainsKey(player.GuildId)))
         {

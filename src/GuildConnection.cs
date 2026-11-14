@@ -112,6 +112,7 @@ public sealed class GuildConnection
     private int _voiceCloseHandling;
 
     private readonly CancellationTokenSource _lifetime = new();
+    private Track? _adoptedEnd;
 
     private long _lastVoiceConnectedTick = long.MinValue;
 
@@ -671,11 +672,24 @@ public sealed class GuildConnection
             new GuildConnectionMigratedEventArgs(handedOver.Connection, Node, handedOver.Resent)
         );
         await CompleteEventPumpAsync().ConfigureAwait(false);
+        handedOver.Connection.EndAdoptedTrack();
     }
 
     internal async Task<bool> AdoptPlaybackAsync(RestoreSnapshot snapshot)
     {
         var voice = CurrentVoice(ChannelId!.Value);
+        Track? ended = null;
+        if (
+            snapshot
+                is { Track: { Info.IsStream: false } track, Position: { } position, Paused: false }
+            && track.Info.Length > TimeSpan.Zero
+            && track.Info.Length - position < TimeSpan.FromSeconds(1)
+        )
+        {
+            ended = track;
+            snapshot = snapshot with { Track = null };
+        }
+
         List<RestoreSnapshot> attempts = [snapshot];
         if (snapshot.Track is not null && snapshot.HasFilters)
             attempts.Add(snapshot with { Filters = new() });
@@ -686,7 +700,10 @@ public sealed class GuildConnection
             try
             {
                 await ResendInOneUpdateAsync(attempts[i], voice).ConfigureAwait(false);
-                return attempts[i].Track is not null;
+                if (ended is null)
+                    return attempts[i].Track is not null;
+                Volatile.Write(ref _adoptedEnd, ended);
+                return true;
             }
             catch (RestException exception)
                 when (i < attempts.Count - 1 || Settings != new PlayerSettings())
@@ -978,6 +995,28 @@ public sealed class GuildConnection
 
         Dispatch(TrackStarted, eventArgs);
     }
+
+    internal void EndAdoptedTrack()
+    {
+        if (Interlocked.Exchange(ref _adoptedEnd, null) is { } track)
+            EndTrack(track);
+    }
+
+    internal void EndLostTrack(Track expected, Player? player)
+    {
+        if (player is not null && player.Track is null && ReferenceEquals(CurrentTrack, expected))
+            EndTrack(expected);
+    }
+
+    private void EndTrack(Track track) =>
+        HandleTrackEnd(
+            new TrackFinishedEventArgs
+            {
+                GuildId = GuildId,
+                Track = track,
+                EndReason = TrackEndReason.Finished,
+            }
+        );
 
     internal void HandleTrackEnd(TrackFinishedEventArgs eventArgs)
     {

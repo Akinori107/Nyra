@@ -791,10 +791,11 @@ public sealed class GenerationStormAndPlayback
             await Assert
                 .That(() => Interlocked.Read(ref seen) == 1)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await Assert.That(sink.Count).IsGreaterThanOrEqualTo(1);
             await Assert
-                .That(sink)
-                .Contains(m => m.Contains("generation storm: f2") && m.Contains("EventArgs"));
+                .That(() =>
+                    sink.Any(m => m.Contains("generation storm: f2") && m.Contains("EventArgs"))
+                )
+                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
 
             await AwaitReconnectAsync(rig).ConfigureAwait(false);
             var before = Interlocked.Read(ref disconnects);
