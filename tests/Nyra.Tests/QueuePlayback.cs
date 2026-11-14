@@ -224,7 +224,7 @@ public sealed class QueuePlayback
 
             var patches = rig
                 .Server.RestCalls.Skip(before)
-                .Where(call => call.Method == "PATCH")
+                .Where(call => call is { Method: "PATCH", Path: PlayerPath })
                 .Select(call => call.Body ?? string.Empty)
                 .ToList();
             await Assert.That(patches.Count).IsEqualTo(1);
