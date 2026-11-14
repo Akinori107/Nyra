@@ -48,6 +48,26 @@ using var client = new DiscordSocketClient(
     }
 );
 
+client.Log += message =>
+{
+    logger.Log(
+        message.Severity switch
+        {
+            LogSeverity.Critical => LogLevel.Critical,
+            LogSeverity.Error => LogLevel.Error,
+            LogSeverity.Warning => LogLevel.Warning,
+            LogSeverity.Info => LogLevel.Information,
+            LogSeverity.Verbose => LogLevel.Debug,
+            _ => LogLevel.Trace,
+        },
+        message.Exception,
+        "Discord.Net ({Source}): {Message}",
+        message.Source,
+        message.Message
+    );
+    return Task.CompletedTask;
+};
+
 var nyra = client.UseNyra(logger);
 nyra.AddNode(
     new Node(
@@ -63,6 +83,8 @@ nyra.AddNode(
     )
 );
 
+LogNodeEvents(nyra, logger);
+
 using var interactions = new InteractionService(
     client,
     new InteractionServiceConfig { ThrowOnError = false }
@@ -73,9 +95,14 @@ interactions.SlashCommandExecuted += (command, context, result) =>
 
 client.InteractionCreated += interaction =>
     interactions.ExecuteCommandAsync(new SocketInteractionContext(client, interaction), null);
+var started = false;
 client.Ready += () =>
 {
-    _ = StartAsync(interactions, nyra, logger);
+    if (!started)
+    {
+        started = true;
+        _ = StartAsync(interactions, nyra, logger);
+    }
     return Task.CompletedTask;
 };
 
@@ -122,21 +149,69 @@ static Dictionary<string, string> ParseEnvFile(string path)
     return values;
 }
 
+static void LogNodeEvents(NyraExtension nyra, ILogger logger)
+{
+    var readyBefore = new HashSet<Node>();
+    nyra.NodeReady += (sender, args) =>
+    {
+        var node = (Node)sender!;
+        if (!readyBefore.Add(node))
+        {
+            if (args.Attempts > 1)
+                logger.LogInformation(
+                    "Audio node {Name} reconnected after {Attempts} attempts.",
+                    node.Name,
+                    args.Attempts
+                );
+            else
+                logger.LogInformation("Audio node {Name} reconnected.", node.Name);
+            return Task.CompletedTask;
+        }
+
+        var software = node.IsNodeLink ? "NodeLink" : "Lavalink";
+        var version = node.Version?.ToString() ?? "dev build";
+        if (args.Attempts > 1)
+            logger.LogInformation(
+                "Audio node {Name}: {Software} {Version}, connected after {Attempts} attempts.",
+                node.Name,
+                software,
+                version,
+                args.Attempts
+            );
+        else
+            logger.LogInformation(
+                "Audio node {Name}: {Software} {Version}.",
+                node.Name,
+                software,
+                version
+            );
+        return Task.CompletedTask;
+    };
+
+    nyra.NodeDisconnected += (sender, args) =>
+    {
+        logger.LogWarning(
+            args.Exception,
+            "Audio node {Name} disconnected ({Reason}).",
+            ((Node)sender!).Name,
+            args.CloseStatus?.ToString() ?? "connection lost"
+        );
+        return Task.CompletedTask;
+    };
+
+    nyra.NodeError += (_, args) =>
+    {
+        logger.LogError(args.Exception, "Audio node {Name} reported an error.", args.Node.Name);
+        return Task.CompletedTask;
+    };
+}
+
 static async Task StartAsync(InteractionService interactions, NyraExtension nyra, ILogger logger)
 {
     try
     {
         await interactions.RegisterCommandsGloballyAsync().ConfigureAwait(false);
         await nyra.ConnectAllNodesAsync().ConfigureAwait(false);
-
-        foreach (var node in nyra.Nodes)
-            if (node.IsConnected)
-                logger.LogInformation(
-                    "Audio node {Name}: {Software} {Version}.",
-                    node.Name,
-                    node.IsNodeLink ? "NodeLink" : "Lavalink",
-                    node.Version?.ToString() ?? "dev build"
-                );
     }
     catch (Exception exception)
     {

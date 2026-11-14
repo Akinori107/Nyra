@@ -402,26 +402,6 @@ public sealed class Adapter
             handler.DynamicInvoke([]);
     }
 
-    private sealed class CapturingLogger(List<LogLevel> sink) : ILogger
-    {
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            lock (sink)
-                sink.Add(logLevel);
-        }
-    }
-
     private static int SubscriptionCount(DiscordSocketClient client, string fieldName)
     {
         var container = Reflect.FieldValue(client, fieldName);
@@ -433,19 +413,18 @@ public sealed class Adapter
     public async Task DiscordNetEvents()
     {
         using var client = new DiscordSocketClient();
-        var fiveEvents = new[]
+        var bridgeEvents = new[]
         {
             "_voiceServerUpdatedEvent",
             "_userVoiceStateUpdatedEvent",
             "_readyEvent",
-            "_logEvent",
             "_leftGuildEvent",
         };
 
         using (var bridge = new DNetBridge(client))
         {
             await Assert
-                .That(fiveEvents.All(name => SubscriptionCount(client, name) >= 1))
+                .That(bridgeEvents.All(name => SubscriptionCount(client, name) >= 1))
                 .IsTrue();
 
             await Assert
@@ -498,20 +477,11 @@ public sealed class Adapter
                 await Assert.That(servers.Last!.VoiceServer.Token).IsEqualTo("tok");
             }
 
-            var logged = new List<LogLevel>();
-            using var loggedBridge = new DNetBridge(client, new CapturingLogger(logged));
-            Reflect.Invoke(
-                loggedBridge,
-                "OnClientLog",
-                new LogMessage(LogSeverity.Warning, "Gateway", "hello", null)
-            );
-            await Assert.That(logged.Count).IsEqualTo(1);
-            await Assert.That(logged[0]).IsEqualTo(LogLevel.Warning);
-
-            await Assert.That(CancelsWithin(loggedBridge.WaitForReadyAsync, 200)).IsTrue();
+            using var waitingBridge = new DNetBridge(client);
+            await Assert.That(CancelsWithin(waitingBridge.WaitForReadyAsync, 200)).IsTrue();
         }
 
-        var afterDispose = fiveEvents.ToDictionary(
+        var afterDispose = bridgeEvents.ToDictionary(
             name => name,
             name => SubscriptionCount(client, name)
         );
@@ -520,7 +490,6 @@ public sealed class Adapter
             await Assert.That(afterDispose["_voiceServerUpdatedEvent"]).IsEqualTo(0);
             await Assert.That(afterDispose["_userVoiceStateUpdatedEvent"]).IsEqualTo(0);
             await Assert.That(afterDispose["_readyEvent"]).IsEqualTo(0);
-            await Assert.That(afterDispose["_logEvent"]).IsEqualTo(0);
             await Assert.That(afterDispose["_leftGuildEvent"]).IsEqualTo(1);
         }
     }
@@ -897,34 +866,13 @@ public sealed class Adapter
     [Test]
     public async Task DiscordNetEventHandlers()
     {
-        var logSink = new List<LogLevel>();
         using (var client = new DiscordSocketClient())
-        using (var bridge = new DNetBridge(client, new CapturingLogger(logSink)))
+        using (var bridge = new DNetBridge(client))
         {
-            Reflect.Invoke(
-                bridge,
-                "OnClientLog",
-                new LogMessage(LogSeverity.Warning, "probe", "watch this")
-            );
-            await Assert.That(logSink).Contains(LogLevel.Warning);
-
             Reflect.Invoke(bridge, "PublishUserId", 111UL);
             Reflect.Invoke(bridge, "PublishUserId", 222UL);
             await Assert.That(bridge.WaitForReadyAsync(CancellationToken.None).Wait(500)).IsTrue();
         }
-
-        using (var quietClient = new DiscordSocketClient())
-        using (var quietBridge = new DNetBridge(quietClient))
-            await Assert
-                .That(() =>
-                {
-                    Reflect.Invoke(
-                        quietBridge,
-                        "OnClientLog",
-                        new LogMessage(LogSeverity.Error, "probe", "quiet")
-                    );
-                })
-                .ThrowsNothing();
 
         var guild = Reflect.New<SocketGuild>();
         Reflect.Set(guild, "Id", 5UL);

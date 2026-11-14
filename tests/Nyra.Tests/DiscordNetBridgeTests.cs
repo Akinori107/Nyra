@@ -376,48 +376,6 @@ public sealed class DiscordNetBridgeTests
         await Assert.That(states).IsEqualTo(0);
     }
 
-    private sealed class ThrowingLogger : ILogger
-    {
-        public int Calls;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            Interlocked.Increment(ref Calls);
-            throw new InvalidOperationException("the logger is down");
-        }
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-    }
-
-    [Test]
-    public async Task ThrowingLoggerSurvives()
-    {
-        using var client = new DiscordSocketClient();
-        var logger = new ThrowingLogger();
-        using var bridge = new DiscordNet.DiscordNetBridge(client, logger);
-
-        await Assert
-            .That(() =>
-            {
-                Reflect.Invoke(
-                    bridge,
-                    "OnClientLog",
-                    new LogMessage(LogSeverity.Error, "Gateway", "boom", null)
-                );
-            })
-            .ThrowsNothing();
-        await Assert.That(logger.Calls).IsEqualTo(1);
-    }
-
     [Test]
     public async Task RecordedChannelLeave()
     {
@@ -490,24 +448,6 @@ public sealed class DiscordNetBridgeTests
         fence.Sweep();
         await Assert.That(ticks.ContainsKey(111)).IsFalse();
         await Assert.That(ticks.ContainsKey(222)).IsTrue();
-    }
-
-    [Test]
-    [Arguments(LogSeverity.Critical, LogLevel.Critical)]
-    [Arguments(LogSeverity.Error, LogLevel.Error)]
-    [Arguments(LogSeverity.Warning, LogLevel.Warning)]
-    [Arguments(LogSeverity.Info, LogLevel.Information)]
-    [Arguments(LogSeverity.Verbose, LogLevel.Debug)]
-    [Arguments(LogSeverity.Debug, LogLevel.Trace)]
-    public async Task Severity(LogSeverity severity, LogLevel expected)
-    {
-        using var client = new DiscordSocketClient();
-        var sink = new List<(LogLevel, string)>();
-        using var bridge = new DiscordNet.DiscordNetBridge(client, new CapturingLogger(sink));
-
-        Reflect.Invoke(bridge, "OnClientLog", new LogMessage(severity, "Gateway", "hello", null));
-        await Assert.That(sink.Select(entry => entry.Item1)).IsEquivalentTo([expected]);
-        await Assert.That(sink[0].Item2).Contains("hello");
     }
 
     [Test]

@@ -695,8 +695,11 @@ internal sealed class MusicCommands : InteractionModuleBase<SocketInteractionCon
                 .Select((track, index) => $"{page * QueuePageSize + index + 1}. {track.Info.Title}")
         );
 
+        var totalDuration = queue.TotalDuration;
         var footer =
-            $"Loop: {queue.Loop} - Total queue duration: {FormatPosition(queue.TotalDuration)}";
+            totalDuration > TimeSpan.Zero
+                ? $"Loop: {queue.Loop} - Total queue duration: {FormatPosition(totalDuration)}"
+                : $"Loop: {queue.Loop}";
         var embed = new EmbedBuilder
         {
             Title = "Queue",

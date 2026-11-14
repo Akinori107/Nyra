@@ -548,7 +548,7 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
         try
         {
             Client.Logger?.LogError(
-                LogEvents.Node,
+                LogEvents.Extension,
                 exception,
                 "An event handler of the Nyra extension threw (origin {Origin}).",
                 origin?.GetType().Name ?? "none"

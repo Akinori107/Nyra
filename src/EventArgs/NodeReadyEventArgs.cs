@@ -20,6 +20,14 @@ public sealed class NodeReadyEventArgs : System.EventArgs
     [JsonIgnore]
     public bool? ServerClaimedResume { get; internal set; }
 
+    /// <summary>How many connect attempts it took to get ready, 1 when the first one worked.</summary>
+    /// <remarks>
+    /// Counted since the node was last ready, so after a drop it counts the reconnects. A failed attempt raises
+    /// no event, this is where it shows up.
+    /// </remarks>
+    [JsonIgnore]
+    public int Attempts { get; internal set; }
+
     /// <summary>The node session id, not a Discord voice session id.</summary>
     /// <remarks>
     /// Never null. <c>Node.SessionId</c> is the id the node actually uses.

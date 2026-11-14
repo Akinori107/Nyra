@@ -29,6 +29,7 @@ internal sealed class NodeConnection(
     private volatile bool _stopped;
     private bool _everConnected;
     private int _reconnectAttempts;
+    private int _attemptsSinceReady;
 
     private volatile int _generation;
 
@@ -84,6 +85,7 @@ internal sealed class NodeConnection(
 
             _stopped = false;
             _reconnectAttempts = 0;
+            _attemptsSinceReady = 0;
             _everConnected = false;
             _initialConnectFailure = null;
             _lastCloseInfo = default;
@@ -118,10 +120,13 @@ internal sealed class NodeConnection(
         return true;
     }
 
-    internal void NoteReady()
+    internal int NoteReady()
     {
         lock (_lock)
+        {
             _reconnectAttempts = 0;
+            return Interlocked.Exchange(ref _attemptsSinceReady, 0);
+        }
     }
 
     internal bool IsCurrentGeneration(int generation)
@@ -233,6 +238,7 @@ internal sealed class NodeConnection(
 
     private async Task<bool> ConnectOnceAsync(int generation, CancellationToken lifetimeCt)
     {
+        Interlocked.Increment(ref _attemptsSinceReady);
         using var probeCts = new TimeoutLink(node.Time, node.Options.ReadyTimeout, lifetimeCt);
         try
         {
@@ -408,20 +414,8 @@ internal sealed class NodeConnection(
                 if (_stopped)
                     return;
 
+                Exception? failure = null;
                 if (wasEverConnected)
-                {
-                    try
-                    {
-                        node.Logger?.LogWarning(
-                            LogEvents.Node,
-                            closeException,
-                            "Node {NodeName} disconnected ({CloseStatus} {CloseDescription}).",
-                            node.Name,
-                            closeStatus,
-                            closeDescription
-                        );
-                    }
-                    catch { }
                     node.EventHandlers.HandleDisconnected(
                         closeStatus,
                         closeDescription,
@@ -429,21 +423,31 @@ internal sealed class NodeConnection(
                         final: false,
                         ownerGeneration: generation
                     );
-                }
                 else
+                    failure = initialConnectException
+                        ?? closeException
+                        ?? new InvalidOperationException(
+                            "The websocket closed before the connection was established."
+                        );
+
+                Exception? lastConnectFailure = null;
+                string? lastFailureKey = null;
+
+                string? LogFailure(
+                    Exception exception,
+                    TimeSpan? retryIn = null,
+                    string? attemptText = null
+                ) =>
                     ConnectionFailure.Log(
                         node.Logger,
                         node.Name,
                         node.Endpoint,
-                        initial: true,
-                        initialConnectException
-                            ?? closeException
-                            ?? new InvalidOperationException(
-                                "The websocket closed before the connection was established."
-                            )
+                        initial: !wasEverConnected,
+                        exception,
+                        retryIn,
+                        attemptText,
+                        lastFailureKey
                     );
-
-                Exception? lastConnectFailure = null;
 
                 while (!lifetimeCt.IsCancellationRequested && !_stopped)
                 {
@@ -453,6 +457,8 @@ internal sealed class NodeConnection(
                         && attempt > node.Options.MaxReconnectAttempts
                     )
                     {
+                        if (failure is not null)
+                            LogFailure(failure);
                         EndSupervision(generation);
                         if (_generation != generation)
                             return;
@@ -467,21 +473,26 @@ internal sealed class NodeConnection(
                     }
 
                     var delay = ComputeReconnectDelay(attempt);
-                    try
-                    {
-                        node.Logger?.LogInformation(
-                            LogEvents.Node,
-                            wasEverConnected
-                                ? "Node {NodeName} reconnecting in {Delay} (attempt {Attempt})."
-                                : "Node {NodeName} connecting in {Delay} (attempt {Attempt}).",
-                            node.Name,
-                            TimeSpan.FromSeconds(Math.Round(delay.TotalSeconds)),
-                            node.Options.MaxReconnectAttempts < 0
-                                ? attempt.ToString(CultureInfo.InvariantCulture)
-                                : $"{attempt}/{node.Options.MaxReconnectAttempts}"
-                        );
-                    }
-                    catch { }
+                    var shownDelay = TimeSpan.FromSeconds(Math.Round(delay.TotalSeconds));
+                    var attemptText =
+                        node.Options.MaxReconnectAttempts < 0
+                            ? attempt.ToString(CultureInfo.InvariantCulture)
+                            : $"{attempt}/{node.Options.MaxReconnectAttempts}";
+                    if (failure is null)
+                        try
+                        {
+                            node.Logger?.LogDebug(
+                                LogEvents.Node,
+                                "Node {NodeName} reconnecting in {Delay} (attempt {Attempt}).",
+                                node.Name,
+                                shownDelay,
+                                attemptText
+                            );
+                        }
+                        catch { }
+                    else
+                        lastFailureKey = LogFailure(failure, shownDelay, attemptText);
+                    failure = null;
 
                     try
                     {
@@ -500,17 +511,6 @@ internal sealed class NodeConnection(
                             return;
                         }
 
-                        try
-                        {
-                            node.Logger?.LogInformation(
-                                LogEvents.Node,
-                                wasEverConnected
-                                    ? "Node {NodeName} reconnected."
-                                    : "Node {NodeName} connected.",
-                                node.Name
-                            );
-                        }
-                        catch { }
                         break;
                     }
                     catch (OperationCanceledException) when (lifetimeCt.IsCancellationRequested)
@@ -520,15 +520,12 @@ internal sealed class NodeConnection(
                     catch (Exception exception)
                     {
                         lastConnectFailure = exception;
-                        ConnectionFailure.Log(
-                            node.Logger,
-                            node.Name,
-                            node.Endpoint,
-                            initial: !wasEverConnected,
-                            exception
-                        );
+                        failure = exception;
                     }
                 }
+
+                if (failure is not null)
+                    LogFailure(failure);
             }
         }
         catch (OperationCanceledException) { }

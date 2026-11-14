@@ -167,6 +167,7 @@ internal sealed class NodeEventHandlers
 
         string? usableSessionId;
         bool discordTracked;
+        int attempts;
 
         lock (_node.EventsLock)
         {
@@ -184,7 +185,7 @@ internal sealed class NodeEventHandlers
             _node.LastReadyResumed = effectiveResumed;
             _node.IsReady = true;
             DisarmFailover();
-            _node.Connection.NoteReady();
+            attempts = _node.Connection.NoteReady();
             _readyEpilogueRunning = true;
             discordTracked = !_stoppedSinceReady;
             _stoppedSinceReady = false;
@@ -226,6 +227,7 @@ internal sealed class NodeEventHandlers
                     Resumed = effectiveResumed,
                     ServerClaimedResume = eventArgs.Resumed,
                     SessionId = usableSessionId ?? string.Empty,
+                    Attempts = attempts,
                 }
             );
         }
@@ -509,17 +511,6 @@ internal sealed class NodeEventHandlers
                 );
             }
             catch { }
-
-        try
-        {
-            _node.Logger?.LogError(
-                LogEvents.Node,
-                exception,
-                "An error occurred on node {NodeName}.",
-                _node.Name
-            );
-        }
-        catch { }
 
         _node.RaiseError(new NodeErrorEventArgs(exception, _node));
     }

@@ -52,7 +52,6 @@ public sealed class DiscordNetBridge
         client.VoiceServerUpdated += OnVoiceServerUpdated;
         client.UserVoiceStateUpdated += OnVoiceStateUpdated;
         client.Ready += OnClientReady;
-        client.Log += OnClientLog;
         client.LeftGuild += OnLeftGuild;
 
         if (client.CurrentUser is { } user)
@@ -72,7 +71,6 @@ public sealed class DiscordNetBridge
         client.VoiceServerUpdated += OnVoiceServerUpdated;
         client.UserVoiceStateUpdated += OnVoiceStateUpdated;
         client.ShardReady += OnShardReady;
-        client.Log += OnClientLog;
         client.LeftGuild += OnLeftGuild;
 
         if (client.CurrentUser is { } shardedUser)
@@ -207,7 +205,6 @@ public sealed class DiscordNetBridge
     {
         _client.VoiceServerUpdated -= OnVoiceServerUpdated;
         _client.UserVoiceStateUpdated -= OnVoiceStateUpdated;
-        _client.Log -= OnClientLog;
         _client.LeftGuild -= OnLeftGuild;
 
         if (_client is DiscordSocketClient socketClient)
@@ -320,31 +317,4 @@ public sealed class DiscordNetBridge
         );
         return Task.CompletedTask;
     }
-
-    private Task OnClientLog(LogMessage message)
-    {
-        try
-        {
-            Logger?.Log(
-                ToLogLevel(message.Severity),
-                default,
-                message,
-                message.Exception,
-                static (state, _) => $"Discord.Net ({state.Source}): {state.Message}"
-            );
-        }
-        catch { }
-        return Task.CompletedTask;
-    }
-
-    private static LogLevel ToLogLevel(LogSeverity severity) =>
-        severity switch
-        {
-            LogSeverity.Critical => LogLevel.Critical,
-            LogSeverity.Error => LogLevel.Error,
-            LogSeverity.Warning => LogLevel.Warning,
-            LogSeverity.Info => LogLevel.Information,
-            LogSeverity.Verbose => LogLevel.Debug,
-            _ => LogLevel.Trace,
-        };
 }

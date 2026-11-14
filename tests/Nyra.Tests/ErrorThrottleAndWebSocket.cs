@@ -89,10 +89,6 @@ public sealed class ErrorThrottleAndWebSocket
         }
 
         await Task.Delay(300).ConfigureAwait(false);
-        var logged = sink.Entries.Count(e =>
-            e.Level == LogLevel.Error && e.Exception?.InnerException is RestException
-        );
-        await Assert.That(logged).IsEqualTo(5);
         await Assert.That(reported).IsEqualTo(5);
 
         time.Advance(TimeSpan.FromSeconds(31));
