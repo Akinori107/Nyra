@@ -111,6 +111,8 @@ public sealed class GuildConnection
 
     private int _voiceCloseHandling;
 
+    private readonly CancellationTokenSource _lifetime = new();
+
     private long _lastVoiceConnectedTick = long.MinValue;
 
     private bool _observedSelfDeaf;
@@ -202,6 +204,7 @@ public sealed class GuildConnection
         _tearingDown = true;
         _idleTimer.Stop();
         _aloneTimer.Stop();
+        _lifetime.Cancel();
     }
 
     private int _voiceLeaveClaimed;
@@ -1096,16 +1099,13 @@ public sealed class GuildConnection
             if (_tearingDown)
                 return;
 
-            using var rescueCts = new CancellationTokenSource(
-                GuildVoiceForwarder.VoiceSendDeadline
-            );
             await bridge
                 .SendVoiceUpdateAsync(
                     GuildId,
                     ChannelId,
                     Volatile.Read(ref _observedSelfDeaf),
                     Volatile.Read(ref _observedSelfMute),
-                    cancellationToken: rescueCts.Token
+                    cancellationToken: _lifetime.Token
                 )
                 .ConfigureAwait(false);
         }
