@@ -255,6 +255,13 @@ public sealed class GuildQueue
             return Queues.TryGetValue(connection, out var queue) ? queue : null;
     }
 
+    internal static void Inherit(GuildConnection source, GuildConnection target)
+    {
+        lock (RegistryLock)
+            if (Queues.TryGetValue(source, out var queue))
+                Queues.AddOrUpdate(target, queue);
+    }
+
     internal static async Task<(GuildConnection Connection, bool Resent)?> HandOverAsync(
         GuildConnection source,
         Func<Task<(GuildConnection Connection, bool Resent)?>> handOver

@@ -259,7 +259,7 @@ internal sealed class GuildRegistry
         GuildConnection connection,
         Node target,
         ulong channelId,
-        GuildConnection.RestoreSnapshot snapshot
+        Func<GuildConnection.RestoreSnapshot> takeSnapshot
     )
     {
         var guildId = connection.GuildId;
@@ -275,7 +275,7 @@ internal sealed class GuildRegistry
         try
         {
             var adopted = await target
-                .Registry.AdoptAsync(connection, channelId, snapshot)
+                .Registry.AdoptAsync(connection, channelId, takeSnapshot())
                 .ConfigureAwait(false);
             connection.MarkHandedOver();
             return adopted;
@@ -327,6 +327,7 @@ internal sealed class GuildRegistry
                 source.VoiceToken
             );
             connection.InheritPlayerState(source);
+            Nyra.Queue.GuildQueue.Inherit(source, connection);
             Connections[guildId] = connection;
 
             bool resent;
@@ -347,6 +348,8 @@ internal sealed class GuildRegistry
             }
 
             connection.CommitPlayerUpdate();
+            if (!_node.IsReady)
+                connection.CaptureForRestore();
             return (connection, resent);
         }
         finally

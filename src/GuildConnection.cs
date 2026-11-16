@@ -597,7 +597,7 @@ public sealed class GuildConnection
 
     internal void CaptureForRestore()
     {
-        if (_restoreSnapshot is not null || _tearingDown || ChannelId is null)
+        if (_restoreSnapshot is not null || _tearingDown || ChannelId is null || !_playerCommitted)
             return;
 
         Interlocked.CompareExchange(ref _restoreSnapshot, CaptureSnapshot(), null);
@@ -619,14 +619,16 @@ public sealed class GuildConnection
             channelId = current;
         }
 
-        var snapshot = Interlocked.Exchange(ref _restoreSnapshot, null) ?? CaptureSnapshot();
-
+        RestoreSnapshot? snapshot = null;
         (GuildConnection Connection, bool Resent)? moved = null;
         try
         {
             moved = await Nyra
                 .Queue.GuildQueue.HandOverAsync(this, () =>
-                    Node.Registry.HandOverAsync(this, target, channelId, snapshot)
+                    Node.Registry.HandOverAsync(this, target, channelId, () =>
+                        snapshot = Interlocked.Exchange(ref _restoreSnapshot, null)
+                            ?? CaptureSnapshot()
+                    )
                 )
                 .ConfigureAwait(false);
         }
