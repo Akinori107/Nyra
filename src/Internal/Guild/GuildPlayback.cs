@@ -13,6 +13,7 @@ internal sealed class GuildPlayback
     private bool _positionAdvancing;
     private bool _hasPosition;
     private long _lastCaptureTime;
+    private long _lastResponseTime;
 
     private long _lastTrackEndTick;
     private Track? _lastEndedTrack;
@@ -335,13 +336,21 @@ internal sealed class GuildPlayback
             if (_connection.IsTearingDown)
                 return;
 
+            var responded = player.State?.TimeMilliseconds ?? _lastResponseTime;
+            if (responded >= _lastResponseTime)
+            {
+                _lastResponseTime = responded;
+                if (
+                    _lastPauseEventTick < requestTick
+                    || _lastPauseRequestTick >= _lastPauseEventTick
+                )
+                    _connection.IsPaused = player.IsPaused;
+                if (_lastVolumeEventTick < requestTick)
+                    _connection.Volume = player.Volume;
+            }
+
             if (player.State is { } ranked && ranked.TimeMilliseconds < _lastCaptureTime)
                 return;
-
-            if (_lastPauseEventTick < requestTick || _lastPauseRequestTick >= _lastPauseEventTick)
-                _connection.IsPaused = player.IsPaused;
-            if (_lastVolumeEventTick < requestTick)
-                _connection.Volume = player.Volume;
 
             if (
                 player.Track is not null
@@ -403,6 +412,7 @@ internal sealed class GuildPlayback
         {
             _connection.CurrentTrack = null;
             _lastCaptureTime = 0;
+            _lastResponseTime = 0;
             _positionAdvancing = false;
             _hasPosition = false;
             _anchorTrack = null;
