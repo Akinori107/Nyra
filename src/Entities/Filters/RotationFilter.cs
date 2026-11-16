@@ -10,10 +10,7 @@ namespace Nyra.Entities.Filters;
 public sealed record RotationFilter(
     [property: JsonPropertyName("rotationHz")] double? RotationHz = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<RotationFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber => FilterNumbers.NonFinite(RotationHz);
-
-    RotationFilter IStripTransition<RotationFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

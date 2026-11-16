@@ -66,9 +66,3 @@ internal sealed class TransitionDurationConverter : JsonConverter<int?>
     public override void Write(Utf8JsonWriter writer, int? value, JsonSerializerOptions options) =>
         writer.WriteNumberValue(value ?? 0);
 }
-
-internal interface IStripTransition<out TSelf>
-    where TSelf : IStripTransition<TSelf>
-{
-    TSelf WithoutTransition();
-}

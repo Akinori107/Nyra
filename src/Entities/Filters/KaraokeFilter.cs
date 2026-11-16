@@ -23,14 +23,11 @@ public sealed record KaraokeFilter(
     [property: JsonPropertyName("filterBand")] float? FilterBand = null,
     [property: JsonPropertyName("filterWidth")] float? FilterWidth = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<KaraokeFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Level)
         || FilterNumbers.NonFinite(MonoLevel)
         || FilterNumbers.NonFinite(FilterBand)
         || FilterNumbers.NonFinite(FilterWidth);
-
-    KaraokeFilter IStripTransition<KaraokeFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

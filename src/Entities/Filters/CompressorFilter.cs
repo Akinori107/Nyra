@@ -28,7 +28,7 @@ public sealed record CompressorFilter(
     [property: JsonPropertyName("gain")] float? Gain = null,
     [property: JsonPropertyName("makeupGain")] float? MakeupGain = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<CompressorFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Threshold)
@@ -37,7 +37,4 @@ public sealed record CompressorFilter(
         || FilterNumbers.NonFinite(Release)
         || FilterNumbers.NonFinite(Gain)
         || FilterNumbers.NonFinite(MakeupGain);
-
-    CompressorFilter IStripTransition<CompressorFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

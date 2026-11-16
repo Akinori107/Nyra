@@ -107,7 +107,6 @@ internal sealed class GuildPatches
     internal static bool MayHaveLanded(Exception exception) =>
         exception
             is TimeoutException
-                or HttpRequestException
                 or NodeUnreachableException
                 or RestException { StatusCode: >= 200 and < 300 };
 

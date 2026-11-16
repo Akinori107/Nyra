@@ -467,13 +467,15 @@ internal sealed class GuildRegistry
             .ConfigureAwait(false);
     }
 
-    internal async Task ReconcileAfterResumeAsync(CancellationToken cancellationToken)
+    internal async Task ReconcileAfterResumeAsync()
     {
         var playing = Connections
             .Values.Select(connection => (Connection: connection, Track: connection.CurrentTrack))
             .Where(entry => entry.Track is not null)
             .ToArray();
-        var players = await _node.Rest.Players.ListAsync(cancellationToken).ConfigureAwait(false);
+        var players = await _node
+            .Rest.Players.ListAsync(CancellationToken.None)
+            .ConfigureAwait(false);
         var byGuild = players.ToDictionary(player => player.GuildId);
         foreach (var (connection, track) in playing)
             connection.EndLostTrack(track!, byGuild.GetValueOrDefault(connection.GuildId));
@@ -481,7 +483,7 @@ internal sealed class GuildRegistry
         var destroyed = 0;
         foreach (var player in players.Where(player => !Connections.ContainsKey(player.GuildId)))
         {
-            using var lease = await EnterGateAsync(player.GuildId, cancellationToken)
+            using var lease = await EnterGateAsync(player.GuildId, CancellationToken.None)
                 .ConfigureAwait(false);
             try
             {
@@ -489,7 +491,7 @@ internal sealed class GuildRegistry
                     continue;
 
                 await _node
-                    .Rest.Players.DestroyAsync(player.GuildId, cancellationToken)
+                    .Rest.Players.DestroyAsync(player.GuildId, CancellationToken.None)
                     .ConfigureAwait(false);
                 destroyed++;
             }

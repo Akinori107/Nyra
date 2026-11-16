@@ -34,7 +34,6 @@ internal sealed class EventPump(string owner, ILogger? logger, EventId category)
 
     internal ILogger? Logger
     {
-        get => _logger;
         set => _logger = value;
     }
 

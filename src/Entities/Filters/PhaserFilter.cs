@@ -35,7 +35,7 @@ public sealed record PhaserFilter(
     [property: JsonPropertyName("minFrequency")] float? MinFrequency = null,
     [property: JsonPropertyName("maxFrequency")] float? MaxFrequency = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<PhaserFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Rate)
@@ -45,7 +45,4 @@ public sealed record PhaserFilter(
         || FilterNumbers.NonFinite(Mix)
         || FilterNumbers.NonFinite(MinFrequency)
         || FilterNumbers.NonFinite(MaxFrequency);
-
-    PhaserFilter IStripTransition<PhaserFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

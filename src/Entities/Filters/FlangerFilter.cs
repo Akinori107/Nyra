@@ -25,7 +25,7 @@ public sealed record FlangerFilter(
     [property: JsonPropertyName("delay")] float? DelayMilliseconds = null,
     [property: JsonPropertyName("mix")] float? Mix = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<FlangerFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Rate)
@@ -33,7 +33,4 @@ public sealed record FlangerFilter(
         || FilterNumbers.NonFinite(Feedback)
         || FilterNumbers.NonFinite(DelayMilliseconds)
         || FilterNumbers.NonFinite(Mix);
-
-    FlangerFilter IStripTransition<FlangerFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

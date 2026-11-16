@@ -16,11 +16,8 @@ public sealed record TremoloFilter(
     [property: JsonPropertyName("frequency")] float? Frequency = null,
     [property: JsonPropertyName("depth")] float? Depth = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<TremoloFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Frequency) || FilterNumbers.NonFinite(Depth);
-
-    TremoloFilter IStripTransition<TremoloFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

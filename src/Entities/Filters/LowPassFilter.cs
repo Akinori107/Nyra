@@ -21,13 +21,10 @@ public sealed record LowPassFilter(
     [property: JsonPropertyName("targetAlpha")] float? TargetAlpha = null,
     [property: JsonPropertyName("logSmoothing")] float? LogSmoothing = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<LowPassFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Smoothing)
         || FilterNumbers.NonFinite(TargetAlpha)
         || FilterNumbers.NonFinite(LogSmoothing);
-
-    LowPassFilter IStripTransition<LowPassFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

@@ -28,7 +28,7 @@ public sealed record ReverbFilter(
     [property: JsonPropertyName("width")] float? Width = null,
     [property: JsonPropertyName("mix")] float? Mix = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<ReverbFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(RoomSize)
@@ -37,7 +37,4 @@ public sealed record ReverbFilter(
         || FilterNumbers.NonFinite(DryLevel)
         || FilterNumbers.NonFinite(Width)
         || FilterNumbers.NonFinite(Mix);
-
-    ReverbFilter IStripTransition<ReverbFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

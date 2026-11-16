@@ -15,13 +15,10 @@ public sealed record TimescaleFilter(
     [property: JsonPropertyName("pitch")] double? Pitch = null,
     [property: JsonPropertyName("rate")] double? Rate = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<TimescaleFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Speed)
         || FilterNumbers.NonFinite(Pitch)
         || FilterNumbers.NonFinite(Rate);
-
-    TimescaleFilter IStripTransition<TimescaleFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

@@ -15,11 +15,8 @@ public sealed record HighPassFilter(
     [property: JsonPropertyName("smoothing")] float? Smoothing = null,
     [property: JsonPropertyName("targetAlpha")] float? TargetAlpha = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<HighPassFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Smoothing) || FilterNumbers.NonFinite(TargetAlpha);
-
-    HighPassFilter IStripTransition<HighPassFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

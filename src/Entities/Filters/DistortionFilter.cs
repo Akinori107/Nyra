@@ -27,7 +27,7 @@ public sealed record DistortionFilter(
     [property: JsonPropertyName("offset")] float? Offset = null,
     [property: JsonPropertyName("scale")] float? Scale = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<DistortionFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(SinOffset)
@@ -38,7 +38,4 @@ public sealed record DistortionFilter(
         || FilterNumbers.NonFinite(TanScale)
         || FilterNumbers.NonFinite(Offset)
         || FilterNumbers.NonFinite(Scale);
-
-    DistortionFilter IStripTransition<DistortionFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

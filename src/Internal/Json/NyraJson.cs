@@ -175,7 +175,6 @@ internal sealed class StringOrNumberConverter : JsonConverter<string?>
         {
             JsonTokenType.String => reader.GetString(),
             JsonTokenType.Number => ReadNumberAsRawText(ref reader),
-            JsonTokenType.Null => null,
             _ => throw new JsonException(
                 $"Cannot read string-or-number value from token type '{reader.TokenType}'."
             ),

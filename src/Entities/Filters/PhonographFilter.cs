@@ -25,7 +25,7 @@ public sealed record PhonographFilter(
     [property: JsonPropertyName("micAgc")] float? MicAgc = null,
     [property: JsonPropertyName("drive")] float? Drive = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<PhonographFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Frequency)
@@ -35,7 +35,4 @@ public sealed record PhonographFilter(
         || FilterNumbers.NonFinite(Room)
         || FilterNumbers.NonFinite(MicAgc)
         || FilterNumbers.NonFinite(Drive);
-
-    PhonographFilter IStripTransition<PhonographFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

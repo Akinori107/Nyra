@@ -22,11 +22,6 @@ public sealed class ConnectorAndTransportEdge
             new NullableSnowflakeConverter().Write(writer, null, options);
         await Assert.That(Encoding.UTF8.GetString(snowflakeStream.ToArray())).IsEqualTo("null");
 
-        var stringReader = new Utf8JsonReader("null"u8);
-        stringReader.Read();
-        await Assert
-            .That(new StringOrNumberConverter().Read(ref stringReader, typeof(string), options))
-            .IsNull();
         using var stringStream = new MemoryStream();
         using (var writer2 = new Utf8JsonWriter(stringStream))
             new StringOrNumberConverter().Write(writer2, null, options);
@@ -34,40 +29,18 @@ public sealed class ConnectorAndTransportEdge
     }
 
     [Test]
-    public async Task PluginFilterComparer()
+    public async Task PluginFiltersMakeAChainNonEmpty()
     {
-        var other = JsonDocument.Parse("2").RootElement;
-
         var withPlugins = new FilterChain
         {
-            PluginFilters = new Dictionary<string, JsonElement> { ["party"] = PluginRootElement() },
-        };
-        var bare = new FilterChain();
-
-        static JsonElement PluginRootElement() =>
-            JsonDocument.Parse("""{"amount":1}""").RootElement;
-
-        await Assert.That(FilterComparer.FiltersEqual(bare, withPlugins)).IsFalse();
-
-        var differentValue = new FilterChain
-        {
             PluginFilters = new Dictionary<string, JsonElement>
             {
-                ["party"] = JsonDocument.Parse("""{"amount":2}""").RootElement,
+                ["party"] = JsonDocument.Parse("""{"amount":1}""").RootElement,
             },
         };
-        await Assert.That(FilterComparer.FiltersEqual(withPlugins, differentValue)).IsFalse();
 
-        var missingName = new FilterChain
-        {
-            PluginFilters = new Dictionary<string, JsonElement>
-            {
-                ["other"] = JsonDocument.Parse("""{"amount":1}""").RootElement,
-            },
-        };
-        await Assert.That(FilterComparer.FiltersEqual(withPlugins, missingName)).IsFalse();
-
-        _ = other;
+        await Assert.That(FilterComparer.IsEmpty(new FilterChain())).IsTrue();
+        await Assert.That(FilterComparer.IsEmpty(withPlugins)).IsFalse();
     }
 
     [Test]

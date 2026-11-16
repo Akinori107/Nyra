@@ -671,7 +671,7 @@ public sealed class GuildQueue
             {
                 Commit(after, notes);
                 _loop = LoopMode.Off;
-                if (Autoplay && (before.Current ?? ended) is { } last)
+                if (Autoplay && before.Current is { } last)
                     seed = last;
                 else
                     notes.Ended = true;

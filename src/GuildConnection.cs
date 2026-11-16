@@ -40,8 +40,7 @@ public sealed class GuildConnection
     )
     {
         internal bool HasFilters =>
-            !FilterComparer.FiltersEqual(new FilterChain(), Filters)
-            || (Filters.Volume is { } volume && volume != 1f);
+            !FilterComparer.IsEmpty(Filters) || (Filters.Volume is { } volume && volume != 1f);
     }
 
     internal sealed record PlayerSettings(

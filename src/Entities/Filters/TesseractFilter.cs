@@ -10,10 +10,7 @@ namespace Nyra.Entities.Filters;
 public sealed record TesseractFilter(
     [property: JsonPropertyName("rotationHz")] double? RotationHz = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<TesseractFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber => FilterNumbers.NonFinite(RotationHz);
-
-    TesseractFilter IStripTransition<TesseractFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

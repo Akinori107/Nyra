@@ -19,13 +19,10 @@ public sealed record EchoFilter(
     [property: JsonPropertyName("feedback")] float? Feedback = null,
     [property: JsonPropertyName("mix")] float? Mix = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<EchoFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(DelayMilliseconds)
         || FilterNumbers.NonFinite(Feedback)
         || FilterNumbers.NonFinite(Mix);
-
-    EchoFilter IStripTransition<EchoFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

@@ -25,7 +25,7 @@ public sealed record ChorusFilter(
     [property: JsonPropertyName("delay")] float? DelayMilliseconds = null,
     [property: JsonPropertyName("mix")] float? Mix = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<ChorusFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Rate)
@@ -33,7 +33,4 @@ public sealed record ChorusFilter(
         || FilterNumbers.NonFinite(Feedback)
         || FilterNumbers.NonFinite(DelayMilliseconds)
         || FilterNumbers.NonFinite(Mix);
-
-    ChorusFilter IStripTransition<ChorusFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

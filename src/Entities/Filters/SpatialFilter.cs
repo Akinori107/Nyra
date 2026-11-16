@@ -22,7 +22,7 @@ public sealed record SpatialFilter(
     [property: JsonPropertyName("depth")] float? Depth = null,
     [property: JsonPropertyName("rate")] float? Rate = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<SpatialFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(X)
@@ -30,7 +30,4 @@ public sealed record SpatialFilter(
         || FilterNumbers.NonFinite(Z)
         || FilterNumbers.NonFinite(Depth)
         || FilterNumbers.NonFinite(Rate);
-
-    SpatialFilter IStripTransition<SpatialFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

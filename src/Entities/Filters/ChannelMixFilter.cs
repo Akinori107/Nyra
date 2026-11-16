@@ -28,14 +28,11 @@ public sealed record ChannelMixFilter(
     [property: JsonPropertyName("rightToLeft")] float? RightToLeft = null,
     [property: JsonPropertyName("rightToRight")] float? RightToRight = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<ChannelMixFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(LeftToLeft)
         || FilterNumbers.NonFinite(LeftToRight)
         || FilterNumbers.NonFinite(RightToLeft)
         || FilterNumbers.NonFinite(RightToRight);
-
-    ChannelMixFilter IStripTransition<ChannelMixFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }

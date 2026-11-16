@@ -14,11 +14,8 @@ public sealed record VibratoFilter(
     [property: JsonPropertyName("frequency")] float? Frequency = null,
     [property: JsonPropertyName("depth")] float? Depth = null,
     [property: JsonPropertyName("transition")] FilterTransition? Transition = null
-) : IFilter, IFiniteCheck, IStripTransition<VibratoFilter>
+) : IFilter, IFiniteCheck
 {
     bool IFiniteCheck.HasNonFiniteNumber =>
         FilterNumbers.NonFinite(Frequency) || FilterNumbers.NonFinite(Depth);
-
-    VibratoFilter IStripTransition<VibratoFilter>.WithoutTransition() =>
-        Transition is null ? this : this with { Transition = null };
 }
