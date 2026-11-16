@@ -506,10 +506,9 @@ public sealed class GuildFilters
 
             if (player.Filters is { } serverFilters)
             {
-                TimescaleFilter? oldTimescale;
                 lock (_connection.PlaybackPositionLock)
                 {
-                    oldTimescale = Applied.Timescale;
+                    var oldTimescale = Applied.Timescale;
                     Applied = serverFilters;
                     ReanchorIfPaceChanged(oldTimescale);
                 }

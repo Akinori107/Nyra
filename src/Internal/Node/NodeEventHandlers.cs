@@ -44,8 +44,7 @@ internal sealed class NodeEventHandlers
     }
 
     private static string? UsableSessionId(string? sessionId) =>
-        sessionId is null
-        || sessionId.Length == 0
+        string.IsNullOrEmpty(sessionId)
         || sessionId.Any(static c => c > 127 || char.IsControl(c) || char.IsWhiteSpace(c))
             ? null
             : sessionId;
@@ -233,9 +232,9 @@ internal sealed class NodeEventHandlers
         }
         finally
         {
-            Stats? bufferedStats;
             lock (_node.EventsLock)
             {
+                Stats? bufferedStats = null;
                 if (connectionEpoch == _connectionEpoch)
                 {
                     _readyEpilogueRunning = false;
@@ -246,8 +245,6 @@ internal sealed class NodeEventHandlers
                             : null;
                     _statsBufferedDuringReady = null;
                 }
-                else
-                    bufferedStats = null;
 
                 if (bufferedStats is { } lateStats && !_node.Stopped && !_node.Disposed)
                     _node.RaiseStatsUpdated(new NodeStatsEventArgs(lateStats));
@@ -351,10 +348,7 @@ internal sealed class NodeEventHandlers
 
     internal GuildConnection[] SnapshotWorkerFailed(WorkerFailedEventArgs eventArgs)
     {
-        if (_node.IsShutDown)
-            return [];
-
-        if (eventArgs.AffectedGuilds is not { Count: > 0 } guilds)
+        if (_node.IsShutDown || eventArgs.AffectedGuilds is not { Count: > 0 } guilds)
             return [];
 
         var guildSet = guilds.ToHashSet();
@@ -403,7 +397,6 @@ internal sealed class NodeEventHandlers
         int ownerGeneration
     )
     {
-        TaskCompletionSource<bool>? completion;
         lock (_node.EventsLock)
         {
             if (_node.Connection.LatestGeneration != ownerGeneration)
@@ -419,7 +412,7 @@ internal sealed class NodeEventHandlers
 
             _readyEpilogueRunning = false;
 
-            completion = _node.TakeConnectCompletion(ownerGeneration);
+            var completion = _node.TakeConnectCompletion(ownerGeneration);
 
             _node.IsReady = false;
 

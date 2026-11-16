@@ -327,7 +327,7 @@ internal sealed class GuildRegistry
                 source.VoiceToken
             );
             connection.InheritPlayerState(source);
-            Nyra.Queue.GuildQueue.Inherit(source, connection);
+            Queue.GuildQueue.Inherit(source, connection);
             Connections[guildId] = connection;
 
             bool resent;
@@ -372,7 +372,7 @@ internal sealed class GuildRegistry
     }
 
     internal GuildConnection? GetConnection(ulong guildId) =>
-        Connections.TryGetValue(guildId, out var connection) ? connection : null;
+        Connections.GetValueOrDefault(guildId);
 
     private async Task RollbackRegistrationAsync(
         ulong guildId,

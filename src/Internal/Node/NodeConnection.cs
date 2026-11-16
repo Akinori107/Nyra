@@ -74,7 +74,6 @@ internal sealed class NodeConnection(
 
     public async Task<bool> ConnectAsync(CancellationToken cancellationToken)
     {
-        CancellationTokenSource lifetimeCts;
         CancellationToken lifetimeToken;
         TaskCompletionSource disconnectSignal;
         int generation;
@@ -94,7 +93,7 @@ internal sealed class NodeConnection(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
             disconnectSignal = _disconnectSignal;
-            lifetimeCts = new CancellationTokenSource();
+            var lifetimeCts = new CancellationTokenSource();
             _lifetimeCts = lifetimeCts;
             lifetimeToken = lifetimeCts.Token;
             _supervisionTask = SupervisionLoopAsync(generation, lifetimeToken);

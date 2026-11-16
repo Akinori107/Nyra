@@ -7,4 +7,4 @@ namespace Nyra.Exceptions;
 /// <param name="message">The message that describes the error.</param>
 /// <param name="innerException">The exception that caused this one, null when there is none.</param>
 public sealed class IncompatibleServerException(string message, Exception? innerException = null)
-    : NyraException(message, innerException) { }
+    : NyraException(message, innerException);

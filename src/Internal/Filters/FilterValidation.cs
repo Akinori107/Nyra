@@ -171,8 +171,7 @@ internal static class FilterValidation
                 ThrowIfOutOfRange(phaser.MinFrequency, 0.0f, null, "phaser minFrequency");
                 ThrowIfOutOfRange(phaser.MaxFrequency, 0.0f, null, "phaser maxFrequency");
                 if (
-                    phaser.MinFrequency is { } minFrequency
-                    && phaser.MaxFrequency is { } maxFrequency
+                    phaser is { MinFrequency: { } minFrequency, MaxFrequency: { } maxFrequency }
                     && minFrequency > maxFrequency
                 )
                     ThrowOutOfRange(

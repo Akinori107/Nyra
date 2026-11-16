@@ -31,22 +31,19 @@ internal sealed class TransitionDurationConverter : JsonConverter<int?>
         JsonSerializerOptions options
     )
     {
-        if (reader.TokenType is JsonTokenType.Null)
-            return null;
-
-        if (reader.TokenType is JsonTokenType.String)
-            return JsonNumberParsing.TryParseUtf8Double(ref reader, out var parsed)
+        return reader.TokenType switch
+        {
+            JsonTokenType.Null => null,
+            JsonTokenType.String => JsonNumberParsing.TryParseUtf8Double(ref reader, out var parsed)
                 ? Round(parsed)
                 : throw new JsonException(
                     $"Cannot read the transition duration from '{reader.GetString()}'."
-                );
-
-        if (reader.TokenType is JsonTokenType.Number)
-            return Round(reader.GetDouble());
-
-        throw new JsonException(
-            $"Cannot read the transition duration from token type '{reader.TokenType}'."
-        );
+                ),
+            JsonTokenType.Number => Round(reader.GetDouble()),
+            _ => throw new JsonException(
+                $"Cannot read the transition duration from token type '{reader.TokenType}'."
+            ),
+        };
 
         static int? Round(double value)
         {

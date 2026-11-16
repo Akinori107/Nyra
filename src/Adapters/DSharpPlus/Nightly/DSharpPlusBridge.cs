@@ -198,13 +198,12 @@ public sealed class DSharpPlusBridge
 
     internal Task OnGuildDeleted(DiscordClient sender, GuildDeletedEventArgs eventArgs)
     {
-        if (_disposed)
-            return Task.CompletedTask;
-
-        if (!ReferenceEquals(_client, sender))
-            return Task.CompletedTask;
-
-        if (eventArgs.Unavailable || eventArgs.Guild is null)
+        if (
+            _disposed
+            || !ReferenceEquals(_client, sender)
+            || eventArgs.Unavailable
+            || eventArgs.Guild is null
+        )
             return Task.CompletedTask;
 
         BridgeEvent.RaiseIsolated(
@@ -274,11 +273,9 @@ public sealed class DSharpPlusBridge
 
         Bind(sender);
 
-        if (eventArgs.Guild is null)
-            return Task.CompletedTask;
-
         if (
-            string.IsNullOrWhiteSpace(eventArgs.Endpoint)
+            eventArgs.Guild is null
+            || string.IsNullOrWhiteSpace(eventArgs.Endpoint)
             || string.IsNullOrWhiteSpace(eventArgs.VoiceToken)
         )
             return Task.CompletedTask;

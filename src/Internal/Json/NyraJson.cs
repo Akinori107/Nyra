@@ -55,11 +55,10 @@ internal static class NyraJson
         options.GetTypeInfo<TValue>();
 #else
     private static JsonTypeInfo<TValue> TypeInfoOf<TValue>(JsonSerializerOptions options) =>
-        options.GetTypeInfo(typeof(TValue)) is JsonTypeInfo<TValue> typeInfo
-            ? typeInfo
-            : throw new NotSupportedException(
-                $"The type '{typeof(TValue)}' is not covered by the options' serialization context."
-            );
+        options.GetTypeInfo(typeof(TValue)) as JsonTypeInfo<TValue>
+        ?? throw new NotSupportedException(
+            $"The type '{typeof(TValue)}' is not covered by the options' serialization context."
+        );
 #endif
 
     private static JsonSerializerOptions Create(
@@ -280,13 +279,14 @@ internal sealed class RoundedInt64Converter : JsonConverter<long>
     private static long RoundToInt64(double value)
     {
         var rounded = JsonNumberParsing.RoundHalfUp(value);
-        if (rounded == 9_223_372_036_854_775_808.0)
-            return long.MaxValue;
-        if (rounded is >= -9_223_372_036_854_775_808.0 and < 9_223_372_036_854_775_808.0)
-            return (long)rounded;
-        throw new JsonException(
-            $"Integral value {value} is outside the int64 range, the server sent garbage."
-        );
+        return rounded switch
+        {
+            9_223_372_036_854_775_808.0 => long.MaxValue,
+            >= -9_223_372_036_854_775_808.0 and < 9_223_372_036_854_775_808.0 => (long)rounded,
+            _ => throw new JsonException(
+                $"Integral value {value} is outside the int64 range, the server sent garbage."
+            ),
+        };
     }
 }
 
@@ -343,18 +343,16 @@ internal sealed class FiniteFloatConverter : JsonConverter<float>
         JsonSerializerOptions options
     )
     {
-        float value;
-        if (reader.TokenType is JsonTokenType.Number)
-            value = reader.GetSingle();
-        else if (
-            reader.TokenType is JsonTokenType.String
-            && JsonNumberParsing.TryParseUtf8Double(ref reader, out var parsed)
-        )
-            value = (float)parsed;
-        else
-            throw new JsonException(
+        var value = reader.TokenType switch
+        {
+            JsonTokenType.Number => reader.GetSingle(),
+            JsonTokenType.String
+                when JsonNumberParsing.TryParseUtf8Double(ref reader, out var parsed) =>
+                (float)parsed,
+            _ => throw new JsonException(
                 $"Cannot read a finite float from token type '{reader.TokenType}'."
-            );
+            ),
+        };
         if (!float.IsFinite(value))
             throw new JsonException($"The value must be a finite number, got {value}.");
         return value;

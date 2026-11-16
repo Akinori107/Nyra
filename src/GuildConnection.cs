@@ -622,8 +622,8 @@ public sealed class GuildConnection
         (GuildConnection Connection, bool Resent)? moved = null;
         try
         {
-            moved = await Nyra
-                .Queue.GuildQueue.HandOverAsync(this, () =>
+            moved = await Queue
+                .GuildQueue.HandOverAsync(this, () =>
                     Node.Registry.HandOverAsync(this, target, channelId, () =>
                         snapshot = Interlocked.Exchange(ref _restoreSnapshot, null)
                             ?? CaptureSnapshot()

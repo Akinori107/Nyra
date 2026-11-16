@@ -200,8 +200,7 @@ public sealed class DSharpPlusBridge
         if (_client is DiscordClient client)
         {
             if (
-                ShardCountHint is { } total
-                && total > 1
+                ShardCountHint is > 1 and var total
                 && GuildShard.IdFor(guildId, total) != client.ShardId
             )
                 throw new InvalidOperationException(
@@ -296,11 +295,9 @@ public sealed class DSharpPlusBridge
 
     private Task OnVoiceServerUpdated(DiscordClient sender, VoiceServerUpdateEventArgs eventArgs)
     {
-        if (eventArgs.Guild is null)
-            return Task.CompletedTask;
-
         if (
-            string.IsNullOrWhiteSpace(eventArgs.Endpoint)
+            eventArgs.Guild is null
+            || string.IsNullOrWhiteSpace(eventArgs.Endpoint)
             || string.IsNullOrWhiteSpace(eventArgs.VoiceToken)
         )
             return Task.CompletedTask;

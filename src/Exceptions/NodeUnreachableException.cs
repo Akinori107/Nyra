@@ -10,4 +10,4 @@ namespace Nyra.Exceptions;
 /// <param name="message">The message that describes the error.</param>
 /// <param name="innerException">The transport exception that caused this one.</param>
 public sealed class NodeUnreachableException(string message, Exception innerException)
-    : NyraException(message, innerException) { }
+    : NyraException(message, innerException);

@@ -71,12 +71,10 @@ public static class DiscordClientBuilderExtensions
             return extension;
 
         var resolved = client.ServiceProvider?.GetService<NyraExtension>();
-        if (resolved is { } live && !live.IsDisposed)
+        if (resolved is { IsDisposed: false } live)
         {
             lock (UseNyraGate)
-            {
                 Extensions.AddOrUpdate(client, live);
-            }
             return live;
         }
 

@@ -23,8 +23,6 @@ internal sealed class EventPump(string owner, ILogger? logger, EventId category)
     private bool _completed;
 
     private Task _consumer = Task.CompletedTask;
-    private readonly string _owner = owner;
-    private readonly EventId _category = category;
 
     private volatile ILogger? _logger = logger;
     private int _backlogged;
@@ -68,9 +66,9 @@ internal sealed class EventPump(string owner, ILogger? logger, EventId category)
                 try
                 {
                     _logger?.LogWarning(
-                        _category,
+                        category,
                         "Event backlog of {Owner} reached {Backlog} items: a handler is stuck or slow.",
-                        _owner,
+                        owner,
                         depth
                     );
                 }
@@ -102,9 +100,9 @@ internal sealed class EventPump(string owner, ILogger? logger, EventId category)
         try
         {
             _logger?.LogWarning(
-                _category,
+                category,
                 "Event pump of {Owner} is {Backlog} items behind: events are skipped until the handlers catch up.",
-                _owner,
+                owner,
                 depth
             );
         }
@@ -130,9 +128,9 @@ internal sealed class EventPump(string owner, ILogger? logger, EventId category)
             try
             {
                 _logger?.LogWarning(
-                    _category,
+                    category,
                     "Event pump of {Owner} did not drain within {Timeout}: {Backlog} item(s) left, the consumer is detached.",
-                    _owner,
+                    owner,
                     drainTimeout,
                     Volatile.Read(ref _queuedItemCount)
                 );
@@ -179,10 +177,10 @@ internal sealed class EventPump(string owner, ILogger? logger, EventId category)
                     try
                     {
                         _logger?.LogError(
-                            _category,
+                            category,
                             exception,
                             "Event pump of {Owner} caught a work item failure.",
-                            _owner
+                            owner
                         );
                     }
                     catch { }

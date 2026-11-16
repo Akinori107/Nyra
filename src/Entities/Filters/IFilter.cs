@@ -5,7 +5,7 @@ namespace Nyra.Entities.Filters;
 /// Only the filter records of this library work, your own implementation throws
 /// <see cref="ArgumentException"/>.
 /// </remarks>
-public interface IFilter { }
+public interface IFilter;
 
 internal interface IFiniteCheck
 {

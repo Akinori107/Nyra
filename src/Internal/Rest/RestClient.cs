@@ -106,8 +106,7 @@ internal sealed class RestClient
         || (cached.Count == current.Count && cached.SetEquals(current));
 
     internal static bool IndicatesMissingResource(RestException exception) =>
-        exception.StatusCode == 404
-        && !exception.BodyUnreadable
+        exception is { StatusCode: 404, BodyUnreadable: false }
         && !IndicatesMissingSession(exception);
 
     internal static bool IndicatesMissingSession(RestException exception)

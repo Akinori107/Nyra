@@ -385,8 +385,7 @@ public sealed class NodeGroups
             );
 
         if (
-            update.PositionMilliseconds is { } position
-            && update.EndTimeMilliseconds is { } endTime
+            update is { PositionMilliseconds: { } position, EndTimeMilliseconds: { } endTime }
             && position >= endTime
         )
             throw new ArgumentOutOfRangeException(

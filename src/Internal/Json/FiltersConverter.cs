@@ -623,9 +623,9 @@ internal sealed class FiltersConverter(
         var durationMs = false;
         var curve = false;
         foreach (var member in envelope.EnumerateObject())
-            if (member.Name == "durationMs" && member.Value.ValueKind == JsonValueKind.Number)
+            if (member is { Name: "durationMs", Value.ValueKind: JsonValueKind.Number })
                 durationMs = true;
-            else if (member.Name == "curve" && member.Value.ValueKind == JsonValueKind.String)
+            else if (member is { Name: "curve", Value.ValueKind: JsonValueKind.String })
                 curve = true;
             else
                 return false;
