@@ -945,7 +945,7 @@ public sealed class GuildConnection
         var requestTick = Node.Time.GetMilliseconds();
 
         var player = await Patches
-            .SendAsync(
+            .SendLandingAsync(
                 ct =>
                     Node.Rest.Players.UpdateAsync(
                         GuildId,
@@ -966,6 +966,10 @@ public sealed class GuildConnection
                         ct,
                         timeout: GuildVoiceForwarder.VoiceSendDeadline
                     ),
+                current =>
+                    current is not null
+                    && current.Voice?.SessionId == voice.SessionId
+                    && (snapshot.Track is not { } sent || IsSameTrack(current.Track, sent)),
                 CancellationToken.None
             )
             .ConfigureAwait(false);

@@ -277,11 +277,14 @@ internal sealed class GuildCommands
         {
             if (
                 !GuildPatches.MayHaveLanded(exception)
-                || !await _connection
-                    .Patches.ReconcileLandedAsync(landed, requestTick, cancellationToken)
+                || await _connection
+                    .Patches.FetchLandedAsync(landed, cancellationToken)
                     .ConfigureAwait(false)
+                    is not { } player
             )
                 _connection.Playback.RestoreRequestTicks(stamps);
+            else
+                _connection.CaptureState(player, requestTick);
             throw;
         }
     }
