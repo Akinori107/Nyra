@@ -66,4 +66,6 @@ queue.Autoplay = true;
 - YouTube tracks use `ytrec` on NodeLink and the YouTube mix on Lavalink.
 - Spotify tracks use `sprec`, which needs NodeLink or Lavalink with the LavaSrc plugin.
 - A track of another source ends the queue as before.
+- A skip on the last track plays a recommendation too.
+- `StopAsync` loads no recommendation, and autoplay stays on when the queue stops or ends.
 - `Ended` is raised only when nothing was found.

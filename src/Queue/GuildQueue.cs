@@ -228,11 +228,12 @@ public sealed class GuildQueue
 
     /// <summary>Gets or sets whether the queue keeps playing recommendations when it runs out, off by default.</summary>
     /// <remarks>
-    /// When the last track ends, the queue loads recommendations for it and plays the first one that is not that
-    /// track or in <see cref="History"/>. YouTube tracks use <c>ytrec</c> on NodeLink and the YouTube mix on
-    /// Lavalink, Spotify tracks use <c>sprec</c>, which needs NodeLink or Lavalink with the LavaSrc plugin. A track
-    /// of another source ends the queue as before. <see cref="Ended"/> is raised only when nothing was found, and
-    /// a load that throws goes to <see cref="Node.Error"/>.
+    /// When the last track ends or is skipped, the queue loads recommendations for it and plays the first one that
+    /// is not that track or in <see cref="History"/>. YouTube tracks use <c>ytrec</c> on NodeLink and the YouTube
+    /// mix on Lavalink, Spotify tracks use <c>sprec</c>, which needs NodeLink or Lavalink with the LavaSrc plugin. A
+    /// track of another source ends the queue as before. <see cref="Ended"/> is raised only when nothing was found,
+    /// and a load that throws goes to <see cref="Node.Error"/>. <see cref="StopAsync"/> loads no recommendation, and
+    /// autoplay stays on when the queue stops or ends.
     /// </remarks>
     public bool Autoplay { get; set; }
 
@@ -399,14 +400,38 @@ public sealed class GuildQueue
     }
 
     /// <summary>Plays an upcoming track now, the tracks before it stay in the queue.</summary>
-    /// <remarks>A skip ignores <see cref="LoopMode.Track"/>, the current track does not repeat.</remarks>
+    /// <remarks>
+    /// A skip ignores <see cref="LoopMode.Track"/>, the current track does not repeat. With <see cref="Autoplay"/>
+    /// on, skipping the last track plays a recommendation.
+    /// </remarks>
     /// <param name="position">The position in <see cref="Upcoming"/>, starting at one, 1 plays the next track.</param>
     /// <param name="cancellationToken">A token to cancel the call.</param>
     /// <returns>The track that started playing, null when the queue has no track at that position.</returns>
-    public Task<Track?> SkipAsync(int position = 1, CancellationToken cancellationToken = default)
+    public async Task<Track?> SkipAsync(
+        int position = 1,
+        CancellationToken cancellationToken = default
+    )
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(position, 1);
-        return PlayChangeAsync(state => state.Skip(position, Policy), cancellationToken);
+        if (
+            position == 1
+            && Autoplay
+            && Loop != LoopMode.Queue
+            && _state is { Upcoming.IsEmpty: true, Current: { } current }
+            && await RecommendAsync(current, cancellationToken).ConfigureAwait(false)
+                is { } recommended
+        )
+            return await PlayChangeAsync(
+                    state =>
+                        ReferenceEquals(state.Current, current) && state.Upcoming.IsEmpty
+                            ? (state with { Upcoming = [recommended] }).Skip(1, Policy)
+                            : state.Skip(position, Policy),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+        return await PlayChangeAsync(state => state.Skip(position, Policy), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>Goes back to the track that played before the current one.</summary>
@@ -690,25 +715,13 @@ public sealed class GuildQueue
 
     private async Task<bool> TryAutoplayAsync(Track seed)
     {
-        if (RecommendationQuery(seed) is not { } query)
+        if (await RecommendAsync(seed).ConfigureAwait(false) is not { } next)
             return false;
+        if (_state.Current is not null)
+            return true;
 
-        Track? next;
         try
         {
-            var found = TracksOf(
-                await Connection.Node.LoadTracksAsync(query, SearchType.Raw).ConfigureAwait(false)
-            );
-            var history = _state.History;
-            next = found.FirstOrDefault(track =>
-                !GuildConnection.IsSameTrack(track, seed)
-                && !history.Any(played => GuildConnection.IsSameTrack(played, track))
-            );
-            if (next is null || _detached)
-                return false;
-            if (_state.Current is not null)
-                return true;
-
             await EnqueueAsync(next).ConfigureAwait(false);
         }
         catch (Exception exception)
@@ -718,6 +731,39 @@ public sealed class GuildQueue
         }
 
         return _state.Current is not null;
+    }
+
+    private async Task<Track?> RecommendAsync(
+        Track seed,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (RecommendationQuery(seed) is not { } query)
+            return null;
+
+        try
+        {
+            var found = TracksOf(
+                await Connection
+                    .Node.LoadTracksAsync(query, SearchType.Raw, cancellationToken)
+                    .ConfigureAwait(false)
+            );
+            var history = _state.History;
+            var next = found.FirstOrDefault(track =>
+                !GuildConnection.IsSameTrack(track, seed)
+                && !history.Any(played => GuildConnection.IsSameTrack(played, track))
+            );
+            return _detached ? null : next;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Connection.Node.HandleError(exception);
+            return null;
+        }
     }
 
     private static IReadOnlyList<Track> TracksOf(LoadResult result) =>
@@ -737,7 +783,7 @@ public sealed class GuildQueue
 
         return seed.Info.SourceName switch
         {
-            "youtube" => Connection.Node.IsNodeLink
+            "youtube" or "ytmusic" => Connection.Node.IsNodeLink
                 ? $"ytrec:{id}"
                 : $"https://www.youtube.com/watch?v={id}&list=RD{id}",
             "spotify" => $"sprec:seed_tracks={id}",
