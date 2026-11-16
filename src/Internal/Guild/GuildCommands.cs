@@ -55,7 +55,7 @@ internal sealed class GuildCommands
                     Track = new PlayerUpdateTrack
                     {
                         Encoded = track.Encoded,
-                        UserData = options?.UserData,
+                        UserData = options?.UserData ?? track.ObjectUserData,
                         AudioTrackId = options?.AudioTrackId,
                     },
                     Position = positionMilliseconds,

@@ -76,7 +76,10 @@ public sealed record Track
 
     /// <summary>Track data previously stored by a client through the update-player endpoint.</summary>
     [JsonPropertyName("userData"), JsonInclude]
-    public JsonElement? UserData { get; internal set; }
+    public JsonElement? UserData { get; init; }
+
+    internal JsonElement? ObjectUserData =>
+        UserData is { ValueKind: JsonValueKind.Object } ? UserData : null;
 
     /// <summary>Start offset from the source link's <c>t</c>/<c>start</c> parameter, client-side only.</summary>
     /// <remarks>

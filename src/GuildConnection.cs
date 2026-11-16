@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nyra.Abstractions;
 using Nyra.Entities;
@@ -926,9 +925,7 @@ public sealed class GuildConnection
             trackUpdate = new PlayerUpdateTrack
             {
                 Encoded = track.Encoded,
-                UserData = track.UserData is { ValueKind: JsonValueKind.Object }
-                    ? track.UserData
-                    : null,
+                UserData = track.ObjectUserData,
             };
 
             Playback.StampPlayRequested();
