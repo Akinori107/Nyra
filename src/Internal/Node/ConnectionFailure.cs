@@ -54,7 +54,13 @@ internal static partial class ConnectionFailure
         {
             switch (exception)
             {
-                case HttpRequestException { InnerException: AuthenticationException }:
+                case NodeUnreachableException
+                {
+                    InnerException: HttpRequestException
+                    {
+                        InnerException: AuthenticationException,
+                    },
+                }:
                     Write(
                         LogLevel.Warning,
                         null,
@@ -81,25 +87,6 @@ internal static partial class ConnectionFailure
                         nodeName,
                         endpointText,
                         TrimTrailingPeriod(timeoutException.Message)
-                    );
-                    break;
-                case TaskCanceledException { InnerException: TimeoutException }:
-                    Write(
-                        LogLevel.Warning,
-                        null,
-                        "Node {NodeName} ({Endpoint}) not reachable: connection timed out.",
-                        nodeName,
-                        endpointText
-                    );
-                    break;
-                case HttpRequestException requestException:
-                    Write(
-                        LogLevel.Warning,
-                        null,
-                        "Node {NodeName} ({Endpoint}) not reachable: {Reason}.",
-                        nodeName,
-                        endpointText,
-                        Describe(requestException)
                     );
                     break;
                 case NodeUnreachableException unreachableException:

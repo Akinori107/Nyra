@@ -59,7 +59,11 @@ public sealed class ConnectionFailureLog
     public static IEnumerable<TestDataRow<Func<Exception>>> ExpectedFailures()
     {
         yield return Case(
-            () => new HttpRequestException("tls", new AuthenticationException()),
+            () =>
+                new NodeUnreachableException(
+                    "unreachable",
+                    new HttpRequestException("tls", new AuthenticationException())
+                ),
             "a tls failure"
         );
         yield return Case(
@@ -72,14 +76,13 @@ public sealed class ConnectionFailureLog
         );
         yield return Case(() => new TimeoutException("slow"), "a timeout");
         yield return Case(
-            () => new TaskCanceledException("slow", new TimeoutException()),
-            "a cancellation caused by a timeout"
-        );
-        yield return Case(
             () =>
-                new HttpRequestException(
-                    "refused",
-                    new SocketException((int)SocketError.ConnectionRefused)
+                new NodeUnreachableException(
+                    "unreachable",
+                    new HttpRequestException(
+                        "refused",
+                        new SocketException((int)SocketError.ConnectionRefused)
+                    )
                 ),
             "a refused connection"
         );
