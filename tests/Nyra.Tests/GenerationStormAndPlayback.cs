@@ -37,17 +37,16 @@ public sealed class GenerationStormAndPlayback
         bool paused = false,
         int volume = 100,
         string? stateJson = null
-    ) =>
-        $$"""
-            {
-                "guildId": "777",
-                "track": {{trackJson ?? "null"}},
-                "volume": {{volume}},
-                "paused": {{(paused ? "true" : "false")}},
-                "state": {{stateJson ?? "null"}},
-                "voice": {"token": "tok", "endpoint": "127.0.0.1", "sessionId": "vsess"}
-            }
-            """;
+    ) => $$"""
+        {
+            "guildId": "777",
+            "track": {{trackJson ?? "null"}},
+            "volume": {{volume}},
+            "paused": {{(paused ? "true" : "false")}},
+            "state": {{stateJson ?? "null"}},
+            "voice": {"token": "tok", "endpoint": "127.0.0.1", "sessionId": "vsess"}
+        }
+        """;
 
     private static string StateJson(long time, long position, bool connected) =>
         $$"""{"time": {{time}}, "position": {{position}}, "connected": {{(connected ? "true" : "false")}}, "ping": 42}""";

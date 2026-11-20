@@ -36,17 +36,20 @@ public sealed class TrackStartAndPauseEvent
         }
     }
 
-    private static string PlayerBody(string? trackJson, bool paused = false, int volume = 100) =>
-        $$"""
-            {
-                "guildId": "777",
-                "track": {{trackJson ?? "null"}},
-                "volume": {{volume}},
-                "paused": {{(paused ? "true" : "false")}},
-                "state": null,
-                "voice": {"token": "tok", "endpoint": "127.0.0.1", "sessionId": "vsess"}
-            }
-            """;
+    private static string PlayerBody(
+        string? trackJson,
+        bool paused = false,
+        int volume = 100
+    ) => $$"""
+        {
+            "guildId": "777",
+            "track": {{trackJson ?? "null"}},
+            "volume": {{volume}},
+            "paused": {{(paused ? "true" : "false")}},
+            "state": null,
+            "voice": {"token": "tok", "endpoint": "127.0.0.1", "sessionId": "vsess"}
+        }
+        """;
 
     private static async Task<Rig> RigAsync(bool lavalink = false)
     {
