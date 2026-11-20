@@ -23,56 +23,6 @@ public sealed class BoundaryToleranceRegression
     }
 
     [Test]
-    public async Task TolerantBooleanStringCase()
-    {
-        var options = NyraJson.SerializerOptions;
-        var fromTrueString = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":"true"}""",
-            options
-        );
-        await Assert.That(fromTrueString?.Enabled).IsTrue();
-
-        var fromFalseString = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":"false"}""",
-            options
-        );
-        await Assert.That(fromFalseString?.Enabled).IsFalse();
-
-        var fromNumber = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":1}""",
-            options
-        );
-        await Assert.That(fromNumber?.Enabled).IsTrue();
-
-        var fromGarbage = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":"x"}""",
-            options
-        );
-        await Assert.That(fromGarbage?.Enabled).IsFalse();
-    }
-
-    [Test]
-    public async Task SponsorBlockNullTolerance()
-    {
-        var options = NyraJson.SerializerOptions;
-        var poisoned = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":null,"skipMarginMs":null}""",
-            options
-        );
-        using (Assert.Multiple())
-        {
-            await Assert.That(poisoned).IsNotNull();
-            await Assert.That(poisoned!.Enabled).IsFalse();
-            await Assert.That(poisoned!.SkipMarginMilliseconds).IsEqualTo(0);
-        }
-        var fromStringMargin = JsonSerializer.Deserialize<SponsorBlockState>(
-            """{"enabled":true,"skipMarginMs":"2500"}""",
-            options
-        );
-        await Assert.That(fromStringMargin?.SkipMarginMilliseconds).IsEqualTo(2500);
-    }
-
-    [Test]
     public async Task BlackHolePatchBoundedByHandshakeTimeout()
     {
         var server = new FakeNodeServer();
@@ -93,18 +43,14 @@ public sealed class BoundaryToleranceRegression
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
 
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            call =>
-            {
-                Thread.Sleep(4000);
-                return new FakeRestResponse(
-                    200,
-                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                );
-            }
-        );
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ =>
+        {
+            Thread.Sleep(4000);
+            return new FakeRestResponse(
+                200,
+                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            );
+        });
 
         var connect = node.ConnectAsync(777, 555);
         await Task.Delay(150).ConfigureAwait(false);

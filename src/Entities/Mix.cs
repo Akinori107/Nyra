@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace Nyra.Entities;
@@ -8,15 +9,14 @@ public enum MixEndReason
     /// <summary>Played through to the end, only fires when auto-cleanup is on.</summary>
     Finished,
 
-    /// <summary>Stopped manually, e.g. via <see cref="GuildMix.StopAsync"/>.</summary>
+    /// <summary>Stopped manually, like <see cref="GuildMix.StopAsync"/>.</summary>
     Removed,
 
     /// <summary>The layer's source stream errored, the mixer removed it.</summary>
     Error,
 
     /// <summary>
-    /// The main track ended, was stopped, or was replaced, NodeLink reports every main-track end reason
-    /// through this member, only fires when auto-cleanup is on.
+    /// The main track ended, was stopped or was replaced, only fires when auto-cleanup is on.
     /// </summary>
     MainEnded,
 
@@ -27,8 +27,7 @@ public enum MixEndReason
     Destroyed,
 
     /// <summary>
-    /// The layers were cleared in bulk through the server's in-process mixer clear, e.g.
-    /// by a plugin.
+    /// The server cleared all layers at once, like a plugin doing it.
     /// </summary>
     Cleared,
 
@@ -48,10 +47,7 @@ public sealed record MixLayer
     } = string.Empty;
 
     /// <summary>The track the layer plays.</summary>
-    /// <remarks>
-    /// Absorbs a null track the server sends, the setter substitutes a fresh instance, readers never see
-    /// null.
-    /// </remarks>
+    /// <remarks>Never null, a missing value reads as an empty instance.</remarks>
     [JsonPropertyName("track"), JsonInclude]
     public Track Track
     {
@@ -60,36 +56,24 @@ public sealed record MixLayer
     } = new();
 
     /// <summary>Layer loudness, 0.0-1.0.</summary>
-    /// <remarks>
-    /// The converter fails an out-of-range echo inside the read (1e40 reads back non-finite). A null volume
-    /// fails the read the same way and the whole frame or list is dropped, a fabricated value here would lie
-    /// about what the layer plays.
-    /// </remarks>
     [JsonPropertyName("volume"), JsonInclude]
     [JsonConverter(typeof(FiniteFloatConverter))]
     public float Volume { get; internal set; }
 
     /// <summary>Playback position in consumed PCM bytes, not milliseconds.</summary>
-    /// <remarks>
-    /// Only set by the server's layer reports, null until one carries it. A fractional echo reads back
-    /// rounded.
-    /// </remarks>
+    /// <remarks>Null until the server reports it.</remarks>
     [JsonPropertyName("position"), JsonInclude]
     [JsonConverter(typeof(RoundedInt64Converter))]
     public long? PositionBytes { get; internal set; }
 
     /// <summary>Unix timestamp of when the layer started, in milliseconds.</summary>
-    /// <remarks>
-    /// Only set by the server's layer reports, null until one carries it. A fractional echo reads back
-    /// rounded.
-    /// </remarks>
+    /// <remarks>Null until the server reports it.</remarks>
     [JsonPropertyName("startTime"), JsonInclude]
     [JsonConverter(typeof(RoundedInt64Converter))]
     public long? StartTimeMilliseconds { get; internal set; }
 
     /// <summary>
-    /// When the layer started, null while <see cref="StartTimeMilliseconds"/> is null, non-positive, or out
-    /// of the convertible range.
+    /// When the layer started, null when unknown or out of range.
     /// </summary>
     [JsonIgnore]
     public DateTimeOffset? StartTime =>
@@ -114,9 +98,12 @@ public sealed record MixLayer
         HashCode.Combine(Id, Track, Volume, PositionBytes, StartTimeMilliseconds);
 
     /// <summary>Returns the layer with its normalized members.</summary>
-    /// <returns>The layer's public surface, the raw backing fields stay out of it.</returns>
+    /// <returns>The layer's public members, without the raw fields.</returns>
     public override string ToString() =>
-        $"MixLayer {{ Id = {Id}, Track = {Track}, Volume = {Volume}, PositionBytes = {PositionBytes}, StartTime = {StartTime?.ToString() ?? "null"} }}";
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"MixLayer {{ Id = {Id}, Track = {Track}, Volume = {Volume}, PositionBytes = {PositionBytes}, StartTime = {StartTime?.ToString(CultureInfo.InvariantCulture) ?? "null"} }}"
+        );
 }
 
 internal sealed record MixLayerCreate(

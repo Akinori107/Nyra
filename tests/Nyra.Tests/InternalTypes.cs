@@ -139,7 +139,7 @@ public sealed class InternalTypes
                 _ = JsonSerializer.Deserialize<LoadResult>("""{"loadType": "search"}""", options);
             })
             .Throws<JsonException>();
-        var unknown = JsonSerializer.Deserialize<LoadResult>(
+        _ = JsonSerializer.Deserialize<LoadResult>(
             """{"loadType": "brand-new-type", "data": null}""",
             options
         );

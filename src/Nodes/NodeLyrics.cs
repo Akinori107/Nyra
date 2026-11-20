@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Exceptions;
 
@@ -24,9 +23,7 @@ public sealed class NodeLyrics
     /// <param name="skipTrackSource">Whether to skip the track's source as a provider.</param>
     /// <param name="source">
     /// The lyrics provider to force, such as <c>lrclib</c> or <c>musixmatch</c>, null lets the server pick.
-    /// Only the NodeLink route carries it, honored by recent NodeLink dev builds, the server forces the
-    /// provider and answers an unknown one with a dedicated error. The LavaLyrics route has no such
-    /// parameter.
+    /// NodeLink only.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The lyrics result of the track.</returns>
@@ -74,8 +71,7 @@ public sealed class NodeLyrics
         _node.ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(track);
         ArgumentException.ThrowIfNullOrWhiteSpace(track.Encoded);
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "chapters");
+        await _node.RequireNodeLinkAsync("chapters", cancellationToken).ConfigureAwait(false);
 
         return await _node
             .Rest.Lyrics.LoadChaptersAsync(track.Encoded, cancellationToken)
@@ -101,48 +97,10 @@ public sealed class NodeLyrics
         _node.ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(track);
         ArgumentException.ThrowIfNullOrWhiteSpace(track.Encoded);
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "track meanings");
+        await _node.RequireNodeLinkAsync("track meanings", cancellationToken).ConfigureAwait(false);
 
-        try
-        {
-            return await _node
-                .Rest.Lyrics.LoadMeaningAsync(track.Encoded, language, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (RestException exception) when (exception.StatusCode == 500)
-        {
-            var message = TryReadErrorMessage(exception.ResponseBody);
-            if (message is null)
-                throw;
-
-            return new MeaningResult
-            {
-                LoadType = MeaningLoadType.Error,
-                Data = new MeaningData { ErrorMessage = message },
-            };
-        }
-    }
-
-    private static string? TryReadErrorMessage(string? responseBody)
-    {
-        if (string.IsNullOrWhiteSpace(responseBody))
-            return null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(responseBody);
-            return
-                document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("message", out var message)
-                && message.ValueKind == JsonValueKind.String
-                && !string.IsNullOrWhiteSpace(message.GetString())
-                ? message.GetString()
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        return await _node
+            .Rest.Lyrics.LoadMeaningAsync(track.Encoded, language, cancellationToken)
+            .ConfigureAwait(false);
     }
 }

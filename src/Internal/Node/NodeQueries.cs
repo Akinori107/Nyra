@@ -216,16 +216,16 @@ internal sealed class NodeQueries
 
         switch (result)
         {
-            case LoadResult.TrackLoaded loaded:
+            case TrackLoaded loaded:
                 loaded.Track.StartPosition = offset;
                 break;
 
-            case LoadResult.SearchLoaded search:
+            case SearchLoaded search:
                 foreach (var track in search.Tracks)
                     track.StartPosition = offset;
                 break;
 
-            case LoadResult.PlaylistLoaded playlist:
+            case PlaylistLoaded playlist:
                 var index = playlist.PlaylistInfo.SelectedTrack;
                 if (index >= 0 && index < playlist.Tracks.Count)
                     playlist.Tracks[index].StartPosition = offset;

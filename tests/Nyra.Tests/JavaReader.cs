@@ -63,7 +63,7 @@ public sealed class JavaReader
         var checked7 = flag.ReadBoolean();
         var checked8 = flag.ReadBoolean();
 
-        var minus = new JavaBinaryReader([(byte)0xFF, (byte)0xFF]);
+        var minus = new JavaBinaryReader([0xFF, 0xFF]);
         var checked9 = (short)minus.ReadUInt16();
         await Assert.That(checked1).IsEqualTo(0x2A);
         await Assert.That(checked2).IsTrue();
@@ -85,10 +85,8 @@ public sealed class JavaReader
 
         await Assert.That(() => new JavaBinaryReader([]).ReadByte()).Throws<EndOfStreamException>();
 
-        await Assert.That(() => Decode(Wire(0x41, 0x42))).ThrowsNothing();
-        await Assert
-            .That(() => Decode(new byte[] { 0x00, 0x05, 0x41 }))
-            .Throws<EndOfStreamException>();
+        await Assert.That(() => Decode(Wire("AB"u8.ToArray()))).ThrowsNothing();
+        await Assert.That(() => Decode([0x00, 0x05, 0x41])).Throws<EndOfStreamException>();
 
         await Assert
             .That(() => new JavaBinaryReader([0x12, 0x34, 0x56]).ReadInt32())
@@ -100,15 +98,15 @@ public sealed class JavaReader
     {
         await Assert.That(Decode(Wire("plain ascii"))).IsEqualTo("plain ascii");
 
-        await Assert.That(Decode(Wire(0xC3, 0xA9))).IsEqualTo("\u00E9");
+        await Assert.That(Decode(Wire("é"u8.ToArray()))).IsEqualTo("\u00E9");
 
-        await Assert.That(Decode(Wire(0xE2, 0x98, 0x83))).IsEqualTo("\u2603");
+        await Assert.That(Decode(Wire("☃"u8.ToArray()))).IsEqualTo("\u2603");
 
         await Assert.That(Decode(Wire(0xC0, 0x80))).IsEqualTo("\0");
 
         await Assert.That(Decode(Wire(0xED, 0xA0, 0xBD, 0xED, 0xB8, 0x80))).IsEqualTo("\U0001F600");
 
-        await Assert.That(Decode(Wire(0xF0, 0x9F, 0x98, 0x80))).IsEqualTo("\U0001F600");
+        await Assert.That(Decode(Wire("😀"u8.ToArray()))).IsEqualTo("\U0001F600");
 
         var mixed = "a\u00E9\u2603\U0001F600z";
         await Assert

@@ -115,10 +115,8 @@ internal sealed class RecordingList<T> : IEnumerable<T>
     {
         var snapshot = Snapshot();
         for (var i = snapshot.Length - 1; i >= 0; i--)
-        {
             if (match(snapshot[i]))
                 return i;
-        }
         return -1;
     }
 
@@ -137,7 +135,7 @@ internal class FakeBridge : IDiscordBridge, IGuildRemovalSource, IAsyncDisposabl
     private static TaskCompletionSource<ClientInformation> CreateReady() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public RecordingList<(ulong GuildId, ulong? ChannelId)> VoiceSends { get; } = new();
+    public RecordingList<(ulong GuildId, ulong? ChannelId)> VoiceSends { get; } = [];
 
     private readonly TaskCompletionSource<bool> _neverCompletes = new(
         TaskCreationOptions.RunContinuationsAsynchronously
@@ -229,9 +227,11 @@ internal sealed class FakeNodeServer : IDisposable
 
     public string Semver { get; init; } = "3.9.1";
 
-    public string SessionId { get; init; } = "fake-session";
+    public string SessionId { get; set; } = "fake-session";
 
     public bool ResumeOnReconnect { get; set; } = true;
+
+    public bool Down { get; set; }
 
     public TimeSpan HandshakeDelay { get; set; } = TimeSpan.Zero;
 
@@ -241,10 +241,6 @@ internal sealed class FakeNodeServer : IDisposable
 
     public bool GhostProbes { get; set; }
 
-    public bool FailWebsocketHandshakes { get; set; }
-
-    public bool CloseAfterHandshake { get; set; }
-
     public string? InfoBody { get; set; }
 
     public int InfoStatus { get; set; } = 200;
@@ -252,8 +248,6 @@ internal sealed class FakeNodeServer : IDisposable
     public bool RejectWrongPassword { get; init; } = true;
 
     public ConcurrentQueue<FakeRestCall> RestCalls { get; } = [];
-
-    public ConcurrentQueue<string> WebsocketIns { get; } = [];
 
     public ConcurrentQueue<Dictionary<string, string>> WebsocketHeaders { get; } = [];
 
@@ -271,9 +265,9 @@ internal sealed class FakeNodeServer : IDisposable
 
     public FakeNodeServer()
     {
-        _listener = new TcpListener(System.Net.IPAddress.Loopback, 0);
-        _listener.Start(16);
-        Port = ((System.Net.IPEndPoint)_listener.LocalEndpoint).Port;
+        _listener = new TcpListener(IPAddress.Loopback, 0);
+        _listener.Start(511);
+        Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = Task.Run(AcceptLoopAsync);
     }
 
@@ -327,7 +321,7 @@ internal sealed class FakeNodeServer : IDisposable
                 .ConfigureAwait(false);
     }
 
-    public void KillCaptured(object captured)
+    public static void KillCaptured(object captured)
     {
         if (captured is NetworkStream stream)
             stream.Close();
@@ -440,8 +434,7 @@ internal sealed class FakeNodeServer : IDisposable
                 {
                     WebsocketHeaders.Enqueue(headers);
                     Interlocked.Increment(ref WebsocketConnections);
-                    await HandleWebsocketAsync(stream, headers, buffer, total, carried)
-                        .ConfigureAwait(false);
+                    await HandleWebsocketAsync(stream, headers).ConfigureAwait(false);
                     return;
                 }
 
@@ -478,14 +471,15 @@ internal sealed class FakeNodeServer : IDisposable
                     )
                     + "Content-Length: "
                     + sent.Length
-                    + "\r\n"
-                    + "Connection: close\r\n\r\n";
+                    + "\r\n\r\n";
                 await stream
                     .WriteAsync(Encoding.UTF8.GetBytes(headBack), _cts.Token)
                     .ConfigureAwait(false);
                 await stream.WriteAsync(sent, _cts.Token).ConfigureAwait(false);
                 await stream.FlushAsync(_cts.Token).ConfigureAwait(false);
-                return;
+                Buffer.BlockCopy(buffer, total, buffer, 0, carried - total);
+                carried -= total;
+                continue;
             }
         }
         catch (Exception) { }
@@ -495,7 +489,6 @@ internal sealed class FakeNodeServer : IDisposable
     {
         var limit = length - 3;
         for (var i = 0; i < limit; i++)
-        {
             if (
                 buffer[i] == 13
                 && buffer[i + 1] == 10
@@ -503,7 +496,6 @@ internal sealed class FakeNodeServer : IDisposable
                 && buffer[i + 3] == 10
             )
                 return i;
-        }
         return -1;
     }
 
@@ -573,29 +565,20 @@ internal sealed class FakeNodeServer : IDisposable
 
     private async Task HandleWebsocketAsync(
         NetworkStream stream,
-        Dictionary<string, string> headers,
-        byte[] buffer,
-        int consumed,
-        int carried
+        Dictionary<string, string> headers
     )
     {
+        if (Down)
+        {
+            stream.Close();
+            return;
+        }
+
         _stream = stream;
 
         if (GhostHandshakes)
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, _cts.Token).ConfigureAwait(false);
-            return;
-        }
-        if (FailWebsocketHandshakes)
-        {
-            await stream
-                .WriteAsync(
-                    Encoding.UTF8.GetBytes(
-                        "HTTP/1.1 500 Server Refuses\r\nConnection: close\r\n\r\n"
-                    ),
-                    _cts.Token
-                )
-                .ConfigureAwait(false);
             return;
         }
         if (RejectWrongPassword && RejectedUpgrade(headers) is { } rejection)
@@ -611,25 +594,6 @@ internal sealed class FakeNodeServer : IDisposable
             return;
         }
         var key = headers["Sec-WebSocket-Key"];
-        if (CloseAfterHandshake)
-        {
-            var acceptKey = Convert.ToBase64String(
-                SHA1.HashData(Encoding.ASCII.GetBytes(key + WsGuid))
-            );
-            await stream
-                .WriteAsync(
-                    Encoding.UTF8.GetBytes(
-                        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "
-                            + acceptKey
-                            + "\r\n\r\n"
-                    ),
-                    _cts.Token
-                )
-                .ConfigureAwait(false);
-            await Task.Delay(100, _cts.Token).ConfigureAwait(false);
-            stream.Close();
-            return;
-        }
         if (HandshakeDelay > TimeSpan.Zero)
             await Task.Delay(HandshakeDelay, _cts.Token).ConfigureAwait(false);
         var accept = Convert.ToBase64String(SHA1.HashData(Encoding.ASCII.GetBytes(key + WsGuid)));
@@ -672,9 +636,6 @@ internal sealed class FakeNodeServer : IDisposable
                 return;
             switch (frame.Opcode)
             {
-                case 0x1:
-                    WebsocketIns.Enqueue(Encoding.UTF8.GetString(frame.Payload));
-                    break;
                 case 0x8:
                     if (IgnoreWebsocketClose)
                         break;
@@ -839,14 +800,10 @@ internal static class NodeHarness
     public const string PlayerPath = "/v4/sessions/fake-session/players/777";
 
     public static void AcceptPlayerPatch(FakeNodeServer server, ulong guild = 777) =>
-        server.On(
-            "PATCH",
-            $"/v4/sessions/fake-session/players/{guild}",
-            _ => new FakeRestResponse(
-                200,
-                $$$"""{"guildId":"{{{guild}}}","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-            )
-        );
+        server.On("PATCH", $"/v4/sessions/fake-session/players/{guild}", _ => new FakeRestResponse(
+            200,
+            $$$"""{"guildId":"{{{guild}}}","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+        ));
 
     public static async Task<GuildConnection> ConnectGuildAsync(
         FakeBridge bridge,
@@ -857,8 +814,15 @@ internal static class NodeHarness
     )
     {
         AcceptPlayerPatch(server, guild);
+        var joins = bridge.VoiceSends.Count(send => send == (guild, channel));
         var connect = node.ConnectAsync(guild, channel);
-        await Task.Delay(150).ConfigureAwait(false);
+        var waited = Stopwatch.StartNew();
+        while (
+            !connect.IsCompleted
+            && bridge.VoiceSends.Count(send => send == (guild, channel)) == joins
+            && waited.ElapsedMilliseconds < 150
+        )
+            await Task.Delay(1).ConfigureAwait(false);
         bridge.FireVoiceState(guild, channel, "vsess");
         bridge.FireVoiceServer(guild, "tok", "127.0.0.1");
         return await connect.ConfigureAwait(false);
@@ -875,13 +839,14 @@ internal static class NodeHarness
         stream.Close();
     }
 
+    private static readonly ConcurrentBag<Socket> HeldDeadPorts = [];
+
     public static int DeadPort()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start(1);
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
+        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        HeldDeadPorts.Add(socket);
+        return ((IPEndPoint)socket.LocalEndPoint!).Port;
     }
 
     public static async Task AdvanceUntilAsync(
@@ -913,13 +878,17 @@ internal static class NodeHarness
             throw new TimeoutException($"The task did not settle within {limit} of fake time.");
     }
 
-    public static async Task RunForAsync(FakeTimeProvider time, TimeSpan duration)
+    public static async Task RunForAsync(
+        FakeTimeProvider time,
+        TimeSpan duration,
+        TimeSpan? step = null
+    )
     {
-        var step = TimeSpan.FromMilliseconds(100);
+        var size = step ?? TimeSpan.FromMilliseconds(100);
         var remaining = duration;
         while (remaining > TimeSpan.Zero)
         {
-            var slice = remaining < step ? remaining : step;
+            var slice = remaining < size ? remaining : size;
             time.Advance(slice);
             remaining -= slice;
             await Task.Delay(2).ConfigureAwait(false);
@@ -931,15 +900,16 @@ internal static class NodeHarness
     public static async Task<bool> AdvanceUntilAsync(
         FakeTimeProvider time,
         Func<bool> condition,
-        TimeSpan limit
+        TimeSpan limit,
+        TimeSpan? step = null
     )
     {
-        var step = TimeSpan.FromMilliseconds(100);
+        var size = step ?? TimeSpan.FromMilliseconds(100);
         var elapsed = TimeSpan.Zero;
         while (!condition() && elapsed < limit)
         {
-            time.Advance(step);
-            elapsed += step;
+            time.Advance(size);
+            elapsed += size;
             await Task.Delay(2).ConfigureAwait(false);
         }
 
@@ -961,8 +931,7 @@ internal static class NodeHarness
 
     public static void InjectShards(ShardedGatewayClient sharded, params GatewayClient[] clients)
     {
-        var stateType =
-            typeof(ShardedGatewayClient).GetNestedType("State", BindingFlags.NonPublic)
+        var stateType = typeof(ShardedGatewayClient).GetNestedType("State", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("ShardedGatewayClient.State");
         var state = Activator.CreateInstance(stateType)!;
         stateType.GetProperty("Clients")!.SetValue(state, clients);
@@ -974,16 +943,13 @@ internal static class NodeHarness
 
     public static object NewWsState(bool ready)
     {
-        var stateType =
-            typeof(WebSocketClient).GetNestedType("State", BindingFlags.NonPublic)
+        var stateType = typeof(WebSocketClient).GetNestedType("State", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("WebSocketClient.State");
         var state = Activator.CreateInstance(stateType)!;
         if (ready)
-        {
             stateType
                 .GetMethod("IndicateReady", BindingFlags.Public | BindingFlags.Instance)!
-                .Invoke(state, new object?[] { null });
-        }
+                .Invoke(state, [null]);
         return state;
     }
 }

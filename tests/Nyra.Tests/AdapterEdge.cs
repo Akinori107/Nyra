@@ -56,19 +56,14 @@ public sealed class AdapterEdge
         var plain = Adapter.NewOfflineClient(9);
         using var plainBridge = new DspBridge(plain);
         Reflect.Field(plainBridge, "_client", new object());
-        await Assert
-            .That(() =>
-            {
-                plainBridge.Dispose();
-            })
-            .ThrowsNothing();
+        await Assert.That(plainBridge.Dispose).ThrowsNothing();
     }
 
     [Test]
     public async Task DNet()
     {
         using var client = new Discord.WebSocket.DiscordSocketClient();
-        using var bridge = new Nyra.DiscordNet.DiscordNetBridge(client);
+        using var bridge = new DiscordNet.DiscordNetBridge(client);
         DiscordNetBridgeTests.SetCurrentUser(client, 42UL);
         await Assert
             .That(() =>
@@ -132,31 +127,26 @@ public sealed class AdapterEdge
     {
         var token = new BotToken("MTIz.ab.cd");
         var client = new GatewayClient(token);
-        var bridge = new GatewayBridge(client, _ => { }, _ => { }, _ => { });
-        await Assert
-            .That(() =>
-            {
-                bridge.Dispose();
-            })
-            .ThrowsNothing();
+        var bridge = new GatewayBridge(client, _ => { }, _ => { }, _ => { }, _ => { });
+        await Assert.That(bridge.Dispose).ThrowsNothing();
 
         await Assert
             .That(() =>
             {
-                _ = ((Nyra.Node)null!).ConnectAsync((IVoiceGuildChannel)null!);
+                _ = ((Node)null!).ConnectAsync(null!);
             })
-            .Throws<System.ArgumentNullException>();
+            .Throws<ArgumentNullException>();
 
-        var node = new Nyra.Node(
-            new Nyra.Endpoint("127.0.0.1", 3098, "youshallnotpass"),
-            new Nyra.NodeOptions { Name = "adapter-edge-connect" }
+        var node = new Node(
+            new Endpoint("127.0.0.1", 3098, "youshallnotpass"),
+            new NodeOptions { Name = "adapter-edge-connect" }
         );
         await Assert
             .That(() =>
             {
-                _ = node.ConnectAsync((IVoiceGuildChannel)null!);
+                _ = node.ConnectAsync(null!);
             })
-            .Throws<System.ArgumentNullException>();
+            .Throws<ArgumentNullException>();
         node.Dispose();
 
         var sharded = new ShardedGatewayClient(token);

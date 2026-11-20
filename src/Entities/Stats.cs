@@ -20,14 +20,13 @@ public sealed record Stats
 
     /// <summary>How long the server has been running.</summary>
     /// <remarks>
-    /// <see cref="TimeSpan.Zero"/> for a value outside the range a <see cref="TimeSpan"/> can represent, the raw
-    /// <see cref="Uptime"/> still carries it. The zero is indistinguishable from a node that just started.
+    /// <see cref="TimeSpan.Zero"/> when the value is out of range, the raw <see cref="Uptime"/> keeps it.
     /// </remarks>
     [JsonIgnore]
     public TimeSpan UptimeDuration => TrackInfo.ToTimeSpan(Uptime);
 
     /// <summary>Memory statistics of the server.</summary>
-    /// <remarks>Absorbs a null the server sends, the setter substitutes an empty instance.</remarks>
+    /// <remarks>Never null, a missing value reads as an empty instance.</remarks>
     [JsonPropertyName("memory"), JsonInclude]
     public MemoryStats Memory
     {
@@ -36,7 +35,7 @@ public sealed record Stats
     } = new();
 
     /// <summary>CPU statistics of the server.</summary>
-    /// <remarks>Absorbs a null the server sends, the setter substitutes an empty instance.</remarks>
+    /// <remarks>Never null, a missing value reads as an empty instance.</remarks>
     [JsonPropertyName("cpu"), JsonInclude]
     public CpuStats Cpu
     {
@@ -46,12 +45,7 @@ public sealed record Stats
 
     /// <summary>Null when the server reports no frame statistics.</summary>
     /// <remarks>
-    /// NodeLink sends the member as null when no player exists at all, it does not omit the field.
-    /// <para>
-    /// Lavalink sends it as null over REST, where it has no session to read frame counters from, and on the
-    /// websocket until the session has playing players with a full minute of continuous playback. A non-zero
-    /// playing count can still arrive with null frames.
-    /// </para>
+    /// Like with no players, or before a full minute of playback on Lavalink.
     /// </remarks>
     [JsonPropertyName("frameStats"), JsonInclude]
     public FrameStats? FrameStats { get; internal set; }
@@ -61,8 +55,7 @@ public sealed record Stats
     /// endpoint, success and failure totals per source, and playback event totals.
     /// </summary>
     /// <remarks>
-    /// Null on Lavalink and on the websocket path, the counters are lifetime totals reset only by a server
-    /// restart.
+    /// Null on Lavalink and on the websocket. The counters are totals since the server started.
     /// </remarks>
     [JsonPropertyName("detailedStats"), JsonInclude]
     public DetailedStats? DetailedStats { get; internal set; }
@@ -76,7 +69,7 @@ public sealed record DetailedStats
     public ApiCounters? Api { get; internal set; }
 
     /// <summary>Success and failure counters per source name.</summary>
-    /// <remarks>Null values the wire carries are dropped.</remarks>
+    /// <remarks>Null values are dropped.</remarks>
     [JsonPropertyName("sources"), JsonInclude]
     public IReadOnlyDictionary<string, SourceCounters>? Sources
     {
@@ -108,18 +101,12 @@ public sealed record ApiCounters
     /// <summary>
     /// Request totals per endpoint, an <c>others</c> bucket collects the overflow past the endpoint cap.
     /// </summary>
-    /// <remarks>
-    /// A null value for an endpoint throws on parse, unlike the source counters, which drop their null values.
-    /// </remarks>
     [JsonPropertyName("requests"), JsonInclude]
     public IReadOnlyDictionary<string, long>? Requests { get; internal set; }
 
     /// <summary>
     /// Error totals per endpoint, an <c>others</c> bucket collects the overflow past the endpoint cap.
     /// </summary>
-    /// <remarks>
-    /// A null value for an endpoint throws on parse, unlike the source counters, which drop their null values.
-    /// </remarks>
     [JsonPropertyName("errors"), JsonInclude]
     public IReadOnlyDictionary<string, long>? Errors { get; internal set; }
 
@@ -152,10 +139,6 @@ public sealed record SourceCounters
 public sealed record PlaybackCounters
 {
     /// <summary>Playback event totals by event name.</summary>
-    /// <remarks>
-    /// A null value for an event name throws on parse, unlike the source counters, which drop their null
-    /// values.
-    /// </remarks>
     [JsonPropertyName("events"), JsonInclude]
     public IReadOnlyDictionary<string, long>? Events { get; internal set; }
 
@@ -172,9 +155,7 @@ public sealed record PlaybackCounters
 
 /// <summary>Memory statistics of an audio node, in bytes.</summary>
 /// <remarks>
-/// Lavalink reports the JVM process (runtime free, total, max), NodeLink reports host-level free and total
-/// for <see cref="Free"/> and <see cref="Reservable"/> and the process heap for <see cref="Used"/> and <see
-/// cref="Allocated"/>, the members are not comparable across the two servers.
+/// Each server measures these differently, so they are not comparable across servers.
 /// </remarks>
 public sealed record MemoryStats
 {
@@ -215,26 +196,19 @@ public sealed record CpuStats
 
     /// <summary>Load caused by the audio node itself, 0.0-1.0.</summary>
     /// <remarks>
-    /// NodeLink omits this member entirely (the 0.0 is the client default for a missing field), the value is
-    /// indistinguishable from an idle node there, watch <see cref="SystemLoad"/> or <see cref="NodelinkLoad"/>
-    /// instead.
+    /// NodeLink does not send it, read <see cref="NodeLoad"/> instead.
     /// </remarks>
     [JsonPropertyName("lavalinkLoad"), JsonInclude]
     public double LavalinkLoad { get; internal set; }
 
     /// <summary>The node load as NodeLink reports it, under this member instead of the Lavalink one.</summary>
     /// <remarks>
-    /// A single-process NodeLink can leave it at 0, watch <see cref="SystemLoad"/> there, cluster or worker
-    /// mode aggregates the worker loads. <see cref="NodeLoad"/> reads whichever field the server reports.
+    /// It can be 0. Read <see cref="NodeLoad"/>, which picks the field the server reports.
     /// </remarks>
     [JsonPropertyName("nodelinkLoad"), JsonInclude]
     public double? NodelinkLoad { get; internal set; }
 
     /// <summary>The load of the node process, from whatever field the server reports.</summary>
-    /// <remarks>
-    /// A server that reports both members (a proxy or a fork filling the Lavalink shape too) is read from the
-    /// NodeLink field first, <see cref="LavalinkLoad"/> is the fallback for servers that only fill it.
-    /// </remarks>
     [JsonIgnore]
     public double NodeLoad => NodelinkLoad ?? LavalinkLoad;
 }
@@ -261,10 +235,6 @@ public sealed record FrameStats
     public long Deficit { get; internal set; }
 
     /// <summary>Frames the node expected to send, always null on Lavalink.</summary>
-    /// <remarks>
-    /// NodeLink's frame counts are lifetime totals accumulated since each voice connection started, Lavalink
-    /// reports last-minute averages per player.
-    /// </remarks>
     [JsonPropertyName("expected"), JsonInclude]
     public long? Expected { get; internal set; }
 }

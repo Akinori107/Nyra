@@ -29,14 +29,8 @@ public readonly struct NodeVersion(int major, int minor, int patch)
     /// Parses <c>major.minor.patch</c> out of the text, leniently.
     /// </summary>
     /// <remarks>
-    /// Missing trailing dot-and-component pairs default to zero (<c>1.2</c> reads as 1.2.0), a dot with no
-    /// digits after it is not a version, a trailing pre-release/build tag (<c>-</c>/<c>+</c>) is ignored, and a
-    /// leading <c>v</c> or <c>V</c> (git describe style) is accepted.
-    /// <para>
-    /// A bare number is not a version, no supported server reports one without a dot, and an all-digit dev
-    /// commit hash must stay unparsed so the dev-build policy keeps its null, a string that is not a version
-    /// is treated as a dev build.
-    /// </para>
+    /// <c>1.2</c> reads as 1.2.0, a leading <c>v</c> and a <c>-</c> or <c>+</c> suffix are ignored, and a bare
+    /// number like <c>3</c> is not a version.
     /// </remarks>
     /// <param name="text">The version text to parse.</param>
     /// <param name="version">The parsed version, default when the text is not a version.</param>
@@ -76,7 +70,7 @@ public readonly struct NodeVersion(int major, int minor, int patch)
         return true;
     }
 
-    /// <summary>Parses a version from a string, the span overload does the work.</summary>
+    /// <summary>Parses a version from a string.</summary>
     /// <param name="text">The version text to parse.</param>
     /// <param name="version">The parsed version, default when the text is not a version.</param>
     /// <returns>Whether the text parsed into a version.</returns>

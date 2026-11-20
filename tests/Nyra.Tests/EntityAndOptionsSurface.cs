@@ -12,21 +12,21 @@ public sealed class EntityAndOptionsSurface
     private static T? Parse<T>(string json)
         where T : class => JsonSerializer.Deserialize<T>(json, Options);
 
-    private static T? Throws<T>(Action action)
+    private static void Throws<T>(Action action)
         where T : Exception
     {
         try
         {
             action();
-            return null;
         }
-        catch (T exception)
+        catch (T)
         {
-            return exception;
+            return;
         }
+        throw new InvalidOperationException($"the expected {typeof(T).Name} never came");
     }
 
-    private static readonly string TrackBody =
+    private const string TrackBody =
         """{"encoded":"QXRsZWFzdA==","info":{"identifier":"i","author":"A","title":"T","length":1000,"isStream":false,"isSeekable":true,"position":0}}""";
 
     [Test]
@@ -39,10 +39,10 @@ public sealed class EntityAndOptionsSurface
     [Test]
     public async Task VersionCompare()
     {
-        NodeVersion.TryParse("2.0.0", out var two);
-        NodeVersion.TryParse("1.9.9", out var older);
-        NodeVersion.TryParse("2.1.0", out var newerMinor);
-        NodeVersion.TryParse("2.0.1", out var newerPatch);
+        _ = NodeVersion.TryParse("2.0.0", out var two);
+        _ = NodeVersion.TryParse("1.9.9", out var older);
+        _ = NodeVersion.TryParse("2.1.0", out var newerMinor);
+        _ = NodeVersion.TryParse("2.0.1", out var newerPatch);
         using (Assert.Multiple())
         {
             await Assert.That(two.CompareTo(older)).IsGreaterThan(0);
@@ -231,17 +231,17 @@ public sealed class EntityAndOptionsSurface
 
         var settingsA = new SponsorBlockSettings
         {
-            Categories = new List<string> { "sponsor" },
+            Categories = ["sponsor"],
             SkipMarginMilliseconds = 100,
         };
         var settingsB = new SponsorBlockSettings
         {
-            Categories = new List<string> { "sponsor" },
+            Categories = ["sponsor"],
             SkipMarginMilliseconds = 100,
         };
         var settingsC = new SponsorBlockSettings
         {
-            Categories = new List<string> { "selfpromo" },
+            Categories = ["selfpromo"],
             SkipMarginMilliseconds = 100,
         };
         using (Assert.Multiple())
@@ -289,7 +289,7 @@ public sealed class EntityAndOptionsSurface
         var duckingHuge = Parse<DuckingOptions>("""{"duration":1e40}""");
         await Assert.That(duckingHuge?.DurationMilliseconds).IsEqualTo(int.MaxValue);
 
-        var garbageFade = Throws<JsonException>(() => Parse<FadeSection>("""{"duration":"abc"}"""));
+        Throws<JsonException>(() => Parse<FadeSection>("""{"duration":"abc"}"""));
     }
 
     [Test]
@@ -327,7 +327,7 @@ public sealed class EntityAndOptionsSurface
         var audio = withTracks?.GetYouTubeAudioTracks();
         await Assert.That(audio).IsNotNull();
         await Assert.That(audio!.Count).IsEqualTo(1);
-        await Assert.That(audio![0].Id).IsEqualTo("v1");
+        await Assert.That(audio[0].Id).IsEqualTo("v1");
 
         var idless = Parse<Track>(
             """{"encoded":"QXRsZWFzdA==","info":{"identifier":"i","author":"A","title":"T","length":1000,"isStream":false,"isSeekable":true,"position":0},"pluginInfo":{"audioTracks":"[{\"name\":\"n\"}]"}}"""
@@ -335,7 +335,7 @@ public sealed class EntityAndOptionsSurface
         var kept = idless?.GetYouTubeAudioTracks();
         await Assert.That(kept).IsNotNull();
         await Assert.That(kept!.Count).IsEqualTo(1);
-        await Assert.That(kept![0].Id).IsEqualTo(string.Empty);
+        await Assert.That(kept[0].Id).IsEqualTo(string.Empty);
 
         var allDropped = Parse<Track>(
             """{"encoded":"QXRsZWFzdA==","info":{"identifier":"i","author":"A","title":"T","length":1000,"isStream":false,"isSeekable":true,"position":0},"pluginInfo":{"audioTracks":"[{\"id\":null}]"}}"""

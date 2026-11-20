@@ -104,19 +104,15 @@ public sealed class RegistryTakeover
 
             var parked = new TaskCompletionSource();
             var release = new TaskCompletionSource();
-            server.On(
-                "PATCH",
-                PlayerPath,
-                _ =>
-                {
-                    parked.TrySetResult();
-                    release.Task.Wait(TimeSpan.FromSeconds(10));
-                    return new FakeRestResponse(
-                        200,
-                        """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                    );
-                }
-            );
+            server.On("PATCH", PlayerPath, _ =>
+            {
+                parked.TrySetResult();
+                release.Task.Wait(TimeSpan.FromSeconds(10));
+                return new FakeRestResponse(
+                    200,
+                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+                );
+            });
 
             var first = node.ConnectAsync(777, 555);
             await Task.Delay(100).ConfigureAwait(false);
@@ -202,11 +198,10 @@ public sealed class RegistryTakeover
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
-            server.On(
-                "PATCH",
-                PlayerPath,
-                _ => new FakeRestResponse(500, "{\"message\":\"boom\"}")
-            );
+            server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                500,
+                "{\"message\":\"boom\"}"
+            ));
             var rejected = false;
             var connect = node.ConnectAsync(777, 555);
             await Task.Delay(100).ConfigureAwait(false);
@@ -232,19 +227,15 @@ public sealed class RegistryTakeover
             var (bridge, node, server) = (renewal.Bridge, renewal.Node, renewal.Server);
             var parked = new TaskCompletionSource();
             var release = new TaskCompletionSource();
-            server.On(
-                "PATCH",
-                PlayerPath,
-                _ =>
-                {
-                    parked.TrySetResult();
-                    release.Task.Wait(TimeSpan.FromSeconds(10));
-                    return new FakeRestResponse(
-                        200,
-                        """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                    );
-                }
-            );
+            server.On("PATCH", PlayerPath, _ =>
+            {
+                parked.TrySetResult();
+                release.Task.Wait(TimeSpan.FromSeconds(10));
+                return new FakeRestResponse(
+                    200,
+                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+                );
+            });
             server.On("DELETE", PlayerPath, _ => new FakeRestResponse(204, string.Empty));
             var connect = node.ConnectAsync(777, 555);
             await Task.Delay(100).ConfigureAwait(false);

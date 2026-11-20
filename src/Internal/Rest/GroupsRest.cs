@@ -16,7 +16,7 @@ internal sealed class GroupsRest
         var json = await _rest
             .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        return _rest.DeserializeList<Group>(json, path, options);
+        return RestClient.DeserializeList<Group>(json, path, options);
     }
 
     public async Task<Group> CreateAsync(
@@ -51,7 +51,7 @@ internal sealed class GroupsRest
             var json = await _rest
                 .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            return _rest.Deserialize<Group>(json, path, options);
+            return RestClient.Deserialize<Group>(json, path, options);
         }
         catch (RestException exception) when (RestClient.IndicatesMissingResource(exception))
         {

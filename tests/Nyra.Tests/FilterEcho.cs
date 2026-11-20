@@ -50,8 +50,8 @@ public sealed class FilterEcho
         using (Assert.Multiple())
         {
             await Assert.That(enveloped!.EqualizerTransition).IsNotNull();
-            await Assert.That(enveloped!.EqualizerTransition!.DurationMilliseconds).IsEqualTo(100);
-            await Assert.That(enveloped!.EqualizerTransition!.Curve).IsEqualTo("linear");
+            await Assert.That(enveloped.EqualizerTransition!.DurationMilliseconds).IsEqualTo(100);
+            await Assert.That(enveloped.EqualizerTransition!.Curve).IsEqualTo("linear");
         }
 
         var stringified = Read(
@@ -111,7 +111,7 @@ public sealed class FilterEcho
         {
             await Assert.That(empty).IsNotNull();
             await Assert.That(empty!.Volume).IsNull();
-            await Assert.That(empty!.Equalizer).IsNull();
+            await Assert.That(empty.Equalizer).IsNull();
         }
 
         var tailed = Read("""{"filters":{"volume":2},"junk":{"deep":[1,2]}}""");

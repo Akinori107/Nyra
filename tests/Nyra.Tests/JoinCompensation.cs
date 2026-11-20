@@ -37,10 +37,9 @@ public sealed class JoinCompensation
         };
     }
 
-    private static string PlayerBody() =>
-        """
-            {"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}
-            """;
+    private static string PlayerBody() => """
+        {"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}
+        """;
 
     private static void ServePlayer(FakeNodeServer server) =>
         server.On("PATCH", PlayerPath, _ => new FakeRestResponse(200, PlayerBody()));

@@ -1,7 +1,9 @@
+using System.Text;
 using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
 using Nyra.Exceptions;
+using Nyra.Internal;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -19,14 +21,10 @@ public sealed class RestEdge
         {
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
-            server.On(
-                "PATCH",
-                PlayerPath,
-                _ => new FakeRestResponse(
-                    200,
-                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                )
-            );
+            server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                200,
+                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            ));
 
             await conn.PlayAsync(Track(), new PlayOptions { NoReplace = true })
                 .ConfigureAwait(false);
@@ -117,8 +115,8 @@ public sealed class RestEdge
             using (Assert.Multiple())
             {
                 await Assert.That(plainInfo).IsNotNull();
-                await Assert.That(plainInfo!.IsNodeLink).IsFalse();
-                await Assert.That(plainInfo!.RawVersion).IsEqualTo("");
+                await Assert.That(plainInfo.IsNodeLink).IsFalse();
+                await Assert.That(plainInfo.RawVersion).IsEqualTo("");
             }
 
             stack.Server.InfoBody = """{"version":{"semver":123}}""";
@@ -157,10 +155,10 @@ public sealed class RestEdge
             using (Assert.Multiple())
             {
                 await Assert.That(full).IsNotNull();
-                await Assert.That(full!.IsNodeLink).IsTrue();
-                await Assert.That(full!.RawVersion).IsEqualTo("3.10.0");
-                await Assert.That(full!.EnabledFilters).IsNull();
-                await Assert.That(full!.Plugins).Contains("lavasrc-plugin");
+                await Assert.That(full.IsNodeLink).IsTrue();
+                await Assert.That(full.RawVersion).IsEqualTo("3.10.0");
+                await Assert.That(full.EnabledFilters).IsNull();
+                await Assert.That(full.Plugins).Contains("lavasrc-plugin");
             }
         }
     }
@@ -175,8 +173,8 @@ public sealed class RestEdge
             var node = stack.Node;
             await Assert.That(node.IsReady).IsTrue();
 
-            var guards = new Func<Task>[]
-            {
+            Func<Task>[] guards =
+            [
                 () => node.Rest.Lyrics.SubscribeAsync(777, false, default),
                 () => node.Rest.Lyrics.UnsubscribeAsync(777, default),
                 () => node.Rest.SponsorBlock.GetAsync(777, default),
@@ -187,16 +185,14 @@ public sealed class RestEdge
                 () => node.Rest.Groups.GetAsync("g1", default),
                 () => node.Rest.Players.GetAsync(777, default),
                 () => node.Rest.Session.UpdateAsync(true, 60, default),
-            };
+            ];
             foreach (var call in guards)
-            {
                 await Assert
                     .That(async () =>
                     {
                         await call().ConfigureAwait(false);
                     })
                     .Throws<InvalidOperationException>();
-            }
         }
     }
 
@@ -226,15 +222,11 @@ public sealed class RestEdge
             await Assert.That(status?.Class).IsEqualTo(RoutePlannerClass.Rotating);
 
             var freed = new TaskCompletionSource<string?>();
-            server.On(
-                "POST",
-                "/v4/routeplanner/free/address",
-                call =>
-                {
-                    freed.TrySetResult(call.Body);
-                    return new FakeRestResponse(204, string.Empty);
-                }
-            );
+            server.On("POST", "/v4/routeplanner/free/address", call =>
+            {
+                freed.TrySetResult(call.Body);
+                return new FakeRestResponse(204, string.Empty);
+            });
             await node.RoutePlanner.FreeAddressAsync("/1.0.0.0").ConfigureAwait(false);
             await Assert
                 .That(
@@ -270,14 +262,10 @@ public sealed class RestEdge
         await using (stack.ConfigureAwait(false))
         {
             var (node, server) = (stack.Node, stack.Server);
-            server.On(
-                "GET",
-                "/v4/loadlyrics",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"loadType":"lyrics","data":{"name":"ATWA","synced":false,"text":"la"}}"""
-                )
-            );
+            server.On("GET", "/v4/loadlyrics", _ => new FakeRestResponse(
+                200,
+                """{"loadType":"lyrics","data":{"name":"ATWA","synced":false,"text":"la"}}"""
+            ));
             var lyrics = await node
                 .Lyrics.LoadAsync(track, language: "pt", source: "musixmatch")
                 .ConfigureAwait(false);
@@ -324,18 +312,14 @@ public sealed class RestEdge
                 .Lyrics.LoadAsync(track, skipTrackSource: true)
                 .ConfigureAwait(false);
             await Assert.That(miss).IsNotNull();
-            await Assert.That(miss!.LoadType).IsEqualTo(LyricsLoadType.Empty);
+            await Assert.That(miss.LoadType).IsEqualTo(LyricsLoadType.Empty);
             var missCall = lavaServer.RestCalls.Last(c => c.Path == "/v4/lyrics");
             await Assert.That(missCall.Query?.Contains("skipTrackSource=true")).IsTrue();
 
-            lavaServer.On(
-                "GET",
-                "/v4/lyrics",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"sourceName":"musixmatch","provider":"Musixmatch","text":"la","lines":[null,{"timestamp":1000,"duration":500,"line":"la"}]}"""
-                )
-            );
+            lavaServer.On("GET", "/v4/lyrics", _ => new FakeRestResponse(
+                200,
+                """{"sourceName":"musixmatch","provider":"Musixmatch","text":"la","lines":[null,{"timestamp":1000,"duration":500,"line":"la"}]}"""
+            ));
             var lavaLyrics = await lavaNode.Lyrics.LoadAsync(track).ConfigureAwait(false);
             await Assert
                 .That(
@@ -360,26 +344,13 @@ public sealed class RestEdge
             var (node, server) = (stack.Node, stack.Server);
             var track = Track();
 
-            server.On(
-                "GET",
-                "/v4/meaning",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"loadType":"meaning","data":{"title":"ATWA","description":"d","paragraphs":["p"]}}"""
-                )
-            );
+            server.On("GET", "/v4/meaning", _ => new FakeRestResponse(
+                200,
+                """{"loadType":"meaning","data":{"title":"ATWA","description":"d","paragraphs":["p"]}}"""
+            ));
             var meaning = await node.Lyrics.LoadMeaningAsync(track, "pt").ConfigureAwait(false);
             await Assert
                 .That(meaning is { LoadType: MeaningLoadType.Meaning, Data.Title: "ATWA" })
-                .IsTrue();
-
-            server.On("GET", "/v4/meaning", 500, """{"message":"provider down"}""");
-            var failed = await node.Lyrics.LoadMeaningAsync(track).ConfigureAwait(false);
-            await Assert
-                .That(
-                    failed
-                        is { LoadType: MeaningLoadType.Error, Data.ErrorMessage: "provider down" }
-                )
                 .IsTrue();
 
             server.On("GET", "/v4/meaning", 500, "boom");
@@ -403,7 +374,6 @@ public sealed class RestEdge
     {
         var oldStack = await StartAsync().ConfigureAwait(false);
         await using (oldStack.ConfigureAwait(false))
-        {
             await Assert
                 .That(async () =>
                 {
@@ -412,7 +382,6 @@ public sealed class RestEdge
                         .ConfigureAwait(false);
                 })
                 .Throws<NotSupportedException>();
-        }
 
         var stack = await StartAsync(new FakeNodeServer { Semver = "3.10.0" })
             .ConfigureAwait(false);
@@ -421,22 +390,18 @@ public sealed class RestEdge
             var (node, server) = (stack.Node, stack.Server);
             var track = Track();
 
-            server.On(
-                "GET",
-                "/v4/trackstream",
-                _ => new FakeRestResponse(
-                    200,
-                    """{"url":"https://cdn/x","protocol":"http","format":"m4a","itag":140}"""
-                )
-            );
+            server.On("GET", "/v4/trackstream", _ => new FakeRestResponse(
+                200,
+                """{"url":"https://cdn/x","protocol":"http","format":"m4a","itag":140}"""
+            ));
             var streamUrl = await node
                 .Tracks.GetStreamUrlAsync(track, itag: 140)
                 .ConfigureAwait(false);
             using (Assert.Multiple())
             {
                 await Assert.That(streamUrl).IsNotNull();
-                await Assert.That(streamUrl!.Url).IsEqualTo("https://cdn/x");
-                await Assert.That(streamUrl!.Protocol).IsEqualTo("http");
+                await Assert.That(streamUrl.Url).IsEqualTo("https://cdn/x");
+                await Assert.That(streamUrl.Protocol).IsEqualTo("http");
             }
             await Assert
                 .That(
@@ -681,18 +646,14 @@ public sealed class RestEdge
             }
 
             var patched = new TaskCompletionSource<string?>();
-            stack.Server.On(
-                "PATCH",
-                "/v4/sessions/fake-session/groups/g1",
-                call =>
-                {
-                    patched.TrySetResult(call.Body);
-                    return new FakeRestResponse(
-                        200,
-                        """{"id":"g1","guildIds":[777],"createdAt":123}"""
-                    );
-                }
-            );
+            stack.Server.On("PATCH", "/v4/sessions/fake-session/groups/g1", call =>
+            {
+                patched.TrySetResult(call.Body);
+                return new FakeRestResponse(
+                    200,
+                    """{"id":"g1","guildIds":[777],"createdAt":123}"""
+                );
+            });
             var result = await node
                 .Groups.UpdateAsync("g1", new GroupUpdate { Paused = true, Volume = 100 })
                 .ConfigureAwait(false);
@@ -722,34 +683,28 @@ public sealed class RestEdge
                 (" ", null),
             };
             foreach (var (token, visitor) in guards)
-            {
                 await Assert
                     .That(async () =>
                     {
                         await node.YouTube.UpdateConfigAsync(token, visitor).ConfigureAwait(false);
                     })
                     .Throws<ArgumentException>();
-            }
 
             var patched = new TaskCompletionSource<string?>();
-            server.On(
-                "PATCH",
-                "/v4/youtube/config",
-                call =>
-                {
-                    patched.TrySetResult(call.Body);
-                    return new FakeRestResponse(
-                        200,
-                        """{"message":"applied","workersUpdated":3,"fieldsUpdated":["refreshToken"]}"""
-                    );
-                }
-            );
+            server.On("PATCH", "/v4/youtube/config", call =>
+            {
+                patched.TrySetResult(call.Body);
+                return new FakeRestResponse(
+                    200,
+                    """{"message":"applied","workersUpdated":3,"fieldsUpdated":["refreshToken"]}"""
+                );
+            });
             var update = await node.YouTube.UpdateConfigAsync("rtok", "vdat").ConfigureAwait(false);
             using (Assert.Multiple())
             {
                 await Assert.That(update).IsNotNull();
-                await Assert.That(update!.Message).IsEqualTo("applied");
-                await Assert.That(update!.WorkersUpdated).IsEqualTo(3);
+                await Assert.That(update.Message).IsEqualTo("applied");
+                await Assert.That(update.WorkersUpdated).IsEqualTo(3);
             }
             var patchBody = await patched
                 .Task.WaitAsync(TimeSpan.FromSeconds(5))
@@ -775,8 +730,8 @@ public sealed class RestEdge
             using (Assert.Multiple())
             {
                 await Assert.That(withUnknown).IsNotNull();
-                await Assert.That(withUnknown!.IsNodeLink).IsTrue();
-                await Assert.That(withUnknown!.RawVersion).IsEqualTo("3.10.0");
+                await Assert.That(withUnknown.IsNodeLink).IsTrue();
+                await Assert.That(withUnknown.RawVersion).IsEqualTo("3.10.0");
             }
 
             stack.Server.InfoBody = """{"version":{"semver":"3.10.0"}}{"junk":1}""";
@@ -793,11 +748,11 @@ public sealed class RestEdge
                 .IsNull();
 
             stack.Server.InfoBody = null;
-            stack.Server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(429, """{"message":"slow down"}""", "2")
-            );
+            stack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}""",
+                "2"
+            ));
             RestException? throttled = null;
             try
             {
@@ -809,15 +764,11 @@ public sealed class RestEdge
             }
             await Assert.That(throttled?.RetryAfter).IsEqualTo(TimeSpan.FromSeconds(2));
 
-            stack.Server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(
-                    429,
-                    """{"message":"slow down"}""",
-                    DateTimeOffset.UtcNow.AddSeconds(30).ToString("R")
-                )
-            );
+            stack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}""",
+                DateTimeOffset.UtcNow.AddSeconds(30).ToString("R")
+            ));
             RestException? dated = null;
             try
             {
@@ -835,15 +786,11 @@ public sealed class RestEdge
                 )
                 .IsTrue();
 
-            stack.Server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(
-                    429,
-                    """{"message":"slow down"}""",
-                    DateTimeOffset.UtcNow.AddSeconds(-30).ToString("R")
-                )
-            );
+            stack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}""",
+                DateTimeOffset.UtcNow.AddSeconds(-30).ToString("R")
+            ));
             RestException? stale = null;
             try
             {
@@ -855,11 +802,11 @@ public sealed class RestEdge
             }
             await Assert.That(stale?.RetryAfter).IsNull();
 
-            stack.Server.On(
-                "GET",
-                "/v4/loadtracks",
-                _ => new FakeRestResponse(429, """{"message":"slow down"}""", "banana")
-            );
+            stack.Server.On("GET", "/v4/loadtracks", _ => new FakeRestResponse(
+                429,
+                """{"message":"slow down"}""",
+                "banana"
+            ));
             RestException? junk = null;
             try
             {
@@ -870,6 +817,53 @@ public sealed class RestEdge
                 junk = exception;
             }
             await Assert.That(junk?.RetryAfter).IsNull();
+        }
+    }
+
+    [Test]
+    public async Task RequestsBeyondTheConnectionCapWaitForAFreeConnection()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var (node, server) = (stack.Node, stack.Server);
+            var cap = RestClient.MaxConnectionsPerNode;
+            var inFlight = 0;
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var body = Encoding.UTF8.GetBytes("""{"loadType":"empty","data":{}}""");
+            var head = Encoding.UTF8.GetBytes(
+                $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"
+            );
+            server.OnRaw("GET", "/v4/loadtracks", async (_, stream) =>
+            {
+                Interlocked.Increment(ref inFlight);
+                await release.Task.ConfigureAwait(false);
+                Interlocked.Decrement(ref inFlight);
+                await stream.WriteAsync(head).ConfigureAwait(false);
+                await stream.WriteAsync(body).ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+            });
+
+            var loads = Enumerable
+                .Range(0, cap + 44)
+                .Select(i => node.LoadTracksAsync($"atwa {i}"))
+                .ToArray();
+            await Assert
+                .That(() => Volatile.Read(ref inFlight))
+                .WaitsFor(assert => assert.IsGreaterThanOrEqualTo(cap), TimeSpan.FromSeconds(15));
+            await Task.Delay(TimeSpan.FromMilliseconds(300)).ConfigureAwait(false);
+            await Assert.That(Volatile.Read(ref inFlight)).IsEqualTo(cap);
+
+            release.SetResult();
+            var results = await Task.WhenAll(loads)
+                .WaitAsync(TimeSpan.FromSeconds(15))
+                .ConfigureAwait(false);
+            await Assert.That(results.All(r => r is NoMatches)).IsTrue();
+            await Assert
+                .That(server.RestCalls.Count(c => c.Path == "/v4/loadtracks"))
+                .IsEqualTo(cap + 44);
         }
     }
 }

@@ -76,8 +76,8 @@ public sealed class FilterChainAndCodec
         {
             await Assert.That(cleared?.Volume).IsEqualTo(1f);
             await Assert.That(cleared!.Karaoke).IsNull();
-            await Assert.That(cleared!.Echo).IsNull();
-            await Assert.That(cleared!.Equalizer).IsNull();
+            await Assert.That(cleared.Echo).IsNull();
+            await Assert.That(cleared.Equalizer).IsNull();
         }
 
         var rawEcho = JsonSerializer.Deserialize<FilterChain>("""{"volume":9.0}""", options);

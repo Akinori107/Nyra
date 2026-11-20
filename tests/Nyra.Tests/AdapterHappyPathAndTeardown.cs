@@ -6,7 +6,6 @@ using DSharpPlus;
 using DSharpPlus.AsyncEvents;
 using DSharpPlus.EventArgs;
 using DSharpPlus.Net.WebSocket;
-using Microsoft.Extensions.Logging;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -61,7 +60,7 @@ public sealed class AdapterHappyPathAndTeardown
         };
     }
 
-    private sealed class FakeDspSocket : global::DSharpPlus.Net.WebSocket.IWebSocketClient
+    private sealed class FakeDspSocket : IWebSocketClient
     {
         public readonly List<string> Sent = [];
 
@@ -123,7 +122,7 @@ public sealed class AdapterHappyPathAndTeardown
         );
         var socket = new FakeDspSocket();
         Reflect.Field(client, "_webSocketClient", socket);
-        using var bridge = new Nyra.DSharpPlus.DSharpPlusBridge(client);
+        using var bridge = new DSharpPlus.DSharpPlusBridge(client);
         await bridge
             .SendVoiceUpdateAsync(77, 555, false, false, CancellationToken.None)
             .ConfigureAwait(false);
@@ -191,13 +190,11 @@ public sealed class AdapterHappyPathAndTeardown
                 .GetType()
                 .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
         )
-        {
             if (field.FieldType == interfaceType)
             {
                 field.SetValue(target, value);
                 return;
             }
-        }
         throw new MissingFieldException(
             $"no field of type {interfaceType.Name} on {target.GetType().Name}"
         );
@@ -214,14 +211,11 @@ public sealed class AdapterHappyPathAndTeardown
 
         var assembly = typeof(global::NetCord.Gateway.GatewayClient).Assembly;
         var wsType = typeof(global::NetCord.Gateway.WebSocketClient);
-        var stateType =
-            wsType.GetNestedType("State", BindingFlags.NonPublic)
+        var stateType = wsType.GetNestedType("State", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("WebSocketClient.State");
-        var connectionStateType =
-            wsType.GetNestedType("ConnectionState", BindingFlags.NonPublic)
+        var connectionStateType = wsType.GetNestedType("ConnectionState", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("WebSocketClient.ConnectionState");
-        var resultType =
-            wsType.GetNestedType("ConnectionStateResult", BindingFlags.NonPublic)
+        var resultType = wsType.GetNestedType("ConnectionStateResult", BindingFlags.NonPublic)
             ?? throw new MissingMemberException("WebSocketClient.ConnectionStateResult");
 
         var fakeConnectionState = RuntimeHelpers.GetUninitializedObject(connectionStateType);
@@ -231,8 +225,7 @@ public sealed class AdapterHappyPathAndTeardown
             connection
         );
         SetByType(fakeConnectionState, typeof(global::NetCord.Gateway.IRateLimiter), limiter);
-        var providerType =
-            assembly.GetType("NetCord.Gateway.CancellationTokenProvider")
+        var providerType = assembly.GetType("NetCord.Gateway.CancellationTokenProvider")
             ?? throw new MissingMemberException("NetCord.Gateway.CancellationTokenProvider");
         Reflect.Field(
             fakeConnectionState,
@@ -242,8 +235,7 @@ public sealed class AdapterHappyPathAndTeardown
 
         var state = RuntimeHelpers.GetUninitializedObject(stateType);
         Reflect.Field(state, "_lock", new Lock());
-        var stateProviderType =
-            assembly.GetType("NetCord.Gateway.CancellationTokenProvider")
+        var stateProviderType = assembly.GetType("NetCord.Gateway.CancellationTokenProvider")
             ?? throw new MissingMemberException("NetCord.Gateway.CancellationTokenProvider");
         Reflect.Field(
             state,
@@ -261,9 +253,15 @@ public sealed class AdapterHappyPathAndTeardown
         Reflect.Field(client, "_state", state);
         stateType
             .GetMethod("IndicateReady", BindingFlags.Public | BindingFlags.Instance)!
-            .Invoke(state, new object?[] { fakeConnectionState });
+            .Invoke(state, [fakeConnectionState]);
 
-        using var bridge = new Nyra.NetCord.GatewayBridge(client, _ => { }, _ => { }, _ => { });
+        using var bridge = new NetCord.GatewayBridge(
+            client,
+            _ => { },
+            _ => { },
+            _ => { },
+            _ => { }
+        );
         await bridge
             .SendVoiceUpdateAsync(5, 77, false, false, CancellationToken.None)
             .ConfigureAwait(false);
@@ -278,7 +276,7 @@ public sealed class AdapterHappyPathAndTeardown
         response.Headers.RetryAfter = new RetryConditionHeaderValue(
             DateTimeOffset.UtcNow - TimeSpan.FromHours(1)
         );
-        var read = Nyra.Internal.RestClient.ReadRetryAfter(response);
+        var read = Internal.RestClient.ReadRetryAfter(response, TimeProvider.System);
         await Assert.That(read).IsNull();
     }
 
@@ -289,15 +287,11 @@ public sealed class AdapterHappyPathAndTeardown
         await using (stack.ConfigureAwait(false))
         {
             using var callerCts = new CancellationTokenSource();
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/loadstream",
-                async (call, raw) =>
-                {
-                    callerCts.Cancel();
-                    await Task.Delay(TimeSpan.FromSeconds(80)).ConfigureAwait(false);
-                }
-            );
+            stack.Server.OnRaw("GET", "/v4/loadstream", async (_, _) =>
+            {
+                callerCts.Cancel();
+                await Task.Delay(TimeSpan.FromSeconds(80)).ConfigureAwait(false);
+            });
             await Assert
                 .That(async () =>
                     await stack
@@ -328,7 +322,7 @@ public sealed class AdapterHappyPathAndTeardown
                         .Node.Rest.Info.GetServerInfoAsync(CancellationToken.None)
                         .ConfigureAwait(false)
                 )
-                .Throws<Nyra.Exceptions.IncompatibleServerException>();
+                .Throws<Exceptions.IncompatibleServerException>();
             await Assert.That(rejected!.InnerException).IsTypeOf<System.Text.Json.JsonException>();
         }
     }
@@ -343,40 +337,17 @@ public sealed class AdapterHappyPathAndTeardown
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
 
             server.On("GET", PlayerPath, _ => new FakeRestResponse(200, PlayerJson));
-            server.OnRaw(
-                "PATCH",
-                PlayerPath,
-                async (call, raw) =>
-                {
-                    await raw.DisposeAsync().ConfigureAwait(false);
-                }
-            );
+            server.OnRaw("PATCH", PlayerPath, async (_, raw) =>
+            {
+                await raw.DisposeAsync().ConfigureAwait(false);
+            });
 
             await Assert
                 .That(async () => await conn.PauseAsync().ConfigureAwait(false))
-                .Throws<Nyra.Exceptions.NodeUnreachableException>();
+                .Throws<Exceptions.NodeUnreachableException>();
             await Assert
                 .That(server.RestCalls.Any(c => c is { Method: "GET", Path: PlayerPath }))
                 .IsTrue();
-        }
-    }
-
-    private sealed class SleepingLogger : ILogger
-    {
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            Thread.Sleep(60);
         }
     }
 }

@@ -114,8 +114,6 @@ public sealed class RestNullBody
             NullBody(server, "GET", "/v4/trackstream");
             await AwaitRestAsync(() => node.Rest.Tracks.GetStreamUrlAsync("AAA", null, default))
                 .ConfigureAwait(false);
-
-            return;
         }
     }
 }

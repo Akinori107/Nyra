@@ -2,18 +2,18 @@ namespace Nyra.Tests;
 
 public sealed class ConnectProbeAndResume
 {
-    private static (FakeBridge Bridge, NyraExtension Extension) Rig()
+    private static NyraExtension Rig()
     {
         var bridge = new FakeBridge();
         bridge.GoReady();
-        return (bridge, new NyraExtension(bridge));
+        return new NyraExtension(bridge);
     }
 
     [Test]
     public async Task ResumeAfterDrop()
     {
         using var server = new FakeNodeServer { ResumeOnReconnect = true };
-        var (bridge, extension) = Rig();
+        var extension = Rig();
         var node = new Node(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions
@@ -42,7 +42,7 @@ public sealed class ConnectProbeAndResume
     public async Task FreshSessionAfterDrop()
     {
         using var server = new FakeNodeServer { ResumeOnReconnect = false };
-        var (bridge, extension) = Rig();
+        var extension = Rig();
         var node = new Node(
             new Endpoint("127.0.0.1", server.Port, server.Password),
             new NodeOptions

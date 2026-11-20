@@ -86,10 +86,43 @@ public sealed class RescuePlayback
         server.Dispose();
     }
 
+    private static (Task<GuildConnectionRestoredEventArgs> Restored, Func<int> Invalidated) Watch(
+        GuildConnection conn
+    )
+    {
+        var invalidated = 0;
+        conn.GuildConnectionInvalidated += (_, _) =>
+        {
+            Interlocked.Increment(ref invalidated);
+            return Task.CompletedTask;
+        };
+        var restored = new TaskCompletionSource<GuildConnectionRestoredEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        conn.GuildConnectionRestored += (_, args) =>
+        {
+            restored.TrySetResult(args);
+            return Task.CompletedTask;
+        };
+        return (restored.Task, () => Volatile.Read(ref invalidated));
+    }
+
+    private static async Task AssertRestoredInPlaceAsync(
+        Node node,
+        GuildConnection conn,
+        (Task<GuildConnectionRestoredEventArgs> Restored, Func<int> Invalidated) watch
+    )
+    {
+        var args = await watch.Restored.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        await Assert.That(args.PlaybackResent).IsTrue();
+        await Assert.That(watch.Invalidated()).IsEqualTo(0);
+        await Assert.That(node.GetConnection(777)).IsSameReferenceAs(conn);
+    }
+
     [Test]
     public async Task ResendsThePlaybackInOneUpdate()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(rescue: true)
+        var (_, _, server, conn, extension) = await ConnectAsync(rescue: true)
             .ConfigureAwait(false);
         await conn.PlayAsync(Track()).ConfigureAwait(false);
         await conn
@@ -130,7 +163,7 @@ public sealed class RescuePlayback
     [Arguments(true, 1)]
     public async Task ResendsNothingWhenOffOrExpired(bool rescue, int timeoutMilliseconds)
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(
+        var (_, _, server, conn, extension) = await ConnectAsync(
                 rescue,
                 TimeSpan.FromMilliseconds(timeoutMilliseconds)
             )
@@ -149,10 +182,7 @@ public sealed class RescuePlayback
     [Test]
     public async Task ResendsFromTheLastMillisecondAtTheEnd()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(
-                rescue: true,
-                paused: false
-            )
+        var (_, _, server, conn, extension) = await ConnectAsync(rescue: true, paused: false)
             .ConfigureAwait(false);
         await conn.PlayAsync(Track()).ConfigureAwait(false);
         var updated = new TaskCompletionSource();
@@ -181,7 +211,7 @@ public sealed class RescuePlayback
     [Test]
     public async Task AStoppedNodeInvalidatesInsteadOfRestoring()
     {
-        var (bridge, node, server, conn, extension) = await ConnectAsync(rescue: true)
+        var (_, node, server, conn, extension) = await ConnectAsync(rescue: true)
             .ConfigureAwait(false);
         var invalidated = new TaskCompletionSource();
         var restored = false;
@@ -204,5 +234,101 @@ public sealed class RescuePlayback
 
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
+    }
+
+    [Test]
+    public async Task ADropDuringTheRescueRestoresAgainOnTheNewSession()
+    {
+        var (_, node, server, conn, extension) = await ConnectAsync(rescue: true)
+            .ConfigureAwait(false);
+        await conn.PlayAsync(Track()).ConfigureAwait(false);
+
+        using var release = new ManualResetEventSlim();
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        server.On("PATCH", PlayerPath, call =>
+        {
+            if (
+                call.Body?.Contains("\"voice\"", StringComparison.Ordinal) == true
+                && !release.IsSet
+            )
+            {
+                held.TrySetResult();
+                release.Wait(TimeSpan.FromSeconds(10));
+            }
+
+            return new FakeRestResponse(200, PlayerBody(paused: true));
+        });
+
+        var watch = Watch(conn);
+
+        await server.DropConnectionAsync(1000, "first drop").ConfigureAwait(false);
+        await held.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        var sessions = Volatile.Read(ref server.WebsocketConnections);
+        await server.DropConnectionAsync(1000, "second drop").ConfigureAwait(false);
+        await Assert
+            .That(() => node.IsReady && Volatile.Read(ref server.WebsocketConnections) > sessions)
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(10));
+        release.Set();
+
+        await AssertRestoredInPlaceAsync(node, conn, watch).ConfigureAwait(false);
+
+        await CleanUpAsync(server, conn, extension).ConfigureAwait(false);
+    }
+
+    [Test]
+    public async Task ARescueCutByADropWaitsForTheNextSession()
+    {
+        var (_, node, server, conn, extension) = await ConnectAsync(rescue: true)
+            .ConfigureAwait(false);
+        await conn.PlayAsync(Track()).ConfigureAwait(false);
+
+        using var release = new ManualResetEventSlim();
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        server.On("PATCH", PlayerPath, call =>
+        {
+            if (call.Body?.Contains("\"voice\"", StringComparison.Ordinal) != true)
+                return new FakeRestResponse(200, PlayerBody(paused: true));
+
+            if (!release.IsSet && held.TrySetResult())
+                release.Wait(TimeSpan.FromSeconds(10));
+            return new FakeRestResponse(500, """{"message":"session gone"}""");
+        });
+        const string nextSession = "fake-session-2";
+        server.On(
+            "PATCH",
+            $"/v4/sessions/{nextSession}",
+            200,
+            """{"resuming":true,"timeout":60}"""
+        );
+        server.On(
+            "PATCH",
+            $"/v4/sessions/{nextSession}/players/777",
+            200,
+            PlayerBody(paused: true)
+        );
+        server.On("DELETE", $"/v4/sessions/{nextSession}/players/777", 204, string.Empty);
+
+        var watch = Watch(conn);
+        var drops = 0;
+        var secondDrop = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        node.Disconnected += (_, _) =>
+        {
+            if (Interlocked.Increment(ref drops) == 2)
+                secondDrop.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        await server.DropConnectionAsync(1000, "first drop").ConfigureAwait(false);
+        await held.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        server.SessionId = nextSession;
+        await server.DropConnectionAsync(1000, "second drop").ConfigureAwait(false);
+        await secondDrop.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        release.Set();
+
+        await AssertRestoredInPlaceAsync(node, conn, watch).ConfigureAwait(false);
+
+        await CleanUpAsync(server, conn, extension).ConfigureAwait(false);
     }
 }

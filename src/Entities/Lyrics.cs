@@ -7,9 +7,7 @@ namespace Nyra.Entities;
 public enum LyricsLoadType
 {
     /// <summary>An outcome the library does not know, reported by a newer server.</summary>
-    /// <remarks>
-    /// It is the default, a response without a load type reads as Unknown instead of fabricating a known one.
-    /// </remarks>
+    /// <remarks>Also used when the response has none.</remarks>
     Unknown,
 
     /// <summary>A provider had lyrics for the track.</summary>
@@ -24,8 +22,7 @@ public enum LyricsLoadType
 
 /// <summary>One timed line of a lyrics result.</summary>
 /// <remarks>
-/// Plain lyrics providers report theirs with a zero time and duration, this shape comes from NodeLink's load
-/// response.
+/// Plain lyrics have zero time and duration.
 /// </remarks>
 public sealed record LyricsLine
 {
@@ -142,8 +139,7 @@ public sealed record LyricsResult
     /// (NodeLink).
     /// </summary>
     /// <remarks>
-    /// On <see cref="LyricsLoadType.Unknown"/> it holds whatever the server put in the envelope's data slot,
-    /// if anything. Null on Lavalink, whose 204 carries no body.
+    /// Null on Lavalink when nothing was found.
     /// </remarks>
     [JsonPropertyName("data"), JsonInclude]
     public LyricsData? Data { get; internal set; }

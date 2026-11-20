@@ -21,7 +21,7 @@ public sealed class VoiceCloseAndForwarder
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
 
-        public RecordingList<string> Messages { get; } = new();
+        public RecordingList<string> Messages { get; } = [];
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -126,6 +126,7 @@ public sealed class VoiceCloseAndForwarder
         {
             var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
             var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
+            var joinSends = bridge.VoiceSends.Count(s => s.ChannelId == 555);
             bridge.HangVoiceSends = true;
 
             await server
@@ -141,7 +142,7 @@ public sealed class VoiceCloseAndForwarder
                 .ConfigureAwait(false);
             await RunForAsync(time, TimeSpan.FromMilliseconds(3000)).ConfigureAwait(false);
 
-            var rescueSends = bridge.VoiceSends.Count(s => s.ChannelId == 555);
+            var rescueSends = bridge.VoiceSends.Count(s => s.ChannelId == 555) - joinSends;
             await Assert.That(rescueSends).IsEqualTo(1);
             bridge.HangVoiceSends = false;
             await RunForAsync(time, TimeSpan.FromMilliseconds(10_500)).ConfigureAwait(false);
@@ -165,8 +166,10 @@ public sealed class VoiceCloseAndForwarder
                 )
                 .ConfigureAwait(false);
 
-            await RunForAsync(time, TimeSpan.FromMilliseconds(4600)).ConfigureAwait(false);
+            await RunForAsync(time, TimeSpan.FromMilliseconds(10_600)).ConfigureAwait(false);
+            bridge.FireVoiceState(777, null, "vsess");
             bridge.FireVoiceState(777, 555, "vsess2");
+            bridge.FireVoiceServer(777, "tok2", "127.0.0.1");
             await RunForAsync(time, TimeSpan.FromMilliseconds(5200)).ConfigureAwait(false);
 
             var kept = node.GetConnection(777);
@@ -259,10 +262,8 @@ public sealed class VoiceCloseAndForwarder
 
         var dropped = 0;
         for (var i = 0; i < 700; i++)
-        {
             if (!pump.TryDispatch(() => Task.CompletedTask, droppable: true))
                 dropped++;
-        }
 
         park.TrySetResult();
         await Assert.That(dropped).IsGreaterThan(0);
@@ -306,7 +307,7 @@ public sealed class VoiceCloseAndForwarder
         var stack = await StartAsync("nc-overload").ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
-            var channel = new global::NetCord.VoiceGuildChannel(
+            var channel = new VoiceGuildChannel(
                 new global::NetCord.JsonModels.JsonChannel { Id = 77 },
                 777,
                 null!
@@ -340,7 +341,7 @@ public sealed class VoiceCloseAndForwarder
         var shardedExtension = sharded.UseNyra(new HostileLogger());
 
         await Assert.That(shardedExtension).IsNotNull();
-        await Assert.That(shardedExtension!.IsDisposed).IsFalse();
+        await Assert.That(shardedExtension.IsDisposed).IsFalse();
 
         shardedExtension?.Dispose();
         shardOwn?.Dispose();
@@ -348,19 +349,15 @@ public sealed class VoiceCloseAndForwarder
         shard?.Dispose();
     }
 
-    private sealed class ProbeBridge : GatewayBridgeBase
+    private sealed class ProbeBridge(GatewayClient client)
+        : GatewayBridgeBase(_ => { }, _ => { }, _ => { }, _ => { })
     {
-        private readonly GatewayClient _client;
-
-        public ProbeBridge(GatewayClient client)
-            : base(_ => { }, _ => { }, _ => { }) => _client = client;
-
-        public RecordingList<ulong> ResolvedGuilds { get; } = new();
+        public RecordingList<ulong> ResolvedGuilds { get; } = [];
 
         protected override GatewayClient GetClient(ulong guildId)
         {
             ResolvedGuilds.Add(guildId);
-            return _client;
+            return client;
         }
 
         protected override void Unsubscribe() { }

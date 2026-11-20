@@ -17,9 +17,7 @@ public sealed class TrackStartAndPauseEvent
 
     private sealed class Rig : IAsyncDisposable
     {
-        public required FakeBridge Bridge { get; init; }
         public required NyraExtension Extension { get; init; }
-        public required Node Node { get; init; }
         public required FakeNodeServer Server { get; init; }
         public required GuildConnection Connection { get; init; }
         public required List<string> Reply { get; init; }
@@ -38,17 +36,20 @@ public sealed class TrackStartAndPauseEvent
         }
     }
 
-    private static string PlayerBody(string? trackJson, bool paused = false, int volume = 100) =>
-        $$"""
-            {
-                "guildId": "777",
-                "track": {{trackJson ?? "null"}},
-                "volume": {{volume}},
-                "paused": {{(paused ? "true" : "false")}},
-                "state": null,
-                "voice": {"token": "tok", "endpoint": "127.0.0.1", "sessionId": "vsess"}
-            }
-            """;
+    private static string PlayerBody(
+        string? trackJson,
+        bool paused = false,
+        int volume = 100
+    ) => $$"""
+        {
+            "guildId": "777",
+            "track": {{trackJson ?? "null"}},
+            "volume": {{volume}},
+            "paused": {{(paused ? "true" : "false")}},
+            "state": null,
+            "voice": {"token": "tok", "endpoint": "127.0.0.1", "sessionId": "vsess"}
+        }
+        """;
 
     private static async Task<Rig> RigAsync(bool lavalink = false)
     {
@@ -59,36 +60,29 @@ public sealed class TrackStartAndPauseEvent
         };
         var holder = new List<string> { PlayerBody(null) };
         var gate = new List<TaskCompletionSource?> { null };
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ => new FakeRestResponse(200, holder[0])
-        );
-        server.OnRaw(
-            "GET",
-            "/v4/sessions/fake-session/players/777",
-            async (_, stream) =>
-            {
-                var pending = gate[0];
-                if (pending is not null)
-                    await pending.Task.ConfigureAwait(false);
-                var body = System.Text.Encoding.UTF8.GetBytes(holder[0]);
-                var head =
-                    $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
-                await stream
-                    .WriteAsync(System.Text.Encoding.UTF8.GetBytes(head))
-                    .ConfigureAwait(false);
-                await stream.WriteAsync(body).ConfigureAwait(false);
-                await stream.FlushAsync().ConfigureAwait(false);
-                stream.Close();
-            }
-        );
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+            200,
+            holder[0]
+        ));
+        server.OnRaw("GET", "/v4/sessions/fake-session/players/777", async (_, stream) =>
+        {
+            var pending = gate[0];
+            if (pending is not null)
+                await pending.Task.ConfigureAwait(false);
+            var body = System.Text.Encoding.UTF8.GetBytes(holder[0]);
+            var head =
+                $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
+            await stream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
+            await stream.WriteAsync(body).ConfigureAwait(false);
+            await stream.FlushAsync().ConfigureAwait(false);
+            stream.Close();
+        });
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
         var node = new Node(
-            new Nyra.Endpoint("127.0.0.1", server.Port, server.Password),
-            new Nyra.NodeOptions
+            new Endpoint("127.0.0.1", server.Port, server.Password),
+            new NodeOptions
             {
                 Name = "track-start",
                 Resuming = true,
@@ -107,9 +101,7 @@ public sealed class TrackStartAndPauseEvent
         var connection = await connect.ConfigureAwait(false);
         return new Rig
         {
-            Bridge = bridge,
             Extension = extension,
-            Node = node,
             Server = server,
             Connection = connection,
             Reply = holder,

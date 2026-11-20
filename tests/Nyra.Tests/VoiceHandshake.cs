@@ -6,25 +6,25 @@ namespace Nyra.Tests;
 
 public sealed class VoiceHandshake
 {
-    private sealed class StuckSendBridge : Nyra.Abstractions.IDiscordBridge
+    private sealed class StuckSendBridge : IDiscordBridge
     {
         private readonly TaskCompletionSource _send = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
 
-        public event EventHandler<Nyra.Abstractions.VoiceServerUpdatedEventArgs>? VoiceServerUpdated
+        public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
             add { }
             remove { }
         }
 
-        public event EventHandler<Nyra.Abstractions.VoiceStateUpdatedEventArgs>? VoiceStateUpdated
+        public event EventHandler<VoiceStateUpdatedEventArgs>? VoiceStateUpdated
         {
             add { }
             remove { }
         }
 
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public Microsoft.Extensions.Logging.ILogger? Logger => null;
 
         public Task SendVoiceUpdateAsync(
             ulong guildId,
@@ -34,9 +34,9 @@ public sealed class VoiceHandshake
             CancellationToken cancellationToken = default
         ) => _send.Task;
 
-        public Task<Nyra.Abstractions.ClientInformation> WaitForReadyAsync(
+        public Task<ClientInformation> WaitForReadyAsync(
             CancellationToken cancellationToken = default
-        ) => Task.FromResult(new Nyra.Abstractions.ClientInformation(FakeBridge.UserId));
+        ) => Task.FromResult(new ClientInformation(FakeBridge.UserId));
     }
 
     private static async Task<Stack> StartAsync(
@@ -293,19 +293,19 @@ public sealed class VoiceHandshake
         }
     }
 
-    private sealed class RemovalBridge : Nyra.Abstractions.IDiscordBridge, IGuildRemovalSource
+    private sealed class RemovalBridge : IDiscordBridge, IGuildRemovalSource
     {
-        private readonly TaskCompletionSource<Nyra.Abstractions.ClientInformation> _ready = new(
+        private readonly TaskCompletionSource<ClientInformation> _ready = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
 
-        public event EventHandler<Nyra.Abstractions.VoiceServerUpdatedEventArgs>? VoiceServerUpdated
+        public event EventHandler<VoiceServerUpdatedEventArgs>? VoiceServerUpdated
         {
             add { }
             remove { }
         }
 
-        public event EventHandler<Nyra.Abstractions.VoiceStateUpdatedEventArgs>? VoiceStateUpdated
+        public event EventHandler<VoiceStateUpdatedEventArgs>? VoiceStateUpdated
         {
             add { }
             remove { }
@@ -313,14 +313,13 @@ public sealed class VoiceHandshake
 
         public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
 
-        public Microsoft.Extensions.Logging.ILogger? Logger { get; set; }
+        public Microsoft.Extensions.Logging.ILogger? Logger => null;
 
-        public RecordingList<(ulong GuildId, ulong? ChannelId)> VoiceSends { get; } = new();
+        public RecordingList<(ulong GuildId, ulong? ChannelId)> VoiceSends { get; } = [];
 
-        public void GoReady() =>
-            _ready.TrySetResult(new Nyra.Abstractions.ClientInformation(FakeBridge.UserId));
+        public void GoReady() => _ready.TrySetResult(new ClientInformation(FakeBridge.UserId));
 
-        public Task<Nyra.Abstractions.ClientInformation> WaitForReadyAsync(
+        public Task<ClientInformation> WaitForReadyAsync(
             CancellationToken cancellationToken = default
         ) => _ready.Task.WaitAsync(cancellationToken);
 

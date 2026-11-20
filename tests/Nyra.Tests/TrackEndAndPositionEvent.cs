@@ -21,17 +21,16 @@ public sealed class TrackEndAndPositionEvent
     {
         var holder = new Holder();
         var server = new FakeNodeServer();
-        server.On(
-            "PATCH",
-            "/v4/sessions/fake-session/players/777",
-            _ => new FakeRestResponse(200, holder.Reply)
-        );
+        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
+            200,
+            holder.Reply
+        ));
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
         var node = new Node(
-            new Nyra.Endpoint("127.0.0.1", server.Port, server.Password),
-            new Nyra.NodeOptions
+            new Endpoint("127.0.0.1", server.Port, server.Password),
+            new NodeOptions
             {
                 Name = "track-end",
                 Resuming = true,
@@ -48,7 +47,7 @@ public sealed class TrackEndAndPositionEvent
         bridge.FireVoiceState(777, 555, "vsess");
         bridge.FireVoiceServer(777, "tok", "127.0.0.1");
         var connection = await connect.ConfigureAwait(false);
-        return new Rig(bridge, extension, node, server, connection, holder);
+        return new Rig(extension, server, connection, holder);
     }
 
     private sealed class Holder
@@ -58,9 +57,7 @@ public sealed class TrackEndAndPositionEvent
     }
 
     private sealed record Rig(
-        FakeBridge Bridge,
         NyraExtension Extension,
-        Node Node,
         FakeNodeServer Server,
         GuildConnection Connection,
         Holder Reply

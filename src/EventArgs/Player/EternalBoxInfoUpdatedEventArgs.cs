@@ -4,14 +4,14 @@ using Nyra.Entities;
 namespace Nyra.EventArgs;
 
 /// <summary>
-/// EternalBox context of the playing track, reported whenever the server signals the track start.
+/// EternalBox context of the playing track, reported when the track starts.
 /// </summary>
 /// <remarks>NodeLink only.</remarks>
 public sealed class EternalBoxInfoUpdatedEventArgs : System.EventArgs
 {
     /// <summary>The guild the player plays in.</summary>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
     /// <summary>The track the info belongs to, always the track the event fired for.</summary>
@@ -19,10 +19,7 @@ public sealed class EternalBoxInfoUpdatedEventArgs : System.EventArgs
     public Track? Track { get; internal set; }
 
     /// <summary>The info the provider reported for the track.</summary>
-    /// <remarks>
-    /// Absorbs a null the server sends, the getter never hands out null, a missing or nulled info reads as an
-    /// empty one.
-    /// </remarks>
+    /// <remarks>Never null, a missing value reads as an empty instance.</remarks>
     [JsonPropertyName("eternalbox"), JsonInclude]
     public EternalBoxInfo Info
     {

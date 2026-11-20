@@ -29,10 +29,10 @@ public sealed class Entity
             await Assert.That(group).IsNotNull();
             await Assert.That(group).IsNotNull();
             await Assert.That(group!.Id).IsEqualTo("late-night");
-            await Assert.That(group!.CreatedAt).IsEqualTo(1699999999999);
-            await Assert.That(group!.GuildIds.Count).IsEqualTo(2);
+            await Assert.That(group.CreatedAt).IsEqualTo(1699999999999);
+            await Assert.That(group.GuildIds.Count).IsEqualTo(2);
         }
-        await Assert.That(group!.GuildIds[1]).IsEqualTo(456);
+        await Assert.That(group.GuildIds[1]).IsEqualTo(456);
         await Assert
             .That(group?.CreatedAtTime)
             .IsEqualTo(DateTimeOffset.FromUnixTimeMilliseconds(1699999999999));
@@ -67,18 +67,18 @@ public sealed class Entity
             await Assert.That(update).IsNotNull();
             await Assert.That(update).IsNotNull();
             await Assert.That(update!.Id).IsEqualTo("late-night");
-            await Assert.That(update!.GuildIds.Count).IsEqualTo(2);
+            await Assert.That(update.GuildIds.Count).IsEqualTo(2);
             await Assert.That(update?.Players.Count).IsEqualTo(3);
         }
         await Assert
             .That(update!.Players[0] is { GuildId: 123, Volume: 80, IsPaused: true })
             .IsTrue();
-        await Assert.That(update!.Players[2] is { GuildId: 789, Volume: 0 }).IsTrue();
+        await Assert.That(update.Players[2] is { GuildId: 789, Volume: 0 }).IsTrue();
         await Assert.That(update?.Errors.Count).IsEqualTo(2);
         await Assert
             .That(update!.Errors[0] is { GuildId: 789, Error: "Player not found locally" })
             .IsTrue();
-        await Assert.That(update!.Errors[1] is { GuildId: 999, Error: "" }).IsTrue();
+        await Assert.That(update.Errors[1] is { GuildId: 999, Error: "" }).IsTrue();
         await Assert.That(update?.Errors[0].Error).IsEqualTo("Player not found locally");
         await Assert
             .That(
@@ -92,7 +92,7 @@ public sealed class Entity
         {
             await Assert.That(noLists).IsNotNull();
             await Assert.That(noLists!.Players.Count).IsEqualTo(0);
-            await Assert.That(noLists!.Errors.Count).IsEqualTo(0);
+            await Assert.That(noLists.Errors.Count).IsEqualTo(0);
         }
 
         var body = JsonSerializer.Serialize(
@@ -162,8 +162,8 @@ public sealed class Entity
         {
             await Assert.That(empty).IsNotNull();
             await Assert.That(empty!.LoadType).IsEqualTo(LyricsLoadType.Empty);
-            await Assert.That(empty!.Data).IsNotNull();
-            await Assert.That(empty!.Data!.Lines).IsNull();
+            await Assert.That(empty.Data).IsNotNull();
+            await Assert.That(empty.Data!.Lines).IsNull();
         }
 
         var error = Parse<LyricsResult>(
@@ -173,9 +173,9 @@ public sealed class Entity
         {
             await Assert.That(error).IsNotNull();
             await Assert.That(error!.LoadType).IsEqualTo(LyricsLoadType.Error);
-            await Assert.That(error!.Data).IsNotNull();
-            await Assert.That(error!.Data!.Message).IsEqualTo("no provider");
-            await Assert.That(error!.Data!.Severity).IsEqualTo(ErrorSeverity.Suspicious);
+            await Assert.That(error.Data).IsNotNull();
+            await Assert.That(error.Data!.Message).IsEqualTo("no provider");
+            await Assert.That(error.Data!.Severity).IsEqualTo(ErrorSeverity.Suspicious);
         }
 
         var unknown = Parse<LyricsResult>("""{"loadType":"brand-new","data":{}}""");
@@ -204,20 +204,18 @@ public sealed class Entity
         using (Assert.Multiple())
         {
             await Assert.That(projected).IsNotNull();
-            await Assert.That(projected!.LoadType).IsEqualTo(LyricsLoadType.Lyrics);
-            await Assert.That(projected!.Data).IsNotNull();
-            await Assert.That(projected!.Data!.Synced).IsTrue();
-            await Assert.That(projected!.Data!.Lines).IsNotNull();
-            await Assert.That(projected!.Data!.Lines!.Count).IsEqualTo(1);
+            await Assert.That(projected.LoadType).IsEqualTo(LyricsLoadType.Lyrics);
+            await Assert.That(projected.Data).IsNotNull();
+            await Assert.That(projected.Data!.Synced).IsTrue();
+            await Assert.That(projected.Data!.Lines).IsNotNull();
+            await Assert.That(projected.Data!.Lines!.Count).IsEqualTo(1);
         }
         await Assert
-            .That(projected!.Data!.Lines![0] is { Text: "line one", Time: 1000, Duration: 2000 })
+            .That(projected.Data!.Lines![0] is { Text: "line one", Time: 1000, Duration: 2000 })
             .IsTrue();
 
         var lavaBare = new LavaLyricsLyrics("genius", null, null, []);
-        await Assert
-            .That(lavaBare.ToResult().Data is { Synced: false, Lines: { Count: 0 } })
-            .IsTrue();
+        await Assert.That(lavaBare.ToResult().Data is { Synced: false, Lines.Count: 0 }).IsTrue();
 
         var lavaNone = new LavaLyricsLyrics("genius", null, null, null);
         await Assert.That(lavaNone.ToResult().Data is { Synced: false, Lines: null }).IsTrue();
@@ -275,9 +273,9 @@ public sealed class Entity
         {
             await Assert.That(failed).IsNotNull();
             await Assert.That(failed!.LoadType).IsEqualTo(MeaningLoadType.Error);
-            await Assert.That(failed!.Data).IsNotNull();
-            await Assert.That(failed!.Data!.ErrorMessage).IsEqualTo("provider down");
-            await Assert.That(failed!.Data!.ErrorSeverity).IsEqualTo(ErrorSeverity.Fault);
+            await Assert.That(failed.Data).IsNotNull();
+            await Assert.That(failed.Data!.ErrorMessage).IsEqualTo("provider down");
+            await Assert.That(failed.Data!.ErrorSeverity).IsEqualTo(ErrorSeverity.Fault);
         }
 
         var empty = Parse<MeaningResult>("""{"loadType":"empty","data":{}}""");
@@ -285,8 +283,8 @@ public sealed class Entity
         {
             await Assert.That(empty).IsNotNull();
             await Assert.That(empty!.LoadType).IsEqualTo(MeaningLoadType.Empty);
-            await Assert.That(empty!.Data).IsNotNull();
-            await Assert.That(empty!.Data!.Paragraphs.Count).IsEqualTo(0);
+            await Assert.That(empty.Data).IsNotNull();
+            await Assert.That(empty.Data!.Paragraphs.Count).IsEqualTo(0);
         }
 
         await Assert
@@ -361,7 +359,7 @@ public sealed class Entity
             isNodeLink: false
         );
         await Assert
-            .That(lava is { UptimeDuration: { TotalMilliseconds: 9001 }, Cpu: { NodeLoad: 0.25 } })
+            .That(lava is { UptimeDuration.TotalMilliseconds: 9001, Cpu.NodeLoad: 0.25 })
             .IsTrue();
     }
 
@@ -375,9 +373,9 @@ public sealed class Entity
         {
             await Assert.That(config).IsNotNull();
             await Assert.That(config!.RefreshToken).IsEqualTo("***");
-            await Assert.That(config!.VisitorData).IsEqualTo("***");
-            await Assert.That(config!.IsConfigured).IsTrue();
-            await Assert.That(config!.IsValid).IsNull();
+            await Assert.That(config.VisitorData).IsEqualTo("***");
+            await Assert.That(config.IsConfigured).IsTrue();
+            await Assert.That(config.IsValid).IsNull();
         }
 
         var validated = Parse<YouTubeConfig>("""{"isConfigured":true,"isValid":false}""");
@@ -390,8 +388,8 @@ public sealed class Entity
         {
             await Assert.That(update).IsNotNull();
             await Assert.That(update!.Message).IsEqualTo("configuration updated");
-            await Assert.That(update!.WorkersUpdated).IsEqualTo(4);
-            await Assert.That(update!.FieldsUpdated.Count).IsEqualTo(1);
+            await Assert.That(update.WorkersUpdated).IsEqualTo(4);
+            await Assert.That(update.FieldsUpdated.Count).IsEqualTo(1);
         }
 
         var nullUpdate = Parse<YouTubeConfigUpdate>("""{"workersUpdated":0}""");
@@ -399,7 +397,7 @@ public sealed class Entity
         {
             await Assert.That(nullUpdate).IsNotNull();
             await Assert.That(nullUpdate!.Message).IsEqualTo("");
-            await Assert.That(nullUpdate!.FieldsUpdated.Count).IsEqualTo(0);
+            await Assert.That(nullUpdate.FieldsUpdated.Count).IsEqualTo(0);
         }
 
         var token = Parse<YouTubeToken>(
@@ -409,8 +407,8 @@ public sealed class Entity
         {
             await Assert.That(token).IsNotNull();
             await Assert.That(token!.AccessToken).IsEqualTo("");
-            await Assert.That(token!.ExpiresInSeconds).IsEqualTo(3600);
-            await Assert.That(token!.TokenType).IsEqualTo("Bearer");
+            await Assert.That(token.ExpiresInSeconds).IsEqualTo(3600);
+            await Assert.That(token.TokenType).IsEqualTo("Bearer");
         }
 
         var refresh = JsonSerializer.Serialize(new YouTubeTokenRefresh("secret"), NodeLink);
@@ -436,11 +434,9 @@ public sealed class Entity
         await Assert.That(audio).IsNotNull();
         await Assert.That(audio!.Count).IsEqualTo(2);
         await Assert
-            .That(
-                audio![0] is { Id: "en.0", Name: "English", IsDefault: true, IsAutoDubbed: false }
-            )
+            .That(audio[0] is { Id: "en.0", Name: "English", IsDefault: true, IsAutoDubbed: false })
             .IsTrue();
-        await Assert.That(audio![1] is { Id: "es.0", Name: "Spanish" }).IsTrue();
+        await Assert.That(audio[1] is { Id: "es.0", Name: "Spanish" }).IsTrue();
 
         var plain = Parse<Track>(
             """{"encoded":"QQ==","info":{"identifier":"x","author":"a","title":"t","length":1,"isStream":false,"isSeekable":true,"position":0}}"""
@@ -515,17 +511,15 @@ public sealed class Entity
         var trackLoad = ParseLava<LoadResult>(
             $$$$"""{"loadType":"track","data":{{{{trackJson}}}}}"""
         );
-        await Assert
-            .That(trackLoad is LoadResult.TrackLoaded { Track: { Encoded: "QXRsZWFzdA==" } })
-            .IsTrue();
+        await Assert.That(trackLoad is TrackLoaded { Track.Encoded: "QXRsZWFzdA==" }).IsTrue();
 
         var episode = Parse<LoadResult>($$$$"""{"loadType":"episode","data":{{{{trackJson}}}}}""");
-        await Assert.That(episode is LoadResult.TrackLoaded).IsTrue();
+        await Assert.That(episode is TrackLoaded).IsTrue();
 
         var search = ParseLava<LoadResult>(
             $$$$"""{"loadType":"search","data":[{{{{trackJson}}}},{{{{trackJson}}}}]}"""
         );
-        await Assert.That(search is LoadResult.SearchLoaded { Tracks.Count: 2 }).IsTrue();
+        await Assert.That(search is SearchLoaded { Tracks.Count: 2 }).IsTrue();
 
         var playlist = ParseLava<LoadResult>(
             $$$$"""{"loadType":"playlist","data":{"info":{"name":"SOAD radio","selectedTrack":1},"tracks":[{{{{trackJson}}}}],"pluginInfo":{"a":1}}}"""
@@ -533,7 +527,7 @@ public sealed class Entity
         await Assert
             .That(
                 playlist
-                    is LoadResult.PlaylistLoaded
+                    is PlaylistLoaded
                     {
                         PlaylistInfo: { Name: "SOAD radio", SelectedTrack: 1 },
                         Tracks.Count: 1,
@@ -555,11 +549,11 @@ public sealed class Entity
             var like = Parse<LoadResult>(
                 $$$$"""{"loadType":"{{{{kind}}}}","data":{"info":{"name":"n"},"tracks":[{{{{trackJson}}}}]}}"""
             );
-            await Assert.That(like is LoadResult.PlaylistLoaded { Tracks.Count: 1 }).IsTrue();
+            await Assert.That(like is PlaylistLoaded { Tracks.Count: 1 }).IsTrue();
         }
 
         var noMatches = ParseLava<LoadResult>("""{"loadType":"empty"}""");
-        await Assert.That(noMatches is LoadResult.NoMatches).IsTrue();
+        await Assert.That(noMatches is NoMatches).IsTrue();
 
         var lavaError = ParseLava<LoadResult>(
             """{"loadType":"error","data":{"message":"nope","severity":"fault","cause":"upstream","causeStackTrace":"at Lava"}}"""
@@ -567,7 +561,7 @@ public sealed class Entity
         await Assert
             .That(
                 lavaError
-                    is LoadResult.LoadFailed
+                    is LoadFailed
                     {
                         Error:
                         { Message: "nope", Severity: ErrorSeverity.Fault, Cause: "upstream" },
@@ -576,7 +570,7 @@ public sealed class Entity
             .IsTrue();
         await Assert
             .That(
-                lavaError is LoadResult.LoadFailed { Error: { } lavaErr }
+                lavaError is LoadFailed { Error: { } lavaErr }
                     && lavaErr.ToString() == "[Fault] nope"
             )
             .IsTrue();
@@ -584,17 +578,15 @@ public sealed class Entity
         var nodeLinkError = Parse<LoadResult>(
             """{"loadType":"error","exception":{"message":"provider down"}}"""
         );
-        await Assert
-            .That(nodeLinkError is LoadResult.LoadFailed { Error: { Message: "provider down" } })
-            .IsTrue();
+        await Assert.That(nodeLinkError is LoadFailed { Error.Message: "provider down" }).IsTrue();
 
         var unknown = Parse<LoadResult>("""{"loadType":"holo","data":{}}""");
         await Assert
             .That(
                 unknown
-                    is LoadResult.LoadFailed
+                    is LoadFailed
                     {
-                        Error: { Message: "The server reported an unknown load type 'holo'." },
+                        Error.Message: "The server reported an unknown load type 'holo'.",
                     }
             )
             .IsTrue();
@@ -603,10 +595,9 @@ public sealed class Entity
         await Assert
             .That(
                 notString
-                    is LoadResult.LoadFailed
+                    is LoadFailed
                     {
-                        Error:
-                        { Message: "The server reported an unknown load type 'not a string'." },
+                        Error.Message: "The server reported an unknown load type 'not a string'.",
                     }
             )
             .IsTrue();
@@ -615,15 +606,15 @@ public sealed class Entity
         await Assert
             .That(
                 missing
-                    is LoadResult.LoadFailed
+                    is LoadFailed
                     {
-                        Error: { Message: "The server reported an unknown load type 'missing'." },
+                        Error.Message: "The server reported an unknown load type 'missing'.",
                     }
             )
             .IsTrue();
 
         foreach (
-            var frame in new string[]
+            var frame in new[]
             {
                 """{"loadType":"track"}""",
                 $$$$"""{"loadType":"track","data":null}""",
@@ -633,14 +624,12 @@ public sealed class Entity
                 $$$$"""{"loadType":"error"}""",
             }
         )
-        {
             await Assert
                 .That(() =>
                 {
                     _ = ParseLava<LoadResult>(frame);
                 })
                 .Throws<JsonException>();
-        }
 
         await Assert
             .That(() =>
@@ -656,12 +645,9 @@ public sealed class Entity
             $$$$"""{"loadType":"playlist","data":{"info":{"name":"n"},"tracks":null}}"""
         );
         await Assert
-            .That(
-                missingTracks
-                    is LoadResult.PlaylistLoaded { Tracks.Count: 0, PlaylistInfo.Name: "n" }
-            )
+            .That(missingTracks is PlaylistLoaded { Tracks.Count: 0, PlaylistInfo.Name: "n" })
             .IsTrue();
-        await Assert.That(nullTracks is LoadResult.PlaylistLoaded { Tracks.Count: 0 }).IsTrue();
+        await Assert.That(nullTracks is PlaylistLoaded { Tracks.Count: 0 }).IsTrue();
     }
 
     [Test]
@@ -683,15 +669,15 @@ public sealed class Entity
         {
             await Assert.That(info).IsNotNull();
             await Assert.That(info!.Version).IsNotNull();
-            await Assert.That(info!.Version!.Semver).IsEqualTo("3.9.1");
-            await Assert.That(info!.Version!.Major).IsEqualTo(3);
-            await Assert.That(info!.Version!.Minor).IsEqualTo(9);
-            await Assert.That(info!.Version!.Patch).IsEqualTo(1);
-            await Assert.That(info!.Git).IsNotNull();
-            await Assert.That(info!.Git!.Branch).IsEqualTo("main");
-            await Assert.That(info!.Git!.Commit).IsEqualTo("abc123");
-            await Assert.That(info!.Voice).IsNotNull();
-            await Assert.That(info!.Voice!.Name).IsEqualTo("udp");
+            await Assert.That(info.Version.Semver).IsEqualTo("3.9.1");
+            await Assert.That(info.Version.Major).IsEqualTo(3);
+            await Assert.That(info.Version.Minor).IsEqualTo(9);
+            await Assert.That(info.Version.Patch).IsEqualTo(1);
+            await Assert.That(info.Git).IsNotNull();
+            await Assert.That(info.Git.Branch).IsEqualTo("main");
+            await Assert.That(info.Git.Commit).IsEqualTo("abc123");
+            await Assert.That(info.Voice).IsNotNull();
+            await Assert.That(info.Voice!.Name).IsEqualTo("udp");
             await Assert.That(info?.Jvm).IsEqualTo("OpenJDK 21");
             await Assert.That(info?.Lavaplayer).IsEqualTo("1.0.0");
             await Assert.That(info?.Node).IsEqualTo("v22.0.0");
@@ -734,9 +720,7 @@ public sealed class Entity
         {
             await Assert.That(unknownPlanner).IsNotNull();
             await Assert.That(unknownPlanner!.Class).IsEqualTo(RoutePlannerClass.Unknown);
-            await Assert
-                .That(unknownPlanner!.Details?.IpBlock?.Type)
-                .IsEqualTo(IpBlockType.Unknown);
+            await Assert.That(unknownPlanner.Details?.IpBlock?.Type).IsEqualTo(IpBlockType.Unknown);
         }
 
         var free = JsonSerializer.Serialize(new RoutePlannerFreeAddress("1.2.3.4"), NodeLink);
@@ -787,11 +771,11 @@ public sealed class Entity
         {
             await Assert.That(disconnected).IsNotNull();
             await Assert
-                .That(disconnected!.CloseStatus)
+                .That(disconnected.CloseStatus)
                 .IsEqualTo(WebSocketCloseStatus.NormalClosure);
-            await Assert.That(disconnected!.CloseDescription).IsEqualTo("bye");
-            await Assert.That(disconnected!.Final).IsTrue();
-            await Assert.That(disconnected!.Exception).IsNull();
+            await Assert.That(disconnected.CloseDescription).IsEqualTo("bye");
+            await Assert.That(disconnected.Final).IsTrue();
+            await Assert.That(disconnected.Exception).IsNull();
         }
 
         var error = new NodeErrorEventArgs(new IOException("reset"), node);
@@ -809,8 +793,8 @@ public sealed class Entity
         {
             await Assert.That(quality).IsNotNull();
             await Assert.That(quality!.Status).IsEqualTo(ConnectionQuality.Good);
-            await Assert.That(quality!.Reason).IsNull();
-            await Assert.That(quality!.Metrics).IsNotNull();
+            await Assert.That(quality.Reason).IsNull();
+            await Assert.That(quality.Metrics).IsNotNull();
         }
         await Assert
             .That(
@@ -834,7 +818,7 @@ public sealed class Entity
             .That(quality == Parse<ConnectionStatus>("""{"status":"good","metrics":{"ping":10}}"""))
             .IsTrue();
 
-        var statusArgs = new NodeConnectionStatusEventArgs(quality!);
+        var statusArgs = new NodeConnectionStatusEventArgs(quality);
         await Assert.That(statusArgs.Status == quality).IsTrue();
 
         var playbackError = new HandlerErrorEventArgs(
@@ -847,8 +831,8 @@ public sealed class Entity
         using (Assert.Multiple())
         {
             await Assert.That(invalidated).IsNotNull();
-            await Assert.That(invalidated!.GuildId).IsEqualTo(123);
-            await Assert.That(invalidated!.LastChannelId).IsEqualTo(456);
+            await Assert.That(invalidated.GuildId).IsEqualTo(123);
+            await Assert.That(invalidated.LastChannelId).IsEqualTo(456);
         }
 
         var sought = Parse<TrackSoughtEventArgs>(
@@ -856,8 +840,7 @@ public sealed class Entity
         );
         await Assert
             .That(
-                sought
-                    is { GuildId: 123, PositionMilliseconds: 30000, Position: { TotalSeconds: 30 } }
+                sought is { GuildId: 123, PositionMilliseconds: 30000, Position.TotalSeconds: 30 }
             )
             .IsTrue();
 
@@ -868,7 +851,7 @@ public sealed class Entity
         {
             await Assert.That(box).IsNotNull();
             await Assert.That(box!.GuildId).IsEqualTo(123);
-            await Assert.That(box!.Info).IsNotNull();
+            await Assert.That(box.Info).IsNotNull();
         }
     }
 
@@ -1068,9 +1051,9 @@ public sealed class Entity
             $$$"""{"loadType":"search","data":[{{{trackJson}}}]}"""
         );
         var emptyLoad = ParseLava<LoadResult>("""{"loadType":"empty","data":null}""");
-        await Assert.That(trackLoad?.LoadType).IsEqualTo(Entities.LoadType.Track);
-        await Assert.That(playlistLoad?.LoadType).IsEqualTo(Entities.LoadType.Playlist);
-        await Assert.That(searchLoad?.LoadType).IsEqualTo(Entities.LoadType.Search);
-        await Assert.That(emptyLoad?.LoadType).IsEqualTo(Entities.LoadType.Empty);
+        await Assert.That(trackLoad?.LoadType).IsEqualTo(LoadType.Track);
+        await Assert.That(playlistLoad?.LoadType).IsEqualTo(LoadType.Playlist);
+        await Assert.That(searchLoad?.LoadType).IsEqualTo(LoadType.Search);
+        await Assert.That(emptyLoad?.LoadType).IsEqualTo(LoadType.Empty);
     }
 }

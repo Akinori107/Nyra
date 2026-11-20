@@ -33,10 +33,9 @@ public sealed class RemovalRace
         };
     }
 
-    private static string PlayerBody() =>
-        """
-            {"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}
-            """;
+    private static string PlayerBody() => """
+        {"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}
+        """;
 
     [Test]
     public async Task KickDuringTheHandshake()
@@ -54,15 +53,11 @@ public sealed class RemovalRace
             bridge.FireVoiceState(777, 555, "vsess");
             bridge.FireVoiceServer(777, "tok", "127.0.0.1");
 
-            Nyra.Exceptions.VoiceHandshakeException? kicked = null;
             try
             {
                 await connect.ConfigureAwait(false);
             }
-            catch (Nyra.Exceptions.VoiceHandshakeException exception)
-            {
-                kicked = exception;
-            }
+            catch (Exceptions.VoiceHandshakeException) { }
             await Assert
                 .That(server.RestCalls.Any(c => c is { Method: "PATCH", Path: PlayerPath }))
                 .IsFalse();

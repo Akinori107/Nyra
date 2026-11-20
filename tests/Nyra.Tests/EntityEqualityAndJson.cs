@@ -10,11 +10,7 @@ public sealed class EntityEqualityAndJson
 {
     private static readonly JsonSerializerOptions Options = NyraJson.SerializerOptions;
 
-    private sealed class ProbeException : NyraException
-    {
-        public ProbeException(string message)
-            : base(message) { }
-    }
+    private sealed class ProbeException(string message) : NyraException(message) { }
 
     [Test]
     public async Task MessageOnlyException()
@@ -217,13 +213,13 @@ public sealed class EntityEqualityAndJson
             """{"loadType":"track","data":{"encoded":"AAA","info":{}},"whatever":123}""",
             nodeLink
         );
-        await Assert.That(load is LoadResult.TrackLoaded).IsTrue();
+        await Assert.That(load is TrackLoaded).IsTrue();
 
         var playlist = JsonSerializer.Deserialize<LoadResult>(
             """{"loadType":"playlist","data":{"info":{"name":"x","selectedTrack":-1},"tracks":[],"pluginInfo":5}}""",
             nodeLink
         );
-        var plugin = playlist as LoadResult.PlaylistLoaded;
+        var plugin = playlist as PlaylistLoaded;
         await Assert.That(plugin?.PluginInfo).IsNull();
     }
 
@@ -235,6 +231,4 @@ public sealed class EntityEqualityAndJson
         await Assert.That(written).Contains("\"timestamp\":10");
         await Assert.That(written).DoesNotContain("duration");
     }
-
-    private sealed class ProbeEventArgs : System.EventArgs { }
 }

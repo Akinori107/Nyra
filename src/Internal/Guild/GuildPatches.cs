@@ -57,10 +57,7 @@ internal sealed class GuildPatches
     {
         lock (_playerPatchGate)
         {
-            if (_connection.IsTearingDown)
-                throw new InvalidOperationException(
-                    "The connection is being torn down, it no longer accepts operations."
-                );
+            _connection.EnsureNotTearingDown();
             _inFlightPlayerPatches++;
         }
 
@@ -110,13 +107,32 @@ internal sealed class GuildPatches
     internal static bool MayHaveLanded(Exception exception) =>
         exception
             is TimeoutException
-                or HttpRequestException
                 or NodeUnreachableException
                 or RestException { StatusCode: >= 200 and < 300 };
 
-    internal async Task<bool> ReconcileLandedAsync(
+    internal async Task<Player> SendLandingAsync(
+        Func<CancellationToken, Task<Player>> send,
         Func<Player?, bool> landed,
-        long requestTick,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await SendAsync(send, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (MayHaveLanded(exception))
+        {
+            if (
+                await FetchLandedAsync(landed, cancellationToken).ConfigureAwait(false) is
+                { } player
+            )
+                return player;
+            throw;
+        }
+    }
+
+    internal async Task<Player?> FetchLandedAsync(
+        Func<Player?, bool> landed,
         CancellationToken cancellationToken
     )
     {
@@ -129,13 +145,9 @@ internal sealed class GuildPatches
         }
         catch
         {
-            return false;
+            return null;
         }
 
-        if (player is null || !landed(player))
-            return false;
-
-        _connection.CaptureState(player, requestTick);
-        return true;
+        return player is not null && landed(player) ? player : null;
     }
 }

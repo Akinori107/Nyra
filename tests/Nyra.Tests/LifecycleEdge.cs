@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using DSharpPlus.Entities;
 using Microsoft.Extensions.Time.Testing;
 using NetCord;
@@ -58,7 +59,7 @@ public sealed class LifecycleEdge
             var nulls = await Assert
                 .That(() =>
                 {
-                    _ = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(null!, channel);
+                    _ = DSharpPlus.NodeExtensions.ConnectAsync(null!, channel);
                 })
                 .Throws<ArgumentNullException>();
             await Assert.That(nulls!.ParamName).IsEqualTo("node");
@@ -66,7 +67,7 @@ public sealed class LifecycleEdge
             var noChannel = await Assert
                 .That(() =>
                 {
-                    _ = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, null!);
+                    _ = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, null!);
                 })
                 .Throws<ArgumentNullException>();
             await Assert.That(noChannel!.ParamName).IsEqualTo("channel");
@@ -74,7 +75,7 @@ public sealed class LifecycleEdge
             await Assert
                 .That(() =>
                 {
-                    _ = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
+                    _ = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
                 })
                 .Throws<ArgumentException>();
 
@@ -83,21 +84,17 @@ public sealed class LifecycleEdge
             await Assert
                 .That(() =>
                 {
-                    _ = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
+                    _ = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
                 })
                 .Throws<ArgumentException>();
 
             Reflect.Set(channel, "Id", (ulong)555);
             Reflect.Set(channel, "GuildId", (ulong?)777);
-            stack.Server.On(
-                "PATCH",
-                PlayerPath,
-                _ => new FakeRestResponse(
-                    200,
-                    """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-                )
-            );
-            var join = Nyra.DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
+            stack.Server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                200,
+                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            ));
+            var join = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
             await Task.Delay(100).ConfigureAwait(false);
             stack.Bridge.FireVoiceState(777, 555, "vsess");
             stack.Bridge.FireVoiceServer(777, "tok", "127.0.0.1");
@@ -127,11 +124,11 @@ public sealed class LifecycleEdge
                 .WithMessageContaining("the node exploded");
             await Assert.That(failed!.StatusCode).IsEqualTo(500);
 
-            stack.Server.On(
-                "GET",
-                "/v4/decodetrack",
-                _ => new FakeRestResponse(429, """{"timestamp":0,"status":429}""", "250")
-            );
+            stack.Server.On("GET", "/v4/decodetrack", _ => new FakeRestResponse(
+                429,
+                """{"timestamp":0,"status":429}""",
+                "250"
+            ));
             var throttled = await Assert
                 .That(async () =>
                     await stack
@@ -140,7 +137,7 @@ public sealed class LifecycleEdge
                 )
                 .Throws<RestException>();
             await Assert.That(throttled!.StatusCode).IsEqualTo(429);
-            await Assert.That(throttled!.RetryAfter).IsEqualTo(TimeSpan.FromSeconds(250));
+            await Assert.That(throttled.RetryAfter).IsEqualTo(TimeSpan.FromSeconds(250));
         }
         finally
         {
@@ -205,7 +202,7 @@ public sealed class LifecycleEdge
         extension2.AddNode(node2);
         await extension2.ConnectAllNodesAsync().ConfigureAwait(false);
         await Assert
-            .That(() => extension2.Dispose())
+            .That(extension2.Dispose)
             .Throws<InvalidOperationException>()
             .WithMessageContaining("sync dispose boom");
         server2.Dispose();
@@ -267,13 +264,9 @@ public sealed class LifecycleEdge
         hostileExtension.AddNode(hostileNode);
         await hostileExtension.ConnectAllNodesAsync().ConfigureAwait(false);
         await Assert.That(hostileNode.IsReady).IsTrue();
-        var sawFailure = false;
-        for (var i = 0; i < 30 && !sawFailure; i++)
-        {
-            await Task.Delay(100).ConfigureAwait(false);
-            sawFailure = reported.Task.IsCompleted;
-        }
-        await Assert.That(sawFailure).IsTrue();
+        await Assert
+            .That(() => reported.Task.IsCompleted)
+            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(3));
         await hostileExtension.DisposeAsync().ConfigureAwait(false);
         hostile.Dispose();
     }
@@ -297,7 +290,7 @@ public sealed class LifecycleEdge
         );
         extension.AddNode(node);
         var order = new List<string>();
-        var lateStats = new TaskCompletionSource<Nyra.EventArgs.NodeStatsEventArgs>(
+        var lateStats = new TaskCompletionSource<EventArgs.NodeStatsEventArgs>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         node.Ready += (_, _) =>
@@ -342,55 +335,58 @@ public sealed class LifecycleEdge
     [Test]
     public async Task OrphanSweep()
     {
-        var destroyed = new List<string>();
+        var destroyed = new ConcurrentQueue<string>();
         var mode = 0;
         var stack = await StartAsync().ConfigureAwait(false);
         try
         {
             await ConnectGuildAsync(stack.Bridge, stack.Node, stack.Server).ConfigureAwait(false);
-            stack.Server.On(
-                "GET",
-                "/v4/sessions/fake-session/players",
-                _ => new FakeRestResponse(
-                    200,
-                    """[{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}},{"guildId":"888","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}]"""
-                )
-            );
-            stack.Server.On(
-                "DELETE",
-                GhostPath,
-                _ =>
+            stack.Server.On("GET", "/v4/sessions/fake-session/players", _ => new FakeRestResponse(
+                200,
+                """[{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}},{"guildId":"888","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}]"""
+            ));
+            stack.Server.On("DELETE", GhostPath, _ =>
+            {
+                destroyed.Enqueue("888");
+                return mode switch
                 {
-                    destroyed.Add("888");
-                    return mode switch
-                    {
-                        1 => new FakeRestResponse(404, string.Empty),
-                        2 => new FakeRestResponse(500, "destroy exploded"),
-                        _ => new FakeRestResponse(204, string.Empty),
-                    };
-                }
-            );
+                    1 => new FakeRestResponse(404, string.Empty),
+                    2 => new FakeRestResponse(500, "destroy exploded"),
+                    _ => new FakeRestResponse(204, string.Empty),
+                };
+            });
 
             await stack.Server.DropConnectionAsync(1000, "orphan test drop").ConfigureAwait(false);
             var resumedAgain = new TaskCompletionSource<bool>();
-            stack.Node.Connected += (_, args) =>
+            stack.Node.Connected += (_, _) =>
             {
                 resumedAgain.TrySetResult(true);
                 return Task.CompletedTask;
             };
             await resumedAgain.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-            for (var i = 0; i < 40 && destroyed.Count == 0; i++)
-                await Task.Delay(100).ConfigureAwait(false);
-            await Assert.That(destroyed.Count).IsEqualTo(1);
+            await Assert
+                .That(() => destroyed.Count)
+                .WaitsFor(assert => assert.IsEqualTo(1), TimeSpan.FromSeconds(4));
 
             mode = 1;
             await stack.Server.DropConnectionAsync(1000, "orphan 404 drop").ConfigureAwait(false);
-            await Task.Delay(1500).ConfigureAwait(false);
+            await Assert
+                .That(() => destroyed.Count)
+                .WaitsFor(assert => assert.IsEqualTo(2), TimeSpan.FromSeconds(5));
             await Assert.That(stack.Node.IsReady).IsTrue();
 
+            var sweepFailed = new TaskCompletionSource<Exception>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            stack.Node.Error += (_, e) =>
+            {
+                if (e.Exception is RestException { StatusCode: 500 })
+                    sweepFailed.TrySetResult(e.Exception);
+                return Task.CompletedTask;
+            };
             mode = 2;
             await stack.Server.DropConnectionAsync(1000, "orphan 500 drop").ConfigureAwait(false);
-            await Task.Delay(1500).ConfigureAwait(false);
+            await sweepFailed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
             await Assert.That(stack.Node.IsReady).IsTrue();
             await Assert.That(destroyed.Count).IsEqualTo(3);
         }
@@ -501,10 +497,8 @@ public sealed class LifecycleEdge
         var stack = await StartAsync().ConfigureAwait(false);
         try
         {
-            stack.Server.OnRaw(
-                "GET",
-                "/v4/loadstream",
-                (_, stream) => WriteTruncatedReplyAsync(stream, "500 Internal Server Error")
+            stack.Server.OnRaw("GET", "/v4/loadstream", (_, stream) =>
+                WriteTruncatedReplyAsync(stream, "500 Internal Server Error")
             );
 
             var truncated = await Assert
@@ -522,87 +516,6 @@ public sealed class LifecycleEdge
                 )
                 .Throws<RestException>();
             await Assert.That(truncated!.StatusCode).IsEqualTo(500);
-        }
-        finally
-        {
-            await stack.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-
-    [Test]
-    public async Task FilterResendEcho()
-    {
-        const string divergentEcho =
-            """{"guildId":"777","track":null,"volume":100,"paused":false,"filters":{"timescale":{"speed":2.0,"rate":1.0,"pitch":1.0}},"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}""";
-        const string trackStart =
-            """{"op":"event","guildId":"777","type":"TrackStartEvent","track":null}""";
-        static int Patches(FakeNodeServer server) =>
-            server.RestCalls.Count(call =>
-                call.Method == "PATCH"
-                && call.Path == PlayerPath
-                && call.Body is { } body
-                && body.Contains("\"speed\":1.5", StringComparison.Ordinal)
-            );
-
-        var stack = await StartAsync().ConfigureAwait(false);
-        try
-        {
-            var connection = await ConnectGuildAsync(stack.Bridge, stack.Node, stack.Server)
-                .ConfigureAwait(false);
-            stack.Server.On("PATCH", PlayerPath, _ => new FakeRestResponse(200, divergentEcho));
-            await connection
-                .Filters.AddAsync(new Nyra.Entities.Filters.TimescaleFilter { Speed = 1.5 })
-                .ConfigureAwait(false);
-            await Assert.That(Patches(stack.Server)).IsEqualTo(1);
-
-            await stack.Server.PushAsync(trackStart).ConfigureAwait(false);
-            await Assert
-                .That(() => Patches(stack.Server) == 2)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await Assert.That(stack.Node.IsReady).IsTrue();
-
-            var second = await StartAsync().ConfigureAwait(false);
-            try
-            {
-                var guild = await ConnectGuildAsync(second.Bridge, second.Node, second.Server)
-                    .ConfigureAwait(false);
-                var parked = new TaskCompletionSource<Exception>(
-                    TaskCreationOptions.RunContinuationsAsynchronously
-                );
-                second.Node.Error += (_, args) =>
-                {
-                    parked.TrySetResult(args.Exception);
-                    return Task.CompletedTask;
-                };
-                second.Server.On(
-                    "PATCH",
-                    PlayerPath,
-                    _ => new FakeRestResponse(200, divergentEcho)
-                );
-                await guild
-                    .Filters.AddAsync(new Nyra.Entities.Filters.TimescaleFilter { Speed = 1.5 })
-                    .ConfigureAwait(false);
-                second.Server.On(
-                    "PATCH",
-                    PlayerPath,
-                    _ => new FakeRestResponse(429, """{"timestamp":0,"status":429}""", "30")
-                );
-                await second.Server.PushAsync(trackStart).ConfigureAwait(false);
-                var reported = await parked
-                    .Task.WaitAsync(TimeSpan.FromSeconds(5))
-                    .ConfigureAwait(false);
-                await Assert.That(reported.InnerException).IsTypeOf<RestException>();
-                var afterParking = Patches(second.Server);
-
-                await second.Server.PushAsync(trackStart).ConfigureAwait(false);
-                await Task.Delay(500).ConfigureAwait(false);
-                await Assert.That(Patches(second.Server)).IsEqualTo(afterParking);
-                await Assert.That(second.Node.IsReady).IsTrue();
-            }
-            finally
-            {
-                await second.DisposeAsync().ConfigureAwait(false);
-            }
         }
         finally
         {
@@ -678,24 +591,16 @@ public sealed class LifecycleEdge
         var stack = await StartAsync(time: time).ConfigureAwait(false);
         try
         {
-            stack.Server.On(
-                "GET",
-                "/v4/decodetrack",
-                _ =>
-                {
-                    stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
-                    return new FakeRestResponse(200, "{}");
-                }
-            );
-            stack.Server.On(
-                "GET",
-                "/v4/loadstream",
-                _ =>
-                {
-                    stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
-                    return new FakeRestResponse(200, "audio");
-                }
-            );
+            stack.Server.On("GET", "/v4/decodetrack", _ =>
+            {
+                stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
+                return new FakeRestResponse(200, "{}");
+            });
+            stack.Server.On("GET", "/v4/loadstream", _ =>
+            {
+                stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
+                return new FakeRestResponse(200, "audio");
+            });
             async Task Decode() =>
                 await Assert
                     .That(async () =>
@@ -757,7 +662,7 @@ public sealed class LifecycleEdge
     {
         var token = new BotToken("MTIz.ab.cd");
         var shard = new GatewayClient(token);
-        var registryField = typeof(Nyra.NetCord.GatewayClientExtensions).GetField(
+        var registryField = typeof(NetCord.GatewayClientExtensions).GetField(
             "Extensions",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
         );
@@ -774,23 +679,21 @@ public sealed class LifecycleEdge
             registry!.Remove(shard);
             registry.Add(shard, stack.Extension);
 
-            var stateType =
-                typeof(ShardedGatewayClient).GetNestedType(
-                    "State",
-                    System.Reflection.BindingFlags.NonPublic
-                ) ?? throw new MissingMemberException("ShardedGatewayClient.State");
-            var state = System.Activator.CreateInstance(stateType)!;
+            var stateType = typeof(ShardedGatewayClient).GetNestedType(
+                "State",
+                System.Reflection.BindingFlags.NonPublic
+            ) ?? throw new MissingMemberException("ShardedGatewayClient.State");
+            var state = Activator.CreateInstance(stateType)!;
             stateType.GetProperty("Clients")!.SetValue(state, new[] { shard });
             var sharded = new ShardedGatewayClient(token);
             Reflect.Field(sharded, "_state", state);
 
             var logger = new RecordingLogger();
-            var extension = Nyra.NetCord.GatewayClientExtensions.UseNyra(sharded, logger);
+            var extension = NetCord.GatewayClientExtensions.UseNyra(sharded, logger);
             await Assert.That(extension).IsNotNull();
-            await Assert.That(extension!.IsDisposed).IsFalse();
+            await Assert.That(extension.IsDisposed).IsFalse();
             await Assert.That(logger.Warnings).IsGreaterThanOrEqualTo(1);
-            if (extension is not null)
-                await extension.DisposeAsync().ConfigureAwait(false);
+            await extension.DisposeAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -802,11 +705,11 @@ public sealed class LifecycleEdge
     public async Task DspRemove()
     {
         await Assert
-            .That(() => Nyra.DSharpPlus.DiscordClientExtensions.RemoveNyra(null!))
+            .That(() => DSharpPlus.DiscordClientExtensions.RemoveNyra(null!))
             .Throws<ArgumentNullException>()
             .WithParameterName("client");
 
-        var registryField = typeof(Nyra.DSharpPlus.DiscordClientExtensions).GetField(
+        var registryField = typeof(DSharpPlus.DiscordClientExtensions).GetField(
             "Extensions",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
         );
@@ -823,7 +726,7 @@ public sealed class LifecycleEdge
             var dspClient = Reflect.New<DspClient>();
             registry!.Remove(dspClient);
             registry.Add(dspClient, stack.Extension);
-            Nyra.DSharpPlus.DiscordClientExtensions.RemoveNyra(dspClient);
+            DSharpPlus.DiscordClientExtensions.RemoveNyra(dspClient);
             await Assert.That(stack.Extension.IsDisposed).IsTrue();
         }
         finally
@@ -851,9 +754,10 @@ public sealed class LifecycleEdge
         );
         extension.AddNode(node);
         var connectAll = extension.ConnectAllNodesAsync();
-        await Task.Delay(2500).ConfigureAwait(false);
+        await Assert
+            .That(() => Volatile.Read(ref server.WebsocketConnections))
+            .WaitsFor(assert => assert.IsGreaterThanOrEqualTo(2), TimeSpan.FromSeconds(5));
         await Assert.That(node.IsReady).IsFalse();
-        await Assert.That(server.WebsocketConnections).IsGreaterThanOrEqualTo(2);
         await extension.DisposeAsync().ConfigureAwait(false);
         try
         {

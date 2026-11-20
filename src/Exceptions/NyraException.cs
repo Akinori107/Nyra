@@ -1,10 +1,6 @@
 namespace Nyra.Exceptions;
 
 /// <summary>Base class of the errors raised by Nyra, catching it groups them all at once.</summary>
-/// <remarks>
-/// The concrete exceptions are sealed, the open base is the extension point, derive from it to raise custom
-/// Nyra-family errors.
-/// </remarks>
 public class NyraException : Exception
 {
     /// <summary>Creates the exception.</summary>

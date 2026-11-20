@@ -13,11 +13,8 @@ public sealed class EventPumpTests
         await Assert.That(pump.TryDispatch(() => Task.CompletedTask)).IsFalse();
         await Assert
             .That(
-                pump.TryDispatch<System.EventArgs>(
-                    null,
-                    new object(),
-                    System.EventArgs.Empty,
-                    (_, _) => Task.CompletedTask
+                pump.TryDispatch(null, new object(), System.EventArgs.Empty, (_, _) =>
+                    Task.CompletedTask
                 )
             )
             .IsFalse();
@@ -218,7 +215,9 @@ public sealed class EventPumpTests
         armed.TryDispatch(() => gate.Task);
         for (var i = 0; i < 65; i++)
             armed.TryDispatch(() => Task.CompletedTask);
-        await Assert.That(ReferenceEquals(armed.Logger, logger)).IsTrue();
+        await Assert
+            .That(logger.Messages.Any(message => message.Contains("Event backlog of pump-armed")))
+            .IsTrue();
 
         gate.SetResult();
         await armed.CompleteAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);

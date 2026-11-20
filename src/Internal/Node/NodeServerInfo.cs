@@ -76,11 +76,9 @@ internal sealed class NodeServerInfo
                 $"The server at {_node.Endpoint} did not report a version."
             );
 
+        var minimum = info.IsNodeLink ? NodeVersion.MinimumNodeLink : NodeVersion.MinimumLavalink;
         if (info.Version is { } version)
         {
-            var minimum = info.IsNodeLink
-                ? NodeVersion.MinimumNodeLink
-                : NodeVersion.MinimumLavalink;
             if (version < minimum)
             {
                 var software = info.IsNodeLink ? "NodeLink" : "Lavalink";
@@ -97,9 +95,7 @@ internal sealed class NodeServerInfo
                     "Node {NodeName} reported a version ('{RawVersion}') the library cannot parse, the compatibility floor was skipped. Dev builds report a commit hash instead; if this is a versioned fork, verify it meets {Minimum}.",
                     _node.Name,
                     Node.LogSafe(info.RawVersion),
-                    info.IsNodeLink
-                        ? NodeVersion.MinimumNodeLink.ToString()
-                        : NodeVersion.MinimumLavalink.ToString()
+                    minimum.ToString()
                 );
             }
             catch { }

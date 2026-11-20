@@ -43,7 +43,7 @@ internal sealed class MixRest
             .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         return RestClient.RequireNoNullElements(
-            _rest.Deserialize<MixLayerCollection>(json, path, options)?.Mixes ?? [],
+            RestClient.Deserialize<MixLayerCollection>(json, path, options)?.Mixes ?? [],
             path
         );
     }
