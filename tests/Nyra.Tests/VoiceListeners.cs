@@ -315,6 +315,26 @@ public sealed class VoiceListeners
     }
 
     [Test]
+    public async Task StartsPlayingWhileAlreadyAlonePausesTheNewTrack()
+    {
+        var rig = await StartAsync(Pause).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await Assert.That(rig.Connection.Listeners).IsEqualTo(0);
+            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
+
+            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
+            await Assert
+                .That(
+                    rig.Server.RestCalls.Any(call =>
+                        call.Body?.Contains("\"paused\":true", StringComparison.Ordinal) == true
+                    )
+                )
+                .IsTrue();
+        }
+    }
+
+    [Test]
     public async Task APauseByTheAppIsNotResumed()
     {
         var rig = await StartAsync(Pause, 1).ConfigureAwait(false);
