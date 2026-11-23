@@ -993,7 +993,14 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
+        var previousTrack = CurrentTrack;
         Playback.OnTrackStart(eventArgs);
+        if (
+            Node.Options.PauseWhenAlone
+            && CurrentTrack is { } started
+            && !IsSameTrack(previousTrack, started)
+        )
+            ReapplyListeners();
 
         Dispatch(TrackStarted, eventArgs);
     }
@@ -1309,7 +1316,14 @@ public sealed class GuildConnection
             Node.Registry.DestroyPlayerExclusivelyAsync(this, CancellationToken.None)
                 .ObserveFaults(Node.HandleError);
 
+        var previousTrack = CurrentTrack;
         Playback.Capture(player, requestTick, startMilliseconds);
+        if (
+            Node.Options.PauseWhenAlone
+            && CurrentTrack is { } captured
+            && !IsSameTrack(previousTrack, captured)
+        )
+            ReapplyListeners();
     }
 
     internal void ClearState()
