@@ -48,8 +48,6 @@ public sealed class LoopAndVoiceCloseLavalink
         var bridge = new FakeBridge();
         var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(5));
         var wait = coordinator.WaitForUpdatesAsync(999, 555, bridge, CancellationToken.None);
-        _ = wait;
-        Thread.Sleep(150);
 
         coordinator.FailPendingGuildRemoval(999);
         var refused = coordinator.HandleVoiceServerUpdate(
@@ -58,6 +56,9 @@ public sealed class LoopAndVoiceCloseLavalink
         );
 
         await Assert.That(refused).IsFalse();
+        await Assert
+            .That(async () => await wait.ConfigureAwait(false))
+            .Throws<Exceptions.VoiceHandshakeException>();
     }
 
     [Test]
