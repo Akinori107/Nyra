@@ -57,6 +57,8 @@ public sealed class VoiceListeners
 
         public Action LosePlayer { get; init; } = () => { };
 
+        public Action<string> SeedPlayerTrack { get; init; } = _ => { };
+
         public bool Connected => Node.GetConnection(777) is not null;
 
         public async ValueTask DisposeAsync()
@@ -147,6 +149,11 @@ public sealed class VoiceListeners
             LosePlayer = () =>
             {
                 current = "null";
+                paused = false;
+            },
+            SeedPlayerTrack = id =>
+            {
+                current = TrackJson(id);
                 paused = false;
             },
         };
@@ -324,6 +331,31 @@ public sealed class VoiceListeners
             await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
 
             await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
+            await Assert
+                .That(
+                    rig.Server.RestCalls.Any(call =>
+                        call.Body?.Contains("\"paused\":true", StringComparison.Ordinal) == true
+                    )
+                )
+                .IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task TrackStartEventWhileAlreadyAlonePausesTheNewTrack()
+    {
+        var rig = await StartAsync(Pause).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.SeedPlayerTrack("event");
+            await rig
+                .Server.PushAsync(
+                    $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{TrackJson("event")}}}"""
+                )
+                .ConfigureAwait(false);
+
+            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
+            await Assert.That(rig.Connection.CurrentTrack?.Info.Identifier).IsEqualTo("event");
             await Assert
                 .That(
                     rig.Server.RestCalls.Any(call =>
