@@ -9,6 +9,4 @@ internal sealed class QueueNotes
     internal Track? Advanced { get; set; }
 
     internal bool Ended { get; set; }
-
-    internal bool NextChanged { get; set; }
 }

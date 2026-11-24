@@ -144,11 +144,6 @@ public sealed class QueuePlayback
             rig.Log.Enqueue("failed:" + e.Track.Info.Identifier);
             return Task.CompletedTask;
         };
-        queue.NextChanged += (_, e) =>
-        {
-            rig.Log.Enqueue("next:" + (e.Next?.Info.Identifier ?? "none"));
-            return Task.CompletedTask;
-        };
         queue.HandlerError += (_, e) =>
         {
             rig.Log.Enqueue("error:" + e.Exception.Message);
@@ -399,26 +394,6 @@ public sealed class QueuePlayback
                 .ConfigureAwait(false);
 
             await Assert.That(rig.Queue.TotalDuration).IsEqualTo(TimeSpan.FromSeconds(100));
-        }
-    }
-
-    [Test]
-    public async Task NextChangedFollowsTheHeadOfTheQueue()
-    {
-        var rig = await StartAsync().ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
-            await rig.Queue.RemoveAsync(0).ConfigureAwait(false);
-
-            await Assert
-                .That(
-                    string.Join(
-                        ",",
-                        rig.Log.Where(entry => entry.StartsWith("next:", StringComparison.Ordinal))
-                    )
-                )
-                .IsEqualTo("next:b,next:none");
         }
     }
 
@@ -703,7 +678,6 @@ public sealed class QueuePlayback
 
             await Assert.That(rig.CurrentId).IsEqualTo("a");
             await Assert.That(rig.Queue.Upcoming.Count).IsEqualTo(0);
-            await Assert.That(rig.Log.Contains("next:none")).IsTrue();
         }
     }
 
