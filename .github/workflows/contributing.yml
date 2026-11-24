@@ -1,0 +1,83 @@
+name: Contributing
+on:
+  pull_request:
+    branches: [dev, main]
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+concurrency:
+  group: contributing-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    name: PR
+    if: ${{ github.event.pull_request.user.login != 'renovate[bot]' && !(github.base_ref == 'main' && github.head_ref == 'dev' && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reject PRs to main
+        if: github.base_ref == 'main'
+        run: |
+          echo '::error title=Wrong base branch::Contributions go to dev branch'
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: github.base_ref == 'dev'
+        with:
+          fetch-depth: 0
+      - name: Check PR title and commit subjects
+        if: github.base_ref == 'dev'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          pattern='^(feat|fix|docs|refactor|chore)!?: [^[:space:]]'
+          failed=0
+
+          if [[ ! "$PR_TITLE" =~ $pattern ]]; then
+            printf '::error title=Invalid PR title::Got "%s". Title must start with a valid prefix\n' "$PR_TITLE"
+            failed=1
+          fi
+
+          commits=$(git log --no-merges --format='%h%x09%s' "$BASE_SHA..$HEAD_SHA")
+          while IFS=$'\t' read -r sha subject; do
+            [[ -n "$sha" ]] || continue
+            if [[ ! "$subject" =~ $pattern ]]; then
+              printf '::error title=Invalid commit subject::%s %s\n' "$sha" "$subject"
+              failed=1
+            fi
+          done <<< "$commits"
+
+          if [[ "$failed" == 1 ]]; then
+            echo '::warning title=Allowed prefixes::Use feat:, fix:, docs:, refactor:, or chore:. Put ! before the colon for breaking changes.'
+          fi
+          exit "$failed"
+      - name: Check PR description follows the template
+        if: ${{ !cancelled() && github.base_ref == 'dev' }}
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          body = (os.environ.get("PR_BODY") or "").replace("\r\n", "\n")
+          body = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+
+          failed = False
+          for name in ["Purpose", "Details", "Checks", "Server Version"]:
+              match = re.search(
+                  rf"^## {re.escape(name)}[ \t]*(?:\n|\Z)(.*?)(?=^## |\Z)", body, re.M | re.S
+              )
+              if match is None:
+                  print(f"::error title=Template violated::Missing section '## {name}'")
+                  failed = True
+              elif name in ("Purpose", "Details") and not match.group(1).strip():
+                  print(f"::error title=Template violated::Section '## {name}' is empty")
+                  failed = True
+
+          if failed:
+              print("::warning title=PR template::Fill the sections from .github/PULL_REQUEST_TEMPLATE.md")
+              sys.exit(1)
+          PY
