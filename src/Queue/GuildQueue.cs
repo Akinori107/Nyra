@@ -77,9 +77,6 @@ public sealed class GuildQueue
     /// <remarks>The loop mode goes back to <see cref="LoopMode.Off"/>.</remarks>
     public event AsyncEventHandler<QueueEndedEventArgs>? Ended;
 
-    /// <summary>Raised when the track that plays after the current one changed.</summary>
-    public event AsyncEventHandler<QueueNextChangedEventArgs>? NextChanged;
-
     /// <summary>Raised when a handler of another event of this queue threw.</summary>
     /// <remarks>
     /// The other handlers of that event still run. When nothing handles this event, or a handler of this event
@@ -296,7 +293,7 @@ public sealed class GuildQueue
                     resume = !handedOver.Resent && !queue._state.Upcoming.IsEmpty;
                 }
                 else
-                    queue.Reset(QueueState.Empty, notes);
+                    queue.Reset(QueueState.Empty);
             }
         }
         finally
@@ -379,7 +376,7 @@ public sealed class GuildQueue
                 }
             }
 
-            Commit(queued, notes);
+            _state = queued;
         }
         finally
         {
@@ -504,7 +501,7 @@ public sealed class GuildQueue
         {
             EnsureAttached();
 
-            Reset(QueueState.Empty with { History = _state.History }, notes);
+            Reset(QueueState.Empty with { History = _state.History });
             await Connection.StopAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -532,7 +529,7 @@ public sealed class GuildQueue
                 return null;
 
             await _preloader.PlayAsync(play, after, cancellationToken).ConfigureAwait(false);
-            Commit(after, notes);
+            _state = after;
             notes.Advanced = started = play;
         }
         finally
@@ -557,7 +554,7 @@ public sealed class GuildQueue
             EnsureAttached();
 
             var (after, value) = change(_state);
-            Commit(after, notes);
+            _state = after;
             result = value;
         }
         finally
@@ -577,17 +574,9 @@ public sealed class GuildQueue
             );
     }
 
-    private void Commit(QueueState after, QueueNotes notes)
+    private void Reset(QueueState after)
     {
-        var before = _state;
         _state = after;
-        if (!ReferenceEquals(before.Head, after.Head))
-            notes.NextChanged = new QueueNextChangedEventArgs(after.Head);
-    }
-
-    private void Reset(QueueState after, QueueNotes notes)
-    {
-        Commit(after, notes);
         _loop = LoopMode.Off;
         Interlocked.Exchange(ref _expectingSuccessor, 0);
         _preloader.Forget();
@@ -611,9 +600,6 @@ public sealed class GuildQueue
             await Ended
                 .RaiseAsync(this, new QueueEndedEventArgs(), _handlerError)
                 .ConfigureAwait(false);
-
-        if (notes.NextChanged is { } changed && ReferenceEquals(changed.Next, _state.Head))
-            await NextChanged.RaiseAsync(this, changed, _handlerError).ConfigureAwait(false);
 
         await preload.ConfigureAwait(false);
     }
@@ -664,7 +650,7 @@ public sealed class GuildQueue
 
             if (play is null)
             {
-                Commit(after, notes);
+                _state = after;
                 _loop = LoopMode.Off;
                 if (Autoplay && before.Current is { } last)
                     autoplay = (last, after);
@@ -681,13 +667,13 @@ public sealed class GuildQueue
                 }
                 catch (Exception exception)
                 {
-                    Commit(before.Retire(ours && failed, Policy), notes);
+                    _state = before.Retire(ours && failed, Policy);
                     failure = exception;
                 }
 
                 if (failure is null)
                 {
-                    Commit(after, notes);
+                    _state = after;
                     if (!ReferenceEquals(play, before.Current))
                         notes.Advanced = play;
                 }
@@ -809,7 +795,7 @@ public sealed class GuildQueue
             )
                 return;
 
-            Commit(_state.ServerAdvanced(Policy), notes);
+            _state = _state.ServerAdvanced(Policy);
             Interlocked.Exchange(ref _expectingSuccessor, 1);
             _preloader.Forget();
             notes.Advanced = _state.Current;
@@ -834,7 +820,7 @@ public sealed class GuildQueue
                 var after = before.Reconcile(args.Track);
                 if (!ReferenceEquals(before, after))
                 {
-                    Commit(after, notes);
+                    _state = after;
                     notes.Advanced = after.Current;
                 }
             }
@@ -878,7 +864,7 @@ public sealed class GuildQueue
             if (_state.Current is null)
                 resume = !_state.Upcoming.IsEmpty;
             else
-                Reset(QueueState.Empty, notes);
+                Reset(QueueState.Empty);
         }
         finally
         {

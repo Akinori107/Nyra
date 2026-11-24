@@ -29,7 +29,7 @@ The next track is picked ahead, so `Upcoming[0]` is always what plays next and w
 - `MaxLength` caps the upcoming tracks, an enqueue past it throws and adds nothing.
 - `HistoryLimit` is how many played tracks `PreviousAsync` can go back to.
 
-Events: `Advanced` when a new track starts, `Ended` when the last track ended and the loop mode went back to `Off`, `NextChanged` when the track after the current one changed and `TrackFailed` when a track was skipped because it could not play. An exception in your handler goes to `HandlerError` and does not stop the queue.
+Events: `Advanced` when a new track starts, `Ended` when the last track ended and the loop mode went back to `Off` and `TrackFailed` when a track was skipped because it could not play. An exception in your handler goes to `HandlerError` and does not stop the queue.
 
 `Current`, `Upcoming` and `History` hold the same `Track` instances, so to remember who asked for a track, use them as the keys of your own map, like a `ConditionalWeakTable<Track, ...>`.
 
