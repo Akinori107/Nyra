@@ -40,6 +40,27 @@ public sealed class CoreEqualityAndVersion
         }
     }
 
+    private sealed class TickProvider(long frequency, long timestamp) : TimeProvider
+    {
+        public override long TimestampFrequency => frequency;
+
+        public override long GetTimestamp() => timestamp;
+    }
+
+    [Test]
+    [Arguments(1500L, 3000L, 2000L)]
+    [Arguments(500L, 1000L, 2000L)]
+    [Arguments(32768L, 32768L, 1000L)]
+    public async Task ClockConversionUsesTheEntireFrequency(
+        long frequency,
+        long timestamp,
+        long milliseconds
+    )
+    {
+        var clock = new TickProvider(frequency, timestamp);
+        await Assert.That(clock.GetMilliseconds()).IsEqualTo(milliseconds);
+    }
+
     [Test]
     public async Task ContentEqualityCases()
     {

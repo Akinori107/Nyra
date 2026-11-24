@@ -3,7 +3,7 @@ namespace Nyra.Internal;
 internal static class TimeProviderExtensions
 {
     internal static long GetMilliseconds(this TimeProvider provider) =>
-        provider.GetTimestamp() / Math.Max(1, provider.TimestampFrequency / 1000);
+        provider.GetElapsedTime(0).Ticks / TimeSpan.TicksPerMillisecond;
 }
 
 internal sealed class TimeoutLink : IDisposable
