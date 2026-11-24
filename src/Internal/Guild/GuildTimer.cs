@@ -21,16 +21,7 @@ internal sealed class GuildTimer(TimeProvider time, Action fired)
                 Timeout.InfiniteTimeSpan,
                 Timeout.InfiniteTimeSpan
             );
-            try
-            {
-                if (!_timer.Change(due, Timeout.InfiniteTimeSpan))
-                    DisposeTimer();
-            }
-            catch
-            {
-                DisposeTimer();
-                throw;
-            }
+            _timer.Change(due, Timeout.InfiniteTimeSpan);
         }
     }
 

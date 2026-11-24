@@ -8,8 +8,6 @@ public sealed class GuildTimerTests
     {
         public List<QueuedTimer> Timers { get; } = [];
 
-        public int ChangeFailure { get; set; }
-
         public override ITimer CreateTimer(
             TimerCallback callback,
             object? state,
@@ -17,21 +15,17 @@ public sealed class GuildTimerTests
             TimeSpan period
         )
         {
-            var timer = new QueuedTimer(callback, state, ChangeFailure);
+            var timer = new QueuedTimer(callback, state);
             Timers.Add(timer);
             return timer;
         }
     }
 
-    private sealed class QueuedTimer(TimerCallback callback, object? state, int changeFailure)
-        : ITimer
+    private sealed class QueuedTimer(TimerCallback callback, object? state) : ITimer
     {
         public bool Disposed { get; private set; }
 
-        public bool Change(TimeSpan dueTime, TimeSpan period) =>
-            changeFailure == 2
-                ? throw new ArgumentOutOfRangeException(nameof(dueTime))
-                : !Disposed && changeFailure == 0;
+        public bool Change(TimeSpan dueTime, TimeSpan period) => !Disposed;
 
         public void Dispose() => Disposed = true;
 
@@ -65,37 +59,6 @@ public sealed class GuildTimerTests
             current.RunQueuedCallback();
             await Assert.That(count).IsEqualTo(1);
             await Assert.That(current.Disposed).IsTrue();
-        }
-        finally
-        {
-            timer.Stop();
-        }
-    }
-
-    [Test]
-    [Arguments(1)]
-    [Arguments(2)]
-    public async Task FailedArmDisposesTimerAndAllowsRetry(int failure)
-    {
-        var time = new QueuedTimerProvider { ChangeFailure = failure };
-        var count = 0;
-        var timer = new GuildTimer(time, () => count++);
-        try
-        {
-            if (failure == 2)
-                await Assert
-                    .That(() => timer.Arm(TimeSpan.FromMinutes(1)))
-                    .Throws<ArgumentOutOfRangeException>();
-            else
-                timer.Arm(TimeSpan.FromMinutes(1));
-
-            await Assert.That(time.Timers[0].Disposed).IsTrue();
-            time.ChangeFailure = 0;
-            timer.Arm(TimeSpan.FromMinutes(1));
-            time.Timers[0].RunQueuedCallback();
-            await Assert.That(count).IsEqualTo(0);
-            time.Timers[^1].RunQueuedCallback();
-            await Assert.That(count).IsEqualTo(1);
         }
         finally
         {
