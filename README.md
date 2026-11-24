@@ -70,6 +70,10 @@ Console.WriteLine($"{node.Name}: {(node.IsNodeLink ? "NodeLink" : "Lavalink")} {
 
 A few methods only work on one server and throw `NotSupportedException` on the other. `SetVolumeFilterAsync`, for example, throws on NodeLink, because NodeLink accepts the field but never applies it. An error is better than silently doing nothing.
 
+## Contributing
+
+PRs are welcome on the [`dev`](https://github.com/Akinori107/Nyra/tree/dev) branch. Read the [contributing guide](CONTRIBUTING.md) first.
+
 ## Example bot
 
 A slash-command bot lives in [`examples`](examples), with three files so you can try it out. It uses the Discord.Net adapter.
