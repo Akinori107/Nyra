@@ -285,24 +285,20 @@ internal sealed class RestClient
         await _slots.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            HttpResponseMessage reply;
-            using (var headerCts = new TimeoutLink(Node.Time, timeout, cancellationToken))
-                reply = await Http.SendAsync(
-                        request,
-                        HttpCompletionOption.ResponseHeadersRead,
-                        headerCts.Token
-                    )
-                    .ConfigureAwait(false);
-            using var response = reply;
-
-            using var bodyCts = new TimeoutLink(Node.Time, timeout, cancellationToken);
+            using var deadline = new TimeoutLink(Node.Time, timeout, cancellationToken);
+            using var response = await Http.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    deadline.Token
+                )
+                .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
                 var retryAfter = ReadRetryAfter(response, Node.Time);
                 var (body, bodyUnreadable) = await ReadErrorBodyAsync(
                         response.Content,
-                        bodyCts.Token
+                        deadline.Token
                     )
                     .ConfigureAwait(false);
                 throw new RestException((int)response.StatusCode, path, body, retryAfter)
@@ -312,7 +308,7 @@ internal sealed class RestClient
             }
 
             var statusCode = (int)response.StatusCode;
-            var bytes = await ReadBoundedAsync(response.Content, MaxBodyBytes, bodyCts.Token)
+            var bytes = await ReadBoundedAsync(response.Content, MaxBodyBytes, deadline.Token)
                 .ConfigureAwait(false);
             return bytes is null
                 ? throw new RestException(
