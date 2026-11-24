@@ -109,8 +109,9 @@ public sealed class NodeEventEdge
             .ConfigureAwait(false);
         await server.PushAsync(StatsJson).ConfigureAwait(false);
 
-        var statsRaised = statsSeen.Task.Wait(TimeSpan.FromSeconds(5));
-        await Assert.That(statsRaised).IsTrue();
+        await Assert
+            .That(await statsSeen.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
+            .IsTrue();
 
         await Assert
             .That(() =>
