@@ -74,6 +74,12 @@ public sealed class QueueAutoplay
                 current = TrackJson(body[start..body.IndexOf('"', start)]);
             }
 
+            if (
+                call.Body?.Contains("\"track\":{\"encoded\":null}", StringComparison.Ordinal)
+                == true
+            )
+                current = "null";
+
             return new FakeRestResponse(
                 200,
                 $$$"""{"guildId":"777","track":{{{current}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
@@ -117,6 +123,96 @@ public sealed class QueueAutoplay
                 StringComparison.Ordinal
             ) == true
         );
+
+    private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(10);
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task StoppingOrDisablingAutoplayDiscardsPendingRecommendation(bool stop)
+    {
+        var loading = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reply = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rig = await StartAsync(() =>
+            {
+                loading.TrySetResult();
+                reply.Task.WaitAsync(WaitLimit).GetAwaiter().GetResult();
+                return new FakeRestResponse(200, Playlist("b"));
+            })
+            .ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.Queue.EnqueueAsync(Make("a")).ConfigureAwait(false);
+            var observed = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Queue.Connection.TrackFinished += (_, _) =>
+            {
+                observed.TrySetResult();
+                return Task.CompletedTask;
+            };
+
+            await PushEndAsync(rig, "a").ConfigureAwait(false);
+            try
+            {
+                await loading.Task.WaitAsync(WaitLimit).ConfigureAwait(false);
+                if (stop)
+                    await rig.Queue.StopAsync().ConfigureAwait(false);
+                else
+                    rig.Queue.Autoplay = false;
+            }
+            finally
+            {
+                reply.TrySetResult();
+            }
+
+            await observed.Task.WaitAsync(WaitLimit).ConfigureAwait(false);
+            await Assert.That(rig.Queue.Current).IsNull();
+            await Assert.That(rig.Queue.Connection.CurrentTrack).IsNull();
+            await Assert.That(rig.Log.Contains("advanced:b")).IsFalse();
+        }
+    }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task ObsoleteSkipRecommendationPreservesManualQueueBehavior(bool disable)
+    {
+        var loading = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reply = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rig = await StartAsync(() =>
+            {
+                loading.TrySetResult();
+                reply.Task.WaitAsync(WaitLimit).GetAwaiter().GetResult();
+                return new FakeRestResponse(200, Playlist("b"));
+            })
+            .ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.Queue.EnqueueAsync(Make("a")).ConfigureAwait(false);
+            var skip = rig.Queue.SkipAsync();
+            try
+            {
+                await loading.Task.WaitAsync(WaitLimit).ConfigureAwait(false);
+                if (disable)
+                    rig.Queue.Autoplay = false;
+                else
+                    await rig.Queue.EnqueueAsync(Make("c")).ConfigureAwait(false);
+            }
+            finally
+            {
+                reply.TrySetResult();
+            }
+
+            var skipped = await skip.WaitAsync(WaitLimit).ConfigureAwait(false);
+            await Assert.That(skipped?.Info.Identifier).IsEqualTo(disable ? null : "c");
+            await Assert.That(rig.Queue.Current?.Info.Identifier).IsEqualTo(disable ? "a" : "c");
+            await Assert
+                .That(rig.Queue.Connection.CurrentTrack?.Info.Identifier)
+                .IsEqualTo(disable ? "a" : "c");
+            await Assert.That(rig.Queue.Upcoming).IsEmpty();
+        }
+    }
 
     [Test]
     public async Task PlaysTheFirstRecommendationThatIsNotTheTrackItself()
