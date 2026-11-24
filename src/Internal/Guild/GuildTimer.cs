@@ -4,37 +4,40 @@ internal sealed class GuildTimer(TimeProvider time, Action fired)
 {
     private readonly Lock _lock = new();
     private ITimer? _timer;
-    private bool _armed;
+    private long _generation;
     private bool _stopped;
 
     internal void Arm(TimeSpan due)
     {
         lock (_lock)
         {
-            if (_armed || _stopped)
+            if (_timer is not null || _stopped)
                 return;
 
-            _timer ??= time.CreateTimer(
-                static state => ((GuildTimer)state!).Fire(),
-                this,
+            var generation = ++_generation;
+            _timer = time.CreateTimer(
+                _ => Fire(generation),
+                null,
                 Timeout.InfiniteTimeSpan,
                 Timeout.InfiniteTimeSpan
             );
-            _timer.Change(due, Timeout.InfiniteTimeSpan);
-            _armed = true;
+            try
+            {
+                if (!_timer.Change(due, Timeout.InfiniteTimeSpan))
+                    DisposeTimer();
+            }
+            catch
+            {
+                DisposeTimer();
+                throw;
+            }
         }
     }
 
     internal void Disarm()
     {
         lock (_lock)
-        {
-            if (!_armed)
-                return;
-
-            _timer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-            _armed = false;
-        }
+            DisposeTimer();
     }
 
     internal void Stop()
@@ -42,20 +45,25 @@ internal sealed class GuildTimer(TimeProvider time, Action fired)
         lock (_lock)
         {
             _stopped = true;
-            _armed = false;
-            _timer?.Dispose();
-            _timer = null;
+            DisposeTimer();
         }
     }
 
-    private void Fire()
+    private void DisposeTimer()
+    {
+        var timer = _timer;
+        _timer = null;
+        timer?.Dispose();
+    }
+
+    private void Fire(long generation)
     {
         lock (_lock)
         {
-            if (!_armed)
+            if (_timer is null || generation != _generation)
                 return;
 
-            _armed = false;
+            DisposeTimer();
         }
 
         fired();
