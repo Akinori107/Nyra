@@ -1,4 +1,5 @@
 using Nyra.Entities;
+using Nyra.EventArgs;
 
 namespace Nyra.Queue;
 
@@ -10,5 +11,5 @@ internal sealed class QueueNotes
 
     internal bool Ended { get; set; }
 
-    internal bool NextChanged { get; set; }
+    internal QueueNextChangedEventArgs? NextChanged { get; set; }
 }

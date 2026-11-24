@@ -364,31 +364,22 @@ public sealed class GuildQueue
                     $"The queue holds at most {_maxLength} upcoming tracks."
                 );
 
-            var previous = _state;
-            var queued = previous.Enqueue(copies, next, Policy);
-            Commit(queued, notes);
+            var queued = _state.Enqueue(copies, next, Policy);
 
             if (idle)
             {
                 var (after, play) = queued.Start(Policy);
                 if (play is not null)
                 {
-                    try
-                    {
-                        await _preloader
-                            .PlayAsync(play, after, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        _state = previous;
-                        throw;
-                    }
-
-                    Commit(after, notes);
+                    await _preloader
+                        .PlayAsync(play, after, cancellationToken)
+                        .ConfigureAwait(false);
+                    queued = after;
                     notes.Advanced = started = play;
                 }
             }
+
+            Commit(queued, notes);
         }
         finally
         {
@@ -591,7 +582,7 @@ public sealed class GuildQueue
         var before = _state;
         _state = after;
         if (!ReferenceEquals(before.Head, after.Head))
-            notes.NextChanged = true;
+            notes.NextChanged = new QueueNextChangedEventArgs(after.Head);
     }
 
     private void Reset(QueueState after, QueueNotes notes)
@@ -621,10 +612,8 @@ public sealed class GuildQueue
                 .RaiseAsync(this, new QueueEndedEventArgs(), _handlerError)
                 .ConfigureAwait(false);
 
-        if (notes.NextChanged)
-            await NextChanged
-                .RaiseAsync(this, new QueueNextChangedEventArgs(_state.Head), _handlerError)
-                .ConfigureAwait(false);
+        if (notes.NextChanged is { } changed && ReferenceEquals(changed.Next, _state.Head))
+            await NextChanged.RaiseAsync(this, changed, _handlerError).ConfigureAwait(false);
 
         await preload.ConfigureAwait(false);
     }

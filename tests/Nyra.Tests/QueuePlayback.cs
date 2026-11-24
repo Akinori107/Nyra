@@ -403,6 +403,44 @@ public sealed class QueuePlayback
     }
 
     [Test]
+    public async Task EnqueuingOneTrackOnAnIdleQueueDoesNotChangeNext()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a").ConfigureAwait(false);
+            await Assert.That(rig.CurrentId).IsEqualTo("a");
+            await Assert.That(rig.Queue.Upcoming).IsEmpty();
+            await Assert
+                .That(rig.Log.Any(entry => entry.StartsWith("next:", StringComparison.Ordinal)))
+                .IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task ReentrantAdvanceDoesNotAnnounceTheSameNextTwice()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.Advanced += async (_, args) =>
+            {
+                if (args.Track.Info.Identifier == "a")
+                    await rig.Queue.ClearAsync().ConfigureAwait(false);
+            };
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            await Assert
+                .That(
+                    string.Join(
+                        ",",
+                        rig.Log.Where(entry => entry.StartsWith("next:", StringComparison.Ordinal))
+                    )
+                )
+                .IsEqualTo("next:none");
+        }
+    }
+
+    [Test]
     public async Task NextChangedFollowsTheHeadOfTheQueue()
     {
         var rig = await StartAsync().ConfigureAwait(false);
