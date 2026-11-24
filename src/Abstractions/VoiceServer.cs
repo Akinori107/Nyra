@@ -8,4 +8,9 @@ namespace Nyra.Abstractions;
 /// <param name="Endpoint">
 /// The address of the voice server, the bare host Discord reports, with no scheme or port.
 /// </param>
-public readonly record struct VoiceServer(string Token, string Endpoint);
+public readonly record struct VoiceServer(string Token, string Endpoint)
+{
+    /// <summary>Formats the voice server for diagnostics without exposing its token.</summary>
+    /// <returns>The voice server's endpoint.</returns>
+    public override string ToString() => $"VoiceServer {{ Endpoint = {Endpoint} }}";
+}

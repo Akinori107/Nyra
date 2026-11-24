@@ -7,6 +7,40 @@ namespace Nyra.Tests;
 public sealed class CoreEqualityAndVersion
 {
     [Test]
+    public async Task CredentialDiagnosticsDoNotExposeSecrets()
+    {
+        const string secret = "fixture-secret";
+        const string visitor = "fixture-visitor";
+        var server = new Nyra.Abstractions.VoiceServer(secret, "voice.example.com");
+        var token = new YouTubeToken
+        {
+            AccessToken = secret,
+            TokenType = "Bearer",
+            ExpiresInSeconds = 3600,
+        };
+        var patch = new YouTubeConfigPatch(secret, visitor);
+        using (Assert.Multiple())
+        {
+            await Assert
+                .That(server.ToString().Contains(secret, StringComparison.Ordinal))
+                .IsFalse();
+            await Assert
+                .That(server.ToString().Contains(server.Endpoint, StringComparison.Ordinal))
+                .IsTrue();
+            await Assert
+                .That(token.ToString().Contains(secret, StringComparison.Ordinal))
+                .IsFalse();
+            await Assert.That(token.ToString().Contains("3600", StringComparison.Ordinal)).IsTrue();
+            await Assert
+                .That(patch.ToString().Contains(secret, StringComparison.Ordinal))
+                .IsFalse();
+            await Assert
+                .That(patch.ToString().Contains(visitor, StringComparison.Ordinal))
+                .IsFalse();
+        }
+    }
+
+    [Test]
     public async Task ContentEqualityCases()
     {
         List<string>? nullList = null;
