@@ -402,6 +402,26 @@ public sealed class QuerySurface
     }
 
     [Test]
+    public async Task EscapedUrlStartPreservesTheOriginalLoadIdentifier()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            ServeLoad(stack.Server);
+            const string url = "https://example.com/audio.mp3?t=1%3A23";
+            var result = await stack.Node.LoadTracksAsync(url).ConfigureAwait(false);
+            await Assert
+                .That(
+                    result is TrackLoaded { Track.StartPosition: { } start }
+                        && start == TimeSpan.FromSeconds(83)
+                )
+                .IsTrue();
+            var call = stack.Server.RestCalls.Last(c => c.Path == "/v4/loadtracks");
+            await Assert.That(call.Query).Contains("identifier=" + Uri.EscapeDataString(url));
+        }
+    }
+
+    [Test]
     public async Task UrlPositionsAndTrims()
     {
         var stack = await StartAsync().ConfigureAwait(false);

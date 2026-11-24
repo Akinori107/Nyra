@@ -35,10 +35,26 @@ internal static class UrlStartPosition
         return null;
     }
 
+    private const int MaxValueLength = 11;
+
     private static long? ParseValue(ReadOnlySpan<char> value)
     {
-        if (value.IsEmpty || value.Length > 11)
+        if (value.Length > MaxValueLength * 3)
             return null;
+
+        return value.Contains('%')
+            ? ParseDecodedValue(Uri.UnescapeDataString(value.ToString()))
+            : ParseDecodedValue(value);
+    }
+
+    private static long? ParseDecodedValue(ReadOnlySpan<char> value)
+    {
+        if (value.IsEmpty || value.Length > MaxValueLength)
+            return null;
+
+        foreach (var character in value)
+            if (!char.IsAsciiDigit(character) && character is not ('h' or 'm' or 's' or ':'))
+                return null;
 
         var colonCount = value.Count(':');
         if (colonCount > 0)

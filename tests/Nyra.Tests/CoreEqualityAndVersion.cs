@@ -181,6 +181,23 @@ public sealed class CoreEqualityAndVersion
     }
 
     [Test]
+    [Arguments("https://x?t=1%3A23", 83_000L)]
+    [Arguments("https://x?start=%39%30", 90_000L)]
+    [Arguments("https://x#t=1%68%32%6D%33%73", 3_723_000L)]
+    [Arguments("https://x?t=123%3A45%3A00", 445_500_000L)]
+    [Arguments("https://x?t=1%253A23", null)]
+    [Arguments("https://x?t=1%3A2%00", null)]
+    [Arguments("https://x?t=1%3A2%FF", null)]
+    [Arguments("https://x?t=1%3", null)]
+    [Arguments("https://x?t=1%GG&start=90", 90_000L)]
+    [Arguments("https://x?t=1%26start%3D90", null)]
+    [Arguments("https://x?t=%31%32%33%34%35%36%37%38%39%30%31%32", null)]
+    public async Task EscapedUrlStart(string url, long? milliseconds)
+    {
+        await Assert.That(UrlStartPosition.ParseMilliseconds(url)).IsEqualTo(milliseconds);
+    }
+
+    [Test]
     public async Task RoutePlanner()
     {
         var options = NyraJson.SerializerOptions;
