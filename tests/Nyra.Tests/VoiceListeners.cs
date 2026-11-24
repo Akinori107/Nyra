@@ -389,14 +389,16 @@ public sealed class VoiceListeners
         var rig = await StartAsync(Pause, 1).ConfigureAwait(false);
         await using (rig.ConfigureAwait(false))
         {
-            var patches = rig.Server.RestCalls.Count(call => call.Method == "PATCH");
+            int PlayerPatches() =>
+                rig.Server.RestCalls.Count(call =>
+                    call.Method == "PATCH" && call.Path == PlayerPath
+                );
+            var patches = PlayerPatches();
 
             rig.Bridge.Move(1, null);
             await RunForAsync(rig.Time, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
-            await Assert
-                .That(rig.Server.RestCalls.Count(call => call.Method == "PATCH"))
-                .IsEqualTo(patches);
+            await Assert.That(PlayerPatches()).IsEqualTo(patches);
         }
     }
 

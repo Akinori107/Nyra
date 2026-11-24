@@ -112,7 +112,7 @@ public sealed class FilterStateMachine
                     NyraJson.SerializerOptions
                 )!;
 
-            var staleTicket = GuildFilters.NextTicket() - 10;
+            var staleTicket = 0L;
             await filters
                 .CaptureServerFiltersAsync(
                     CapturePlayer("""{"tremolo":{"frequency":2,"depth":0.5}}"""),
