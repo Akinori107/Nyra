@@ -1,6 +1,6 @@
 # Contributing to Nyra
 
-Open PRs against the `dev` branch. For a big change, open an issue first to discuss it.
+Open PRs against the `dev` branch. For a big change, open an issue first to discuss it. Keep your branch up to date by rebasing on `dev`, not by merging it.
 
 ## Commits and PR titles
 
