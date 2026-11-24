@@ -417,18 +417,24 @@ public sealed class GuildQueue
             position == 1
             && Autoplay
             && Loop != LoopMode.Queue
-            && _state is { Upcoming.IsEmpty: true, Current: { } current }
-            && await RecommendAsync(current, cancellationToken).ConfigureAwait(false)
-                is { } recommended
+            && _state is { Upcoming.IsEmpty: true, Current: { } current } expected
         )
+        {
+            var recommended = await RecommendAsync(current, cancellationToken)
+                .ConfigureAwait(false);
             return await PlayChangeAsync(
                     state =>
-                        ReferenceEquals(state.Current, current) && state.Upcoming.IsEmpty
+                        ReferenceEquals(state, expected)
+                        && Autoplay
+                        && Loop != LoopMode.Queue
+                        && recommended is not null
+                        && GuildConnection.IsSameTrack(Connection.CurrentTrack, current)
                             ? (state with { Upcoming = [recommended] }).Skip(1, Policy)
-                            : state.Skip(position, Policy),
+                            : (state, null),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+        }
 
         return await PlayChangeAsync(state => state.Skip(position, Policy), cancellationToken)
             .ConfigureAwait(false);
@@ -651,7 +657,7 @@ public sealed class GuildQueue
     {
         var notes = new QueueNotes();
         Exception? failure = null;
-        Track? seed = null;
+        (Track Seed, QueueState State)? autoplay = null;
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -672,7 +678,7 @@ public sealed class GuildQueue
                 Commit(after, notes);
                 _loop = LoopMode.Off;
                 if (Autoplay && before.Current is { } last)
-                    seed = last;
+                    autoplay = (last, after);
                 else
                     notes.Ended = true;
             }
@@ -704,33 +710,43 @@ public sealed class GuildQueue
         }
 
         await FlushAsync(notes).ConfigureAwait(false);
-        if (seed is not null && !await TryAutoplayAsync(seed).ConfigureAwait(false))
-            await Ended
-                .RaiseAsync(this, new QueueEndedEventArgs(), _handlerError)
-                .ConfigureAwait(false);
+        if (autoplay is { } pending)
+        {
+            await TryAutoplayAsync(pending.Seed, pending.State).ConfigureAwait(false);
+            if (StillEnded(pending.State))
+                await Ended
+                    .RaiseAsync(this, new QueueEndedEventArgs(), _handlerError)
+                    .ConfigureAwait(false);
+        }
 
         if (failure is not null)
             ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
-    private async Task<bool> TryAutoplayAsync(Track seed)
+    private bool StillEnded(QueueState expected) =>
+        ReferenceEquals(_state, expected) && Connection.CurrentTrack is null;
+
+    private async Task TryAutoplayAsync(Track seed, QueueState expected)
     {
-        if (await RecommendAsync(seed).ConfigureAwait(false) is not { } next)
-            return false;
-        if (_state.Current is not null)
-            return true;
+        var next = await RecommendAsync(seed).ConfigureAwait(false);
+        if (next is null || !StillEnded(expected))
+            return;
 
         try
         {
-            await EnqueueAsync(next).ConfigureAwait(false);
+            await PlayChangeAsync(
+                    state =>
+                        StillEnded(expected) && Autoplay
+                            ? state.Enqueue([next with { }], next: false, Policy).Start(Policy)
+                            : (state, null),
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
         }
         catch (Exception exception)
         {
             Connection.Node.HandleError(exception);
-            return false;
         }
-
-        return _state.Current is not null;
     }
 
     private async Task<Track?> RecommendAsync(
