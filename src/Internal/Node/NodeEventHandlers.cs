@@ -182,6 +182,9 @@ internal sealed class NodeEventHandlers
             usableSessionId = UsableSessionId(eventArgs.SessionId);
             _node.SessionId = usableSessionId;
             _node.LastReadyResumed = effectiveResumed;
+            if (!effectiveResumed)
+                _node.ResetSessionSettings();
+
             _node.IsReady = true;
             DisarmFailover();
             attempts = _node.Connection.NoteReady();
@@ -189,9 +192,6 @@ internal sealed class NodeEventHandlers
             discordTracked = !_stoppedSinceReady;
             _stoppedSinceReady = false;
         }
-
-        if (!effectiveResumed)
-            _node.ResetSessionSettings();
 
         if (!effectiveResumed && !_node.Connections.IsEmpty)
             await GuardAllAsync([.. _node.Connections.Values], connection =>

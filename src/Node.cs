@@ -206,8 +206,11 @@ public sealed class Node : IAsyncDisposable, IDisposable
         private set => Volatile.Write(ref field, value);
     }
 
+    private long _sessionSettingsGeneration;
+
     internal void ResetSessionSettings()
     {
+        _sessionSettingsGeneration++;
         ResumingEnabled = Options.Resuming;
         ResumeTimeoutSeconds = (int)Options.ResumeTimeout.TotalSeconds;
     }
@@ -637,11 +640,24 @@ public sealed class Node : IAsyncDisposable, IDisposable
         CancellationToken cancellationToken
     )
     {
-        var session = await Rest
-            .Session.UpdateAsync(resuming, timeoutSeconds, cancellationToken)
-            .ConfigureAwait(false);
-        ResumingEnabled = resuming;
-        ResumeTimeoutSeconds = timeoutSeconds;
+        long generation;
+        Task<SessionConfig> update;
+        lock (EventsLock)
+        {
+            generation = _sessionSettingsGeneration;
+            update = Rest.Session.UpdateAsync(resuming, timeoutSeconds, cancellationToken);
+        }
+
+        var session = await update.ConfigureAwait(false);
+        lock (EventsLock)
+        {
+            if (generation == _sessionSettingsGeneration)
+            {
+                ResumingEnabled = resuming;
+                ResumeTimeoutSeconds = timeoutSeconds;
+            }
+        }
+
         return session;
     }
 
