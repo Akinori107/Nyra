@@ -23,34 +23,50 @@ internal static class ContentEquality
         IReadOnlyDictionary<TKey, TValue>? left,
         IReadOnlyDictionary<TKey, TValue>? right
     )
+        where TKey : notnull =>
+        DictionaryContentEquals(left, right, static (a, b) =>
+            EqualityComparer<TValue>.Default.Equals(a, b)
+        );
+
+    public static bool DictionaryDeepEquals(
+        IReadOnlyDictionary<string, JsonElement>? left,
+        IReadOnlyDictionary<string, JsonElement>? right
+    ) => DictionaryContentEquals(left, right, JsonElement.DeepEquals);
+
+    private static bool DictionaryContentEquals<TKey, TValue>(
+        IReadOnlyDictionary<TKey, TValue>? left,
+        IReadOnlyDictionary<TKey, TValue>? right,
+        Func<TValue, TValue, bool> equals
+    )
         where TKey : notnull
     {
         if (ReferenceEquals(left, right))
             return true;
         if (left is null || right is null || left.Count != right.Count)
             return false;
-        foreach (var (key, value) in left)
-            if (
-                !right.TryGetValue(key, out var other)
-                || !EqualityComparer<TValue>.Default.Equals(value, other)
-            )
-                return false;
-        return true;
-    }
 
-    public static bool DictionaryDeepEquals(
-        IReadOnlyDictionary<string, JsonElement>? left,
-        IReadOnlyDictionary<string, JsonElement>? right
-    )
-    {
-        if (ReferenceEquals(left, right))
+        var comparer = EqualityComparer<TKey>.Default;
+        if (
+            left is Dictionary<TKey, TValue> leftMap
+            && ReferenceEquals(leftMap.Comparer, comparer)
+            && right is Dictionary<TKey, TValue> rightMap
+            && ReferenceEquals(rightMap.Comparer, comparer)
+        )
+        {
+            foreach (var (key, value) in leftMap)
+                if (!rightMap.TryGetValue(key, out var other) || !equals(value, other))
+                    return false;
             return true;
-        if (left is null || right is null || left.Count != right.Count)
-            return false;
+        }
+
+        var remaining = new Dictionary<TKey, TValue>(left.Count, comparer);
         foreach (var (key, value) in left)
-            if (!right.TryGetValue(key, out var other) || !JsonElement.DeepEquals(value, other))
+            if (!remaining.TryAdd(key, value))
                 return false;
-        return true;
+        foreach (var (key, value) in right)
+            if (!remaining.Remove(key, out var other) || !equals(other, value))
+                return false;
+        return remaining.Count == 0;
     }
 
     public static bool JsonElementEquals(JsonElement? left, JsonElement? right) =>
