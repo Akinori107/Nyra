@@ -195,6 +195,28 @@ public sealed class GuildFeature
     }
 
     [Test]
+    [Arguments(".")]
+    [Arguments("..")]
+    public async Task MixLayerDotSegmentsAreRejected(string layerId)
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var conn = stack.Node.GetConnection(777)!;
+            var count = stack.Server.RestCalls.Count(call => call.Method is "PATCH" or "DELETE");
+
+            await Assert
+                .That(() => conn.Mix.SetVolumeAsync(layerId, 0.5f))
+                .Throws<ArgumentException>();
+            await Assert.That(() => conn.Mix.StopAsync(layerId)).Throws<ArgumentException>();
+
+            await Assert
+                .That(stack.Server.RestCalls.Count(call => call.Method is "PATCH" or "DELETE"))
+                .IsEqualTo(count);
+        }
+    }
+
+    [Test]
     public async Task LyricsSubscription()
     {
         var stack = await StartAsync().ConfigureAwait(false);

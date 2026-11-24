@@ -182,7 +182,7 @@ internal sealed class RestClient
         Node.SessionId is { Length: > 0 } sessionId
             ? sessionId
             : throw new InvalidOperationException(
-                $"Node '{Node.Name}' has no usable session id: the node is not ready yet, or the ready's id was dropped as header-hostile."
+                $"Node '{Node.Name}' has no usable session id: the node is not ready yet, or the ready's id was dropped as unsafe for headers or paths."
             );
 
     internal string SessionPath(string route, params object[] arguments) =>

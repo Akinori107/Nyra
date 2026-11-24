@@ -164,14 +164,18 @@ public sealed class RestEdge
     }
 
     [Test]
-    public async Task SessionIdGuards()
+    [Arguments("bad id")]
+    [Arguments(".")]
+    [Arguments("..")]
+    public async Task SessionIdGuards(string sessionId)
     {
-        var stack = await StartAsync(new FakeNodeServer { SessionId = "bad id" })
+        var stack = await StartAsync(new FakeNodeServer { SessionId = sessionId })
             .ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
             var node = stack.Node;
             await Assert.That(node.IsReady).IsTrue();
+            await Assert.That(node.SessionId).IsNull();
 
             Func<Task>[] guards =
             [

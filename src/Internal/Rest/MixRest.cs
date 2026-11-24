@@ -73,6 +73,14 @@ internal sealed class MixRest
 
     private string BuildMixPath(ulong guildId) => _rest.SessionPath(Routes.Mix, guildId);
 
-    private string BuildMixLayerPath(ulong guildId, string mixLayerId) =>
-        _rest.SessionPath(Routes.MixLayer, guildId, Uri.EscapeDataString(mixLayerId));
+    private string BuildMixLayerPath(ulong guildId, string mixLayerId)
+    {
+        if (mixLayerId is "." or "..")
+            throw new ArgumentException(
+                "A mix layer id cannot be a dot path segment.",
+                nameof(mixLayerId)
+            );
+
+        return _rest.SessionPath(Routes.MixLayer, guildId, Uri.EscapeDataString(mixLayerId));
+    }
 }

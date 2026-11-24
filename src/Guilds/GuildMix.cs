@@ -59,10 +59,11 @@ public sealed class GuildMix
     }
 
     /// <summary>Changes the loudness of one mix layer, 0.0-1.0.</summary>
-    /// <param name="mixLayerId">The id of the mix layer.</param>
+    /// <param name="mixLayerId">The id of the mix layer, not a dot path segment.</param>
     /// <param name="volume">How loud the layer plays, 0.0-1.0.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the layer's volume was set.</returns>
+    /// <exception cref="ArgumentException">The layer id is blank or a dot path segment.</exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
     public Task SetVolumeAsync(
         string mixLayerId,
@@ -79,9 +80,10 @@ public sealed class GuildMix
     }
 
     /// <summary>Stops one mix layer, the main track keeps playing.</summary>
-    /// <param name="mixLayerId">The id of the mix layer to stop.</param>
+    /// <param name="mixLayerId">The id of the mix layer to stop, not a dot path segment.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the layer was stopped.</returns>
+    /// <exception cref="ArgumentException">The layer id is blank or a dot path segment.</exception>
     /// <exception cref="NotSupportedException">The node is not NodeLink.</exception>
     public Task StopAsync(string mixLayerId, CancellationToken cancellationToken = default)
     {

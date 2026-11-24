@@ -45,6 +45,7 @@ internal sealed class NodeEventHandlers
 
     private static string? UsableSessionId(string? sessionId) =>
         string.IsNullOrEmpty(sessionId)
+        || sessionId is "." or ".."
         || sessionId.Any(static c => c > 127 || char.IsControl(c) || char.IsWhiteSpace(c))
             ? null
             : sessionId;
@@ -278,7 +279,7 @@ internal sealed class NodeEventHandlers
                 {
                     _node.Logger?.LogWarning(
                         LogEvents.Node,
-                        "The session id of node {NodeName} was dropped as header-hostile, session resuming stays disabled until the server sends a usable one.",
+                        "The session id of node {NodeName} was dropped as unsafe for headers or paths, session resuming stays disabled until the server sends a usable one.",
                         _node.Name
                     );
                 }
