@@ -112,7 +112,7 @@ internal abstract class GatewayBridgeBase(
     protected ValueTask HandleVoiceStateUpdateAsync(
         VoiceState eventArgs,
         ulong currentUserId,
-        IGatewayClientCache? cache
+        IGatewayClientCache cache
     )
     {
         if (eventArgs.GuildId is 0)
@@ -123,7 +123,7 @@ internal abstract class GatewayBridgeBase(
             var user = eventArgs.User;
             Guild? guild = null;
             if (user is null)
-                cache?.Guilds.TryGetValue(eventArgs.GuildId, out guild);
+                cache.Guilds.TryGetValue(eventArgs.GuildId, out guild);
 
             if (!IsBot(guild, eventArgs.UserId, user))
                 onListenerVoiceStateUpdated(
