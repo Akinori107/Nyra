@@ -88,6 +88,11 @@ public sealed record YouTubeToken
     /// <summary>The token type, like <c>Bearer</c>.</summary>
     [JsonPropertyName("token_type"), JsonInclude]
     public string? TokenType { get; internal set; }
+
+    /// <summary>Formats the token metadata for diagnostics without exposing the access token.</summary>
+    /// <returns>The token type and expiration in seconds.</returns>
+    public override string ToString() =>
+        $"YouTubeToken {{ TokenType = {TokenType}, ExpiresInSeconds = {ExpiresInSeconds} }}";
 }
 
 internal sealed record YouTubeTokenRefresh(
@@ -100,4 +105,7 @@ internal sealed record YouTubeTokenRefresh(
 internal sealed record YouTubeConfigPatch(
     [property: JsonPropertyName("refreshToken")] string? RefreshToken = null,
     [property: JsonPropertyName("visitorData")] string? VisitorData = null
-);
+)
+{
+    public override string ToString() => nameof(YouTubeConfigPatch);
+}
