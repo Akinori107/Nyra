@@ -481,7 +481,7 @@ public sealed class GuildConnection
         CancellationToken cancellationToken = default
     ) => _commands.PlayAsync(track, options, cancellationToken: cancellationToken);
 
-    internal Task PlayWithNextAsync(
+    internal Task<bool> PlayWithNextAsync(
         Track track,
         Track nextTrack,
         CancellationToken cancellationToken

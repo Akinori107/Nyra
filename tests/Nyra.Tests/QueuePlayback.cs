@@ -234,6 +234,44 @@ public sealed class QueuePlayback
     }
 
     [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task FailedPreloadReconcilesOnlyAnAcceptedPrimaryTrack(bool accepted)
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.PreloadNext = true;
+            var reply =
+                $$$"""{"guildId":"777","track":{{{TrackJson("a")}}},"state":{"time":10,"position":0,"connected":true}}""";
+            rig.Server.On("PATCH", PlayerPath, 500, """{"message":"Failed decoding next track"}""");
+            rig.Server.On(
+                "GET",
+                PlayerPath,
+                200,
+                accepted
+                    ? reply
+                    : """{"guildId":"777","track":null,"state":{"time":10,"position":0,"connected":true}}"""
+            );
+
+            if (accepted)
+            {
+                var started = await rig.EnqueueAsync("a", "invalid").ConfigureAwait(false);
+                await Assert.That(started?.Info.Identifier).IsEqualTo("a");
+                await Assert.That(rig.CurrentId).IsEqualTo("a");
+                await Assert.That(rig.Connection.CurrentTrack?.Info.Identifier).IsEqualTo("a");
+                await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("invalid");
+            }
+            else
+            {
+                await Assert.That(() => rig.EnqueueAsync("a", "invalid")).Throws<RestException>();
+                await Assert.That(rig.Queue.Current).IsNull();
+                await Assert.That(rig.Queue.Upcoming).IsEmpty();
+            }
+        }
+    }
+
+    [Test]
     public async Task EnqueueWhilePlayingOnlyQueues()
     {
         var rig = await StartAsync().ConfigureAwait(false);

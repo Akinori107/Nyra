@@ -40,8 +40,10 @@ internal sealed class NextTrackPreloader(GuildQueue queue)
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await connection.PlayWithNextAsync(play, next, cancellationToken).ConfigureAwait(false);
-            _preloaded = next;
+            var acknowledged = await connection
+                .PlayWithNextAsync(play, next, cancellationToken)
+                .ConfigureAwait(false);
+            _preloaded = acknowledged ? next : null;
             _playedWithNext = play;
         }
         finally

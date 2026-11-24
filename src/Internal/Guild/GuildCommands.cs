@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nyra.Entities;
+using Nyra.Exceptions;
 
 namespace Nyra.Internal;
 
@@ -21,7 +22,7 @@ internal sealed class GuildCommands
 
     private ulong GuildId => _connection.GuildId;
 
-    internal async Task PlayAsync(
+    internal async Task<bool> PlayAsync(
         Track track,
         PlayOptions? options = null,
         Track? nextTrack = null,
@@ -42,7 +43,14 @@ internal sealed class GuildCommands
         if (urlStart is not null)
             positionMilliseconds = (long)urlStart.Value.TotalMilliseconds;
 
-        var refusable = options?.NoReplace == true && _connection.CurrentTrack is not null;
+        var before = _connection.CurrentTrack;
+        var refusable = options?.NoReplace == true && before is not null;
+        var session = _node.SessionId;
+        var recoverPartialPlay =
+            _node.IsNodeLink
+            && nextTrack is not null
+            && !GuildConnection.IsSameTrack(before, track);
+        RestException? preloadFailure = null;
 
         var stamps = _connection.Playback.StampPlayRequested();
         var requestTick = _node.Time.GetMilliseconds();
@@ -68,8 +76,40 @@ internal sealed class GuildCommands
                 options?.NoReplace ?? false
             );
 
+        async Task<Player> SendQueuedPlayAsync(CancellationToken ct)
+        {
+            try
+            {
+                return await SendPlayAsync(ct).ConfigureAwait(false);
+            }
+            catch (RestException exception)
+                when (recoverPartialPlay
+                    && exception.StatusCode == 500
+                    && !ct.IsCancellationRequested
+                    && session == _node.SessionId
+                )
+            {
+                var confirmed = await _connection
+                    .Patches.FetchLandedAsync(
+                        current => current?.Track?.Encoded == track.Encoded,
+                        ct
+                    )
+                    .ConfigureAwait(false);
+                if (
+                    confirmed is null
+                    || ct.IsCancellationRequested
+                    || _connection.IsTearingDown
+                    || session != _node.SessionId
+                )
+                    throw;
+
+                preloadFailure = exception;
+                return confirmed;
+            }
+        }
+
         var player = await SendReconcilingAsync(
-                SendPlayAsync,
+                SendQueuedPlayAsync,
                 current => current is not null && GuildConnection.IsSameTrack(current.Track, track),
                 stamps,
                 requestTick,
@@ -88,6 +128,10 @@ internal sealed class GuildCommands
             requestTick,
             landed && options?.NoReplace != true ? positionMilliseconds ?? 0 : null
         );
+        if (preloadFailure is not null)
+            _node.HandleError(preloadFailure);
+
+        return preloadFailure is null;
     }
 
     internal async Task<Track> PlayIdentifierAsync(
