@@ -109,14 +109,23 @@ internal abstract class GatewayBridgeBase(
         return ValueTask.CompletedTask;
     }
 
-    protected ValueTask HandleVoiceStateUpdateAsync(VoiceState eventArgs, ulong currentUserId)
+    protected ValueTask HandleVoiceStateUpdateAsync(
+        VoiceState eventArgs,
+        ulong currentUserId,
+        IGatewayClientCache cache
+    )
     {
         if (eventArgs.GuildId is 0)
             return ValueTask.CompletedTask;
 
         if (eventArgs.UserId != currentUserId)
         {
-            if (eventArgs.User?.IsBot != true)
+            var user = eventArgs.User;
+            Guild? guild = null;
+            if (user is null)
+                cache.Guilds.TryGetValue(eventArgs.GuildId, out guild);
+
+            if (!IsBot(guild, eventArgs.UserId, user))
                 onListenerVoiceStateUpdated(
                     new ListenerVoiceStateUpdatedEventArgs(
                         eventArgs.GuildId,
@@ -141,8 +150,9 @@ internal abstract class GatewayBridgeBase(
         return ValueTask.CompletedTask;
     }
 
-    private static bool IsBot(Guild guild, ulong userId, GuildUser? user) =>
-        user?.IsBot ?? (guild.Users.TryGetValue(userId, out var cached) && cached.IsBot);
+    private static bool IsBot(Guild? guild, ulong userId, GuildUser? user) =>
+        user?.IsBot
+        ?? (guild is not null && guild.Users.TryGetValue(userId, out var cached) && cached.IsBot);
 
     protected ValueTask HandleGuildDeleteAsync(GuildDeleteEventArgs eventArgs)
     {

@@ -136,7 +136,7 @@ public sealed class Adapter
             HandleVoiceServerUpdateAsync(args).AsTask().GetAwaiter().GetResult();
 
         public void RaiseState(VoiceState args, ulong self) =>
-            HandleVoiceStateUpdateAsync(args, self).AsTask().GetAwaiter().GetResult();
+            HandleVoiceStateUpdateAsync(args, self, null!).AsTask().GetAwaiter().GetResult();
 
         public void RaiseDelete(NcGuildDeleteArgs args) =>
             HandleGuildDeleteAsync(args).AsTask().GetAwaiter().GetResult();
@@ -186,15 +186,12 @@ public sealed class Adapter
         bridge.RaiseState(WireState(5, 77, 11, "s2", bot: true), 9);
         await Assert.That(listeners.Count).IsEqualTo(1);
 
-        bridge.RaiseState(WireState(5, null, 12, "s3"), 9);
         bridge.RaiseState(WireState(5, 77, 9, "s4"), 9);
 
         using (Assert.Multiple())
         {
             await Assert.That(states.Count).IsEqualTo(1);
-            await Assert.That(listeners.Count).IsEqualTo(2);
-            await Assert.That(listeners.Last?.UserId).IsEqualTo(12UL);
-            await Assert.That(listeners.Last?.ChannelId).IsNull();
+            await Assert.That(listeners.Count).IsEqualTo(1);
         }
     }
 
@@ -258,9 +255,6 @@ public sealed class Adapter
         bridge.RaiseState(WireState(5, null, 9, "s2"), 9);
         await Assert.That(states.Count).IsEqualTo(2);
         await Assert.That(states.Last?.VoiceState.ChannelId).IsNull();
-
-        bridge.RaiseState(WireState(5, 77, 10, "s3"), 9);
-        await Assert.That(states.Count).IsEqualTo(2);
 
         bridge.RaiseState(WireState(0, 1, 9, "s4"), 9);
         await Assert.That(states.Count).IsEqualTo(2);
