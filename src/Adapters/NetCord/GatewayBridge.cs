@@ -62,5 +62,5 @@ internal sealed class GatewayBridge : GatewayBridgeBase
     private ValueTask OnClientResume() => MarkReady(_client.Id);
 
     private ValueTask OnVoiceStateUpdate(VoiceState eventArgs) =>
-        HandleVoiceStateUpdateAsync(eventArgs, _client.Id);
+        HandleVoiceStateUpdateAsync(eventArgs, _client.Id, _client.Cache);
 }

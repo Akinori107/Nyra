@@ -85,7 +85,7 @@ internal sealed class ShardedGatewayBridge : GatewayBridgeBase
     private ValueTask OnShardResume(GatewayClient client) => MarkReady(client.Id);
 
     private ValueTask OnVoiceStateUpdate(GatewayClient client, VoiceState eventArgs) =>
-        HandleVoiceStateUpdateAsync(eventArgs, client.Id);
+        HandleVoiceStateUpdateAsync(eventArgs, client.Id, client.Cache);
 
     private ValueTask OnVoiceServerUpdate(
         GatewayClient client,

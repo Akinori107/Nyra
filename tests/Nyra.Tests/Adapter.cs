@@ -136,7 +136,7 @@ public sealed class Adapter
             HandleVoiceServerUpdateAsync(args).AsTask().GetAwaiter().GetResult();
 
         public void RaiseState(VoiceState args, ulong self) =>
-            HandleVoiceStateUpdateAsync(args, self).AsTask().GetAwaiter().GetResult();
+            HandleVoiceStateUpdateAsync(args, self, null).AsTask().GetAwaiter().GetResult();
 
         public void RaiseDelete(NcGuildDeleteArgs args) =>
             HandleGuildDeleteAsync(args).AsTask().GetAwaiter().GetResult();
@@ -196,6 +196,85 @@ public sealed class Adapter
             await Assert.That(listeners.Last?.UserId).IsEqualTo(12UL);
             await Assert.That(listeners.Last?.ChannelId).IsNull();
         }
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task NetCordListenerEventsUseCachedBotMembership(bool sharded)
+    {
+        var token = new BotToken("MTIz.ab.cd");
+        var client = new GatewayClient(
+            token,
+            new GatewayClientConfiguration { Shard = new Shard(0, 1) }
+        );
+        var guild = Reflect.New<global::NetCord.Gateway.Guild>();
+        var users = new Dictionary<ulong, GuildUser>
+        {
+            [10] = new GuildUser(
+                new JsonGuildUser
+                {
+                    User = new JsonUser { Id = 10, IsBot = true },
+                },
+                5,
+                null!
+            ),
+            [11] = new GuildUser(
+                new JsonGuildUser
+                {
+                    User = new JsonUser { Id = 11, IsBot = false },
+                },
+                5,
+                null!
+            ),
+        };
+        Reflect.Set(guild, "Users", users);
+        var cache = Reflect.New<ImmutableGatewayClientCache>();
+        Reflect.Field(
+            cache,
+            "_guilds",
+            System.Collections.Immutable.ImmutableDictionary<
+                ulong,
+                global::NetCord.Gateway.Guild
+            >.Empty.Add(5, guild)
+        );
+        Reflect.Set(client, "Cache", cache);
+
+        var listeners = new Recording<ListenerVoiceStateUpdatedEventArgs>();
+        var states = new Recording<VoiceStateUpdatedEventArgs>();
+        using GatewayBridgeBase bridge = sharded
+            ? new ShardedGatewayBridge(
+                new ShardedGatewayClient(token),
+                Ignore,
+                states.Record,
+                Ignore,
+                listeners.Record
+            )
+            : new GatewayBridge(client, Ignore, states.Record, Ignore, listeners.Record);
+
+        void Raise(VoiceState state)
+        {
+            if (sharded)
+                Reflect.Invoke(bridge, "OnVoiceStateUpdate", client, state);
+            else
+                RaiseNetCord(client, "_voiceStateUpdate", state);
+        }
+
+        Raise(WireState(5, 77, 10, "cached-bot"));
+        await Assert.That(listeners.Count).IsEqualTo(0);
+        Raise(WireState(5, 77, 11, "cached-human"));
+        await Assert.That(listeners.Count).IsEqualTo(1);
+        await Assert.That(listeners.Last?.UserId).IsEqualTo(11UL);
+        Raise(WireState(5, null, 12, "unknown"));
+        await Assert.That(listeners.Count).IsEqualTo(2);
+        Raise(WireState(5, 77, 10, "payload-human", bot: false));
+        await Assert.That(listeners.Count).IsEqualTo(3);
+        Raise(WireState(5, 77, 11, "payload-bot", bot: true));
+        await Assert.That(listeners.Count).IsEqualTo(3);
+        Raise(WireState(5, 77, 123, "self", bot: true));
+        await Assert.That(states.Count).IsEqualTo(1);
+        Raise(WireState(6, 77, 10, "uncached-guild"));
+        await Assert.That(listeners.Count).IsEqualTo(4);
     }
 
     [Test]
