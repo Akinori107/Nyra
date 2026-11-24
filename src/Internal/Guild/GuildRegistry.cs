@@ -480,9 +480,25 @@ internal sealed class GuildRegistry
         foreach (var (connection, track) in playing)
             connection.EndLostTrack(track!, byGuild.GetValueOrDefault(connection.GuildId));
 
-        var destroyed = 0;
-        foreach (var player in players.Where(player => !Connections.ContainsKey(player.GuildId)))
+        var orphans = players.Where(player => !Connections.ContainsKey(player.GuildId)).ToArray();
+        if (orphans.Length == 0)
+            return;
+
+        HashSet<ulong> grouped = [];
+        if (_node.IsNodeLink)
         {
+            var groups = await _node
+                .Rest.Groups.ListAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+            foreach (var group in groups)
+                grouped.UnionWith(group.GuildIds);
+        }
+
+        var destroyed = 0;
+        foreach (var player in orphans)
+        {
+            if (grouped.Contains(player.GuildId))
+                continue;
             using var lease = await EnterGateAsync(player.GuildId, CancellationToken.None)
                 .ConfigureAwait(false);
             try

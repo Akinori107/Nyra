@@ -333,6 +333,68 @@ public sealed class LifecycleEdge
     }
 
     [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task ResumeSweepPreservesGroupedPlayers(bool nodeLink)
+    {
+        var stack = await StartAsync(
+                new FakeNodeServer { IsNodeLink = nodeLink, Semver = nodeLink ? "3.9.0" : "4.2.2" }
+            )
+            .ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var destroyed = new ConcurrentQueue<ulong>();
+            stack.Server.On("GET", "/v4/sessions/fake-session/players", _ => new FakeRestResponse(
+                200,
+                """[{"guildId":"888"},{"guildId":"999"}]"""
+            ));
+            stack.Server.On("GET", "/v4/sessions/fake-session/groups", _ => new FakeRestResponse(
+                200,
+                """[{"id":"group","guildIds":["888"]}]"""
+            ));
+            foreach (var guild in new[] { 888UL, 999UL })
+                stack.Server.On("DELETE", $"/v4/sessions/fake-session/players/{guild}", _ =>
+                {
+                    destroyed.Enqueue(guild);
+                    return new FakeRestResponse(204, string.Empty);
+                });
+
+            await stack.Node.Registry.ReconcileAfterResumeAsync().ConfigureAwait(false);
+            await Assert.That(destroyed.Contains(999UL)).IsTrue();
+            await Assert.That(destroyed.Contains(888UL)).IsEqualTo(!nodeLink);
+        }
+    }
+
+    [Test]
+    public async Task FailedGroupLookupDoesNotDestroyPotentialGroupMembers()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            stack.Server.On("GET", "/v4/sessions/fake-session/players", _ => new FakeRestResponse(
+                200,
+                """[{"guildId":"888"}]"""
+            ));
+            stack.Server.On("GET", "/v4/sessions/fake-session/groups", _ => new FakeRestResponse(
+                500,
+                """{"message":"group list unavailable"}"""
+            ));
+            stack.Server.On("DELETE", GhostPath, _ => new FakeRestResponse(204, string.Empty));
+
+            await Assert
+                .That(stack.Node.Registry.ReconcileAfterResumeAsync)
+                .Throws<RestException>();
+            await Assert
+                .That(
+                    stack.Server.RestCalls.Any(call =>
+                        call.Method == "DELETE" && call.Path == GhostPath
+                    )
+                )
+                .IsFalse();
+        }
+    }
+
+    [Test]
     public async Task OrphanSweep()
     {
         var destroyed = new ConcurrentQueue<string>();
@@ -344,6 +406,10 @@ public sealed class LifecycleEdge
             stack.Server.On("GET", "/v4/sessions/fake-session/players", _ => new FakeRestResponse(
                 200,
                 """[{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}},{"guildId":"888","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}]"""
+            ));
+            stack.Server.On("GET", "/v4/sessions/fake-session/groups", _ => new FakeRestResponse(
+                200,
+                "[]"
             ));
             stack.Server.On("DELETE", GhostPath, _ =>
             {

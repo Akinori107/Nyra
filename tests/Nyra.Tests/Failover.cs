@@ -390,6 +390,7 @@ public sealed class Failover
                     200,
                     """[{"guildId":"777","volume":100}]"""
                 );
+            rig.Servers[0].On("GET", "/v4/sessions/fake-session/groups", 200, "[]");
             rig.Servers[0].On("DELETE", Path(777), 204, string.Empty);
             rig.Servers[0].Down = false;
 
