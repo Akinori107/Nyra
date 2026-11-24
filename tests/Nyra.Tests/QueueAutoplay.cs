@@ -176,7 +176,7 @@ public sealed class QueueAutoplay
     [Test]
     [Arguments(true)]
     [Arguments(false)]
-    public async Task ObsoleteSkipRecommendationDoesNotChangePlayback(bool disable)
+    public async Task ObsoleteSkipRecommendationPreservesManualQueueBehavior(bool disable)
     {
         var loading = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var reply = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -204,9 +204,13 @@ public sealed class QueueAutoplay
                 reply.TrySetResult();
             }
 
-            await Assert.That(await skip.WaitAsync(WaitLimit).ConfigureAwait(false)).IsNull();
-            await Assert.That(rig.Queue.Current?.Info.Identifier).IsEqualTo("a");
-            await Assert.That(rig.Queue.Connection.CurrentTrack?.Info.Identifier).IsEqualTo("a");
+            var skipped = await skip.WaitAsync(WaitLimit).ConfigureAwait(false);
+            await Assert.That(skipped?.Info.Identifier).IsEqualTo(disable ? null : "c");
+            await Assert.That(rig.Queue.Current?.Info.Identifier).IsEqualTo(disable ? "a" : "c");
+            await Assert
+                .That(rig.Queue.Connection.CurrentTrack?.Info.Identifier)
+                .IsEqualTo(disable ? "a" : "c");
+            await Assert.That(rig.Queue.Upcoming).IsEmpty();
         }
     }
 

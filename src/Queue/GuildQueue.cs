@@ -430,7 +430,7 @@ public sealed class GuildQueue
                         && recommended is not null
                         && GuildConnection.IsSameTrack(Connection.CurrentTrack, current)
                             ? (state with { Upcoming = [recommended] }).Skip(1, Policy)
-                            : (state, null),
+                            : state.Skip(position, Policy),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
