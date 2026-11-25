@@ -264,7 +264,7 @@ internal sealed class NodeEventHandlers
             _ = FetchFirstStatsAsync();
 
         if (effectiveResumed)
-            _ = _node.GuardAsync(_node.Registry.ReconcileAfterResumeAsync());
+            _ = _node.GuardAsync(_node.Registry.ReconcileAfterResumeAsync(connectionEpoch));
 
         if (!_node.ResumingEnabled || effectiveResumed)
             return;

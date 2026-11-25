@@ -438,4 +438,128 @@ public sealed class LifecycleEdge
         catch (Exception) { }
         server.Dispose();
     }
+
+    [Test]
+    public async Task ReconciliationFromAnOldSessionCannotDestroyNewSessionPlayers()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var listed = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            stack.Server.On("GET", "/v4/sessions/fake-session/players", _ =>
+            {
+                listed.TrySetResult();
+                release.Task.WaitAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
+                return new FakeRestResponse(200, """[{"guildId":"888"}]""");
+            });
+            stack.Server.On("DELETE", "/v4/sessions/new-session/players/888", 204, string.Empty);
+
+            var reconcile = stack.Node.Registry.ReconcileAfterResumeAsync();
+            try
+            {
+                await listed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                stack.Server.SessionId = "new-session";
+                await stack
+                    .Server.DropConnectionAsync(1000, "session changed")
+                    .ConfigureAwait(false);
+                await Assert
+                    .That(() => stack.Node.IsReady && stack.Node.SessionId == "new-session")
+                    .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
+            }
+            finally
+            {
+                release.TrySetResult();
+            }
+
+            await reconcile.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await Assert
+                .That(
+                    stack.Server.RestCalls.Any(call =>
+                        call.Method == "DELETE"
+                        && call.Path == "/v4/sessions/new-session/players/888"
+                    )
+                )
+                .IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task ObsoleteResumeEpochDoesNotRequestPlayers()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            await stack
+                .Node.Registry.ReconcileAfterResumeAsync(
+                    stack.Node.EventHandlers.ConnectionEpoch - 1
+                )
+                .ConfigureAwait(false);
+            await Assert
+                .That(
+                    stack.Server.RestCalls.Any(call =>
+                        call.Method == "GET" && call.Path == "/v4/sessions/fake-session/players"
+                    )
+                )
+                .IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task SessionChangeDuringOrphanSweepStopsFurtherDeletes()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var deleting = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            stack.Server.On(
+                "GET",
+                "/v4/sessions/fake-session/players",
+                200,
+                """[{"guildId":"888"},{"guildId":"999"}]"""
+            );
+            stack.Server.On("DELETE", GhostPath, _ =>
+            {
+                deleting.TrySetResult();
+                release.Task.WaitAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
+                return new FakeRestResponse(204, string.Empty);
+            });
+            stack.Server.On("DELETE", "/v4/sessions/new-session/players/999", 204, string.Empty);
+            var reconcile = stack.Node.Registry.ReconcileAfterResumeAsync();
+            try
+            {
+                await deleting.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                stack.Server.SessionId = "new-session";
+                await stack
+                    .Server.DropConnectionAsync(1000, "fresh session during sweep")
+                    .ConfigureAwait(false);
+                await Assert
+                    .That(() => stack.Node.IsReady && stack.Node.SessionId == "new-session")
+                    .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
+            }
+            finally
+            {
+                release.TrySetResult();
+            }
+
+            await reconcile.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await Assert
+                .That(
+                    stack.Server.RestCalls.Any(call =>
+                        call.Method == "DELETE"
+                        && call.Path.EndsWith("/players/999", StringComparison.Ordinal)
+                    )
+                )
+                .IsFalse();
+        }
+    }
 }
