@@ -80,13 +80,19 @@ public sealed class PlayPath
                 new(AudioTrackId: " "),
                 new(UserData: JsonDocument.Parse("[1]").RootElement),
             };
-            var patchesBefore = stack.Server.RestCalls.Count(call => call.Method == "PATCH");
+            var patchesBefore = stack.Server.RestCalls.Count(call =>
+                call.Method == "PATCH" && call.Path == PlayerPath
+            );
             foreach (var options in guards)
                 await Assert
                     .That(async () => await conn.PlayAsync(track, options).ConfigureAwait(false))
                     .Throws<ArgumentException>();
             await Assert
-                .That(stack.Server.RestCalls.Count(call => call.Method == "PATCH"))
+                .That(
+                    stack.Server.RestCalls.Count(call =>
+                        call.Method == "PATCH" && call.Path == PlayerPath
+                    )
+                )
                 .IsEqualTo(patchesBefore);
         }
     }
@@ -119,7 +125,11 @@ public sealed class PlayPath
                     )
                     .ThrowsNothing();
                 await Assert
-                    .That(link.Server.RestCalls.Last(call => call is { Method: "PATCH" }).Body)
+                    .That(
+                        link.Server.RestCalls.Last(call =>
+                            call.Method == "PATCH" && call.Path == PlayerPath
+                        ).Body
+                    )
                     .Contains("\"audioTrackId\":\"x\"");
             }
         }
