@@ -15,42 +15,30 @@ internal static class FilterValidation
         bool nodeLink
     )
     {
-        if (FilterComparer.Touched(chain.Karaoke, untouched?.Karaoke))
-            ValidateFilterBounds(chain.Karaoke!, nodeLink);
-        if (FilterComparer.Touched(chain.Tremolo, untouched?.Tremolo))
-            ValidateFilterBounds(chain.Tremolo!, nodeLink);
-        if (FilterComparer.Touched(chain.Vibrato, untouched?.Vibrato))
-            ValidateFilterBounds(chain.Vibrato!, nodeLink);
-        if (FilterComparer.Touched(chain.ChannelMix, untouched?.ChannelMix))
-            ValidateFilterBounds(chain.ChannelMix!, nodeLink);
-        if (FilterComparer.Touched(chain.Echo, untouched?.Echo))
-            ValidateFilterBounds(chain.Echo!, nodeLink);
-        if (FilterComparer.Touched(chain.Reverb, untouched?.Reverb))
-            ValidateFilterBounds(chain.Reverb!, nodeLink);
-        if (FilterComparer.Touched(chain.HighPass, untouched?.HighPass))
-            ValidateFilterBounds(chain.HighPass!, nodeLink);
-        if (FilterComparer.Touched(chain.Chorus, untouched?.Chorus))
-            ValidateFilterBounds(chain.Chorus!, nodeLink);
-        if (FilterComparer.Touched(chain.Phaser, untouched?.Phaser))
-            ValidateFilterBounds(chain.Phaser!, nodeLink);
-        if (FilterComparer.Touched(chain.Flanger, untouched?.Flanger))
-            ValidateFilterBounds(chain.Flanger!, nodeLink);
-        if (FilterComparer.Touched(chain.Spatial, untouched?.Spatial))
-            ValidateFilterBounds(chain.Spatial!, nodeLink);
-        if (FilterComparer.Touched(chain.Compressor, untouched?.Compressor))
-            ValidateFilterBounds(chain.Compressor!, nodeLink);
-        if (FilterComparer.Touched(chain.Phonograph, untouched?.Phonograph))
-            ValidateFilterBounds(chain.Phonograph!, nodeLink);
-        if (FilterComparer.Touched(chain.Timescale, untouched?.Timescale))
-            ValidateFilterBounds(chain.Timescale!, nodeLink);
-        if (FilterComparer.Touched(chain.Tesseract, untouched?.Tesseract))
-            ValidateFilterBounds(chain.Tesseract!, nodeLink);
-        if (FilterComparer.Touched(chain.Rotation, untouched?.Rotation))
-            ValidateFilterBounds(chain.Rotation!, nodeLink);
-        if (FilterComparer.Touched(chain.Distortion, untouched?.Distortion))
-            ValidateFilterBounds(chain.Distortion!, nodeLink);
-        if (FilterComparer.Touched(chain.LowPass, untouched?.LowPass))
-            ValidateFilterBounds(chain.LowPass!, nodeLink);
+        ValidateChanged(chain.Karaoke, untouched?.Karaoke);
+        ValidateChanged(chain.Tremolo, untouched?.Tremolo);
+        ValidateChanged(chain.Vibrato, untouched?.Vibrato);
+        ValidateChanged(chain.ChannelMix, untouched?.ChannelMix);
+        ValidateChanged(chain.Echo, untouched?.Echo);
+        ValidateChanged(chain.Reverb, untouched?.Reverb);
+        ValidateChanged(chain.HighPass, untouched?.HighPass);
+        ValidateChanged(chain.Chorus, untouched?.Chorus);
+        ValidateChanged(chain.Phaser, untouched?.Phaser);
+        ValidateChanged(chain.Flanger, untouched?.Flanger);
+        ValidateChanged(chain.Spatial, untouched?.Spatial);
+        ValidateChanged(chain.Compressor, untouched?.Compressor);
+        ValidateChanged(chain.Phonograph, untouched?.Phonograph);
+        ValidateChanged(chain.Timescale, untouched?.Timescale);
+        ValidateChanged(chain.Tesseract, untouched?.Tesseract);
+        ValidateChanged(chain.Rotation, untouched?.Rotation);
+        ValidateChanged(chain.Distortion, untouched?.Distortion);
+        ValidateChanged(chain.LowPass, untouched?.LowPass);
+
+        void ValidateChanged(IFilter? current, IFilter? previous)
+        {
+            if (FilterComparer.Touched(current, previous))
+                ValidateFilterBounds(current!, nodeLink);
+        }
     }
 
     internal static void ValidateFilterBounds(IFilter filter, bool nodeLink)
