@@ -120,9 +120,19 @@ public sealed class ConnectorAndTransportEdge
             CancellationToken cancellationToken = default
         ) => Task.CompletedTask;
 
+        public CancellationToken ReadyWaitToken { get; private set; }
+
+        public bool IgnoreCancellation { get; init; }
+
+        public void GoReady() => _never.TrySetResult(new ClientInformation(FakeBridge.UserId));
+
         public Task<ClientInformation> WaitForReadyAsync(
             CancellationToken cancellationToken = default
-        ) => _never.Task.WaitAsync(cancellationToken);
+        )
+        {
+            ReadyWaitToken = cancellationToken;
+            return IgnoreCancellation ? _never.Task : _never.Task.WaitAsync(cancellationToken);
+        }
     }
 
     private sealed class ExplodingDisposeBridge : IDiscordBridge, IAsyncDisposable
@@ -289,5 +299,62 @@ public sealed class ConnectorAndTransportEdge
             .That(async () => await connect.ConfigureAwait(false))
             .Throws<TimeoutException>();
         await extension.DisposeAsync().ConfigureAwait(false);
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task GatewayTimeoutCancelsThePendingBridgeWait(bool ignoreCancellation)
+    {
+        var time = new FakeTimeProvider();
+        var bridge = new NeverReadyBridge { IgnoreCancellation = ignoreCancellation };
+        var extension = new NyraExtension(bridge, time);
+        await using (extension.ConfigureAwait(false))
+        {
+            var connect = extension.ConnectAllNodesAsync();
+            try
+            {
+                time.Advance(TimeSpan.FromSeconds(60));
+                await Assert
+                    .That(async () =>
+                        await connect.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false)
+                    )
+                    .Throws<TimeoutException>();
+                await Assert.That(connect.IsCompleted).IsTrue();
+                await Assert.That(bridge.ReadyWaitToken.IsCancellationRequested).IsTrue();
+            }
+            finally
+            {
+                bridge.GoReady();
+            }
+        }
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task CallerCancellationCancelsThePendingGatewayWait(bool ignoreCancellation)
+    {
+        var bridge = new NeverReadyBridge { IgnoreCancellation = ignoreCancellation };
+        var extension = new NyraExtension(bridge, new FakeTimeProvider());
+        using var cancellation = new CancellationTokenSource();
+        await using (extension.ConfigureAwait(false))
+        {
+            var connect = extension.ConnectAllNodesAsync(cancellation.Token);
+            try
+            {
+                cancellation.Cancel();
+                await Assert
+                    .That(async () =>
+                        await connect.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false)
+                    )
+                    .Throws<OperationCanceledException>();
+                await Assert.That(bridge.ReadyWaitToken.IsCancellationRequested).IsTrue();
+            }
+            finally
+            {
+                bridge.GoReady();
+            }
+        }
     }
 }
