@@ -1,5 +1,4 @@
 using Nyra.Entities;
-using Nyra.Exceptions;
 
 namespace Nyra.Internal;
 
@@ -9,15 +8,8 @@ internal sealed class GroupsRest
 
     internal GroupsRest(RestClient rest) => _rest = rest;
 
-    public async Task<IReadOnlyList<Group>> ListAsync(CancellationToken cancellationToken)
-    {
-        var path = BuildGroupsPath();
-        var options = _rest.Options;
-        var json = await _rest
-            .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        return RestClient.DeserializeList<Group>(json, path, options);
-    }
+    public async Task<IReadOnlyList<Group>> ListAsync(CancellationToken cancellationToken) =>
+        await _rest.GetListAsync<Group>(BuildGroupsPath(), cancellationToken).ConfigureAwait(false);
 
     public async Task<Group> CreateAsync(
         string groupId,
@@ -42,22 +34,10 @@ internal sealed class GroupsRest
             .ConfigureAwait(false);
     }
 
-    public async Task<Group?> GetAsync(string groupId, CancellationToken cancellationToken)
-    {
-        var path = BuildGroupPath(groupId);
-        var options = _rest.Options;
-        try
-        {
-            var json = await _rest
-                .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-            return RestClient.Deserialize<Group>(json, path, options);
-        }
-        catch (RestException exception) when (RestClient.IndicatesMissingResource(exception))
-        {
-            return null;
-        }
-    }
+    public async Task<Group?> GetAsync(string groupId, CancellationToken cancellationToken) =>
+        await _rest
+            .GetOptionalAsync<Group>(BuildGroupPath(groupId), cancellationToken)
+            .ConfigureAwait(false);
 
     public async Task<GroupUpdateResult> UpdateAsync(
         string groupId,

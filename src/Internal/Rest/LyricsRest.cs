@@ -64,11 +64,7 @@ internal sealed class LyricsRest
             "?encodedTrack=",
             Uri.EscapeDataString(encodedTrack)
         );
-        var options = _rest.Options;
-        var json = await _rest
-            .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        return RestClient.DeserializeList<Chapter>(json, path, options);
+        return await _rest.GetListAsync<Chapter>(path, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<MeaningResult> LoadMeaningAsync(
