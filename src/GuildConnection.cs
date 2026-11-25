@@ -1257,8 +1257,13 @@ public sealed class GuildConnection
         if (_tearingDown)
             return;
 
-        ChannelId = channelId;
-        HandleVoiceSessionUpdated(sessionId);
+        lock (_listenersLock)
+        {
+            ChannelId = channelId;
+            _listeners = null;
+            HandleVoiceSessionUpdated(sessionId);
+            _aloneTimer.Disarm();
+        }
         SyncListeners();
     }
 
@@ -1434,6 +1439,9 @@ public sealed class GuildConnection
         int after;
         lock (_listenersLock)
         {
+            if (ChannelId != channelId)
+                return;
+
             before = _listeners?.Count;
             _listeners = [.. found];
             after = _listeners.Count;
@@ -1454,7 +1462,7 @@ public sealed class GuildConnection
         int after;
         lock (_listenersLock)
         {
-            if (_listeners is null)
+            if (_listeners is null || ChannelId != own)
                 return;
 
             before = _listeners.Count;
@@ -1554,7 +1562,7 @@ public sealed class GuildConnection
             )
             .ConfigureAwait(false);
 
-        if (_tearingDown || Listeners != 0)
+        if (_tearingDown || Listeners != 0 || ChannelId != channelId)
             return;
 
         await DisconnectAsync().ConfigureAwait(false);
