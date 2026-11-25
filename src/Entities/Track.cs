@@ -267,7 +267,7 @@ public sealed record TrackInfo
 
     /// <summary>The duration of the track, zero for streams.</summary>
     [JsonIgnore]
-    public TimeSpan Length => ToTimeSpan(LengthMilliseconds);
+    public TimeSpan Length => IsStream ? TimeSpan.Zero : ToTimeSpan(LengthMilliseconds);
 
     internal const long MaxTimeSpanMilliseconds = 922_337_203_685_477;
 
