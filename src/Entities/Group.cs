@@ -368,13 +368,7 @@ internal sealed class GroupTrackConverter : JsonConverter<GroupTrack>
         if (value.Identifier is { } identifier)
             writer.WriteString("identifier", identifier);
         else
-        {
-            writer.WritePropertyName("encoded");
-            if (value.Encoded is { } encoded)
-                writer.WriteStringValue(encoded);
-            else
-                writer.WriteNullValue();
-        }
+            writer.WriteString("encoded", value.Encoded);
 
         if (value.UserData is { } userData)
         {
