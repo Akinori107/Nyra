@@ -1,3 +1,4 @@
+using Nyra.Exceptions;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -120,6 +121,58 @@ public sealed class VoiceHandshakeEdge
             await Assert.That(again.IsConnected).IsTrue();
             await Assert.That(again.ChannelId).IsEqualTo(555);
             await again.DisconnectAsync().ConfigureAwait(false);
+        }
+    }
+
+    private sealed class InterruptedJoinBridge(ulong? destination) : FakeBridge
+    {
+        public override Task SendVoiceUpdateAsync(
+            ulong guildId,
+            ulong? channelId,
+            bool selfDeaf = false,
+            bool selfMute = false,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var sent = base.SendVoiceUpdateAsync(
+                guildId,
+                channelId,
+                selfDeaf,
+                selfMute,
+                cancellationToken
+            );
+            if (channelId is not null)
+            {
+                FireVoiceState(guildId, channelId, "vsess");
+                FireVoiceServer(guildId, "tok", "127.0.0.1");
+                FireVoiceState(guildId, destination, "vsess");
+            }
+            return sent;
+        }
+    }
+
+    [Test]
+    [Arguments(null)]
+    [Arguments(999UL)]
+    public async Task InterruptedAfterComplete(ulong? destination)
+    {
+        var bridge = new InterruptedJoinBridge(destination);
+        var stack = await StartAsync(bridge: bridge).ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            AcceptPlayerPatch(stack.Server);
+            await Assert
+                .That(async () => await stack.Node.ConnectAsync(777, 555).ConfigureAwait(false))
+                .Throws<VoiceHandshakeException>();
+            await Assert.That(stack.Node.GetConnection(777)).IsNull();
+            await Assert
+                .That(
+                    stack.Server.RestCalls.Any(call =>
+                        call.Method == "PATCH"
+                        && call.Path.EndsWith("/players/777", StringComparison.Ordinal)
+                    )
+                )
+                .IsFalse();
         }
     }
 }
