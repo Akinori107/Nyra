@@ -421,4 +421,28 @@ public sealed class VoiceListeners
             .That(() => new Node(new Endpoint("127.0.0.1", 1, "p"), options))
             .Throws<ArgumentOutOfRangeException>();
     }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task MovingToAnUncachedChannelResetsListeners(bool alone)
+    {
+        var rig = await StartAsync(Leave, alone ? [] : [1UL]).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await Assert.That(rig.Connection.Listeners).IsEqualTo(alone ? 0 : 1);
+            rig.Bridge.Unavailable = true;
+            rig.Bridge.FireVoiceState(777, 999, "vsess");
+
+            await Assert.That(rig.Connection.ChannelId).IsEqualTo(999UL);
+            await Assert.That(rig.Connection.Listeners).IsNull();
+
+            await RunForAsync(rig.Time, Timeout5 + TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            await Assert.That(rig.Connected).IsTrue();
+
+            rig.Bridge.Unavailable = false;
+            rig.Bridge.Move(2, 999);
+            await Assert.That(rig.Connection.Listeners).IsEqualTo(1);
+        }
+    }
 }
