@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Nyra.Abstractions;
 using Nyra.Entities;
 using Nyra.Exceptions;
@@ -92,12 +93,10 @@ public sealed class EntityAndExceptionSurface
         await Assert.That(blankPassword).IsNotNull();
     }
 
-    private static readonly WireEnumConverter<LoadTypeWire, LoadType> LoadTypeConv = new();
+    private static readonly JsonConverter<LoadType> LoadTypeConv = WireEnumRegistry.For<LoadType>();
 
-    private static readonly WireEnumConverter<
-        LyricsLoadTypeWire,
-        LyricsLoadType
-    > LyricsLoadTypeConv = new();
+    private static readonly JsonConverter<LyricsLoadType> LyricsLoadTypeConv =
+        WireEnumRegistry.For<LyricsLoadType>();
 
     [Test]
     public async Task WireEnumFallbacks()
