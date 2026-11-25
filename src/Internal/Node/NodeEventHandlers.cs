@@ -11,6 +11,7 @@ internal sealed class NodeEventHandlers
     private ITimer? _readyWatchdog;
 
     private ITimer? _failoverTimer;
+    private long _failoverGeneration;
 
     private volatile bool _droppedNodeLink;
 
@@ -450,9 +451,10 @@ internal sealed class NodeEventHandlers
             )
                 return;
 
+            var generation = ++_failoverGeneration;
             _failoverTimer = _node.Time.CreateTimer(
-                static state => ((NodeEventHandlers)state!).FailoverFired(),
-                this,
+                _ => FailoverFired(generation),
+                null,
                 delay,
                 Timeout.InfiniteTimeSpan
             );
@@ -461,11 +463,11 @@ internal sealed class NodeEventHandlers
 
     private void DisarmFailover() => Interlocked.Exchange(ref _failoverTimer, null)?.Dispose();
 
-    private void FailoverFired()
+    private void FailoverFired(long generation)
     {
         lock (_node.EventsLock)
         {
-            if (_failoverTimer is null)
+            if (_failoverTimer is null || generation != _failoverGeneration)
                 return;
 
             DisarmFailover();

@@ -1,3 +1,9 @@
+using System.Text.Json;
+using System.Threading.Channels;
+using Nyra.Entities;
+using Nyra.EventArgs;
+using static Nyra.Tests.NodeHarness;
+
 namespace Nyra.Tests;
 
 public sealed class Failover
@@ -93,6 +99,164 @@ public sealed class Failover
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(10));
 
             await Assert.That(rig.Extension.GetNode()).IsSameReferenceAs(rig.Nodes[1]);
+        }
+    }
+
+    private const string One =
+        """{"encoded":"QXRsZWFzdA==","info":{"identifier":"one","author":"a","title":"One","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
+
+    private const string Two =
+        """{"encoded":"U2Vjb25k","info":{"identifier":"two","author":"a","title":"Two","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
+
+    private const string Three =
+        """{"encoded":"VGhpcmQ=","info":{"identifier":"three","author":"a","title":"Three","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
+
+    private static readonly Dictionary<string, string> TracksByEncoded = new()
+    {
+        ["QXRsZWFzdA=="] = One,
+        ["U2Vjb25k"] = Two,
+        ["VGhpcmQ="] = Three,
+    };
+
+    private static Track Parse(string json) => JsonSerializer.Deserialize<Track>(json)!;
+
+    private static string Path(ulong guild) => $"/v4/sessions/fake-session/players/{guild}";
+
+    private static void Echo(
+        FakeNodeServer server,
+        ulong guild = 777,
+        Func<FakeRestCall, FakeRestResponse?>? intercept = null
+    )
+    {
+        string? current = null;
+        server.On("PATCH", Path(guild), call =>
+        {
+            if (intercept?.Invoke(call) is { } response)
+                return response;
+
+            using var body = JsonDocument.Parse(string.IsNullOrEmpty(call.Body) ? "{}" : call.Body);
+            if (
+                body.RootElement.TryGetProperty("track", out var track)
+                && track.ValueKind == JsonValueKind.Object
+            )
+                current = track.GetProperty("encoded").GetString();
+
+            var json = current is not null ? TracksByEncoded[current] : "null";
+            return new FakeRestResponse(
+                200,
+                $$$"""{"guildId":"{{{guild}}}","track":{{{json}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":1},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            );
+        });
+    }
+
+    private static async Task<GuildConnection> PlayOnFirstAsync(Rig rig, ulong guild = 777)
+    {
+        var connection = await ConnectGuildAsync(rig.Bridge, rig.Nodes[0], rig.Servers[0], guild)
+            .ConfigureAwait(false);
+        Echo(rig.Servers[0], guild);
+        await connection.PlayAsync(Parse(One)).ConfigureAwait(false);
+        return connection;
+    }
+
+    private static Task<GuildConnectionMigratedEventArgs> Migrated(GuildConnection connection)
+    {
+        var migrated = new TaskCompletionSource<GuildConnectionMigratedEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        connection.GuildConnectionMigrated += (_, args) =>
+        {
+            migrated.TrySetResult(args);
+            return Task.CompletedTask;
+        };
+        return migrated.Task;
+    }
+
+    private static Task NextReady(NyraExtension extension, Node node)
+    {
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        extension.NodeReady += (sender, _) =>
+        {
+            if (ReferenceEquals(sender, node))
+                ready.TrySetResult();
+            return Task.CompletedTask;
+        };
+        return ready.Task;
+    }
+
+    private static async Task KillAsync(FakeNodeServer server)
+    {
+        server.Down = true;
+        await server.DropConnectionAsync(1000, "dead").ConfigureAwait(false);
+    }
+
+    [Test]
+    public async Task OldCallbackCannotConsumeTheNextFailoverTimer()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var time = new FailoverClock();
+        var rig = await RigAsync(time.FailoverDelay, [true, true], time: time)
+            .ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var connection = await PlayOnFirstAsync(rig).ConfigureAwait(false);
+            Echo(rig.Servers[1]);
+            var migrated = Migrated(connection);
+
+            await KillAsync(rig.Servers[0]).ConfigureAwait(false);
+            var first = await time.Armed.Reader.ReadAsync(deadline.Token).ConfigureAwait(false);
+            var ready = NextReady(rig.Extension, rig.Nodes[0]);
+            rig.Servers[0].Down = false;
+            await ready.WaitAsync(deadline.Token).ConfigureAwait(false);
+            await KillAsync(rig.Servers[0]).ConfigureAwait(false);
+            var second = await time.Armed.Reader.ReadAsync(deadline.Token).ConfigureAwait(false);
+
+            await Assert.That(first.Disposed).IsTrue();
+            first.Fire();
+            await Assert.That(second.Disposed).IsFalse();
+            await Assert.That(rig.Nodes[0].GetConnection(777)).IsSameReferenceAs(connection);
+
+            second.Fire();
+            var moved = await migrated.WaitAsync(deadline.Token).ConfigureAwait(false);
+            await Assert.That(moved.To).IsSameReferenceAs(rig.Nodes[1]);
+        }
+    }
+
+    private sealed class FailoverClock : TimeProvider
+    {
+        public TimeSpan FailoverDelay { get; } = TimeSpan.FromSeconds(37);
+
+        public Channel<QueuedTimer> Armed { get; } = Channel.CreateUnbounded<QueuedTimer>();
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        )
+        {
+            if (dueTime != FailoverDelay)
+                return TimeProvider.System.CreateTimer(callback, state, dueTime, period);
+
+            var timer = new QueuedTimer(callback, state);
+            Armed.Writer.TryWrite(timer);
+            return timer;
+        }
+    }
+
+    private sealed class QueuedTimer(TimerCallback callback, object? state) : ITimer
+    {
+        public bool Disposed { get; private set; }
+
+        public void Fire() => callback(state);
+
+        public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotSupportedException();
+
+        public void Dispose() => Disposed = true;
+
+        public ValueTask DisposeAsync()
+        {
+            Dispose();
+            return ValueTask.CompletedTask;
         }
     }
 }
