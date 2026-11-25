@@ -85,13 +85,8 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 if (!hasData)
                     throw new JsonException("Search load result is missing its 'data' member.");
 
-                var tracks = NyraJson.Deserialize<List<Track>>(ref data, options)
+                var tracks = ReadTracks(ref data, options, "search")
                     ?? throw new JsonException("Search load result 'data' member is null.");
-                foreach (var track in tracks)
-                    if (track is null)
-                        throw new JsonException(
-                            "The search load result contained a null track element."
-                        );
                 return new SearchLoaded(tracks);
             }
 
@@ -162,6 +157,18 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
         return 0;
     }
 
+    private static List<Track>? ReadTracks(
+        ref Utf8JsonReader reader,
+        JsonSerializerOptions options,
+        string loadType
+    )
+    {
+        var tracks = NyraJson.Deserialize<List<Track>>(ref reader, options);
+        if (tracks?.Contains(null!) == true)
+            throw new JsonException($"The {loadType} load result contained a null track element.");
+        return tracks;
+    }
+
     private static PlaylistLoaded ReadPlaylist(
         ref Utf8JsonReader data,
         JsonSerializerOptions options
@@ -205,14 +212,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 member.ValueTextEquals("tracks"u8)
                 && data.TokenType == JsonTokenType.StartArray
             )
-            {
-                tracks = NyraJson.Deserialize<List<Track>>(ref data, options) ?? [];
-                foreach (var track in tracks)
-                    if (track is null)
-                        throw new JsonException(
-                            "The playlist load result contained a null track element."
-                        );
-            }
+                tracks = ReadTracks(ref data, options, "playlist") ?? [];
             else if (member.ValueTextEquals("pluginInfo"u8))
                 if (data.TokenType == JsonTokenType.StartObject)
                     pluginInfo = NyraJson.Deserialize<JsonElement>(ref data, options);
