@@ -8,6 +8,8 @@ internal sealed class NextTrackPreloader(GuildQueue queue)
     private volatile Track? _preloaded;
     private volatile Track? _playedWithNext;
 
+    internal bool HasPreloaded => _preloaded is not null;
+
     internal void Forget()
     {
         _preloaded = null;
