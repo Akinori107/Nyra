@@ -6,6 +6,13 @@ internal static class UrlStartPosition
 {
     public static long? ParseMilliseconds(string url)
     {
+        if (
+            !url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            && !url.StartsWith("ftts://", StringComparison.OrdinalIgnoreCase)
+        )
+            return null;
+
         var query = url.AsSpan();
         var cut = query.IndexOfAny('?', '#');
         if (cut < 0)

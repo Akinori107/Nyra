@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
@@ -104,6 +105,33 @@ public sealed class PlayPath
             await Assert
                 .That(() => Volatile.Read(ref errorVisits) == 1)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Test]
+    public async Task SearchIdentifierDoesNotInferAStartPosition()
+    {
+        var stack = await StartAsync(new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" })
+            .ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var conn = stack.Node.GetConnection(777)!;
+            const string identifier = "ytsearch:Song?t=15";
+            await conn.PlayIdentifierAsync(identifier).ConfigureAwait(false);
+
+            using var request = JsonDocument.Parse(
+                stack
+                    .Server.RestCalls.Last(call =>
+                        call.Method == "PATCH" && call.Path == PlayerPath
+                    )
+                    .Body!
+            );
+            await Assert.That(request.RootElement.TryGetProperty("position", out _)).IsFalse();
+            await Assert
+                .That(
+                    request.RootElement.GetProperty("track").GetProperty("identifier").GetString()
+                )
+                .IsEqualTo(identifier);
         }
     }
 }
