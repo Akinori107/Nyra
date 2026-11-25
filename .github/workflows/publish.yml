@@ -1,25 +1,108 @@
 name: Publish
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
 jobs:
   publish:
     name: Publish to NuGet
     runs-on: ubuntu-latest
     environment: production
     permissions:
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Find the release
+        id: release
+        run: |
+          tag=$(git log -1 --format=%s)
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            exit 0
+          fi
+          version=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)
+          if [[ "$tag" != "v$version" ]]; then
+            echo "::error title=Version mismatch::Merged $tag but Directory.Build.props has $version"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
+        if: steps.release.outputs.tag
         with:
           dotnet-version: |
             10.0.x
             11.0.x
       - name: NuGet login
+        if: steps.release.outputs.tag
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         id: login
         with:
           user: Akinori
       - run: dotnet pack Nyra.slnx --configuration Release -o ./nupkg
+        if: steps.release.outputs.tag
       - run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        if: steps.release.outputs.tag
+      - name: Write the release notes from the commits
+        if: steps.release.outputs.tag
+        run: |
+          python3 - > notes.md <<'PY'
+          import glob, re, subprocess, sys
+
+          def git(*args):
+              return subprocess.run(["git", *args], capture_output=True, text=True).stdout
+
+          tag = "HEAD"
+          previous = git("describe", "--tags", "--abbrev=0", "HEAD^").strip()
+          span = f"{previous}..{tag}" if previous else tag
+
+          def references(rev):
+              found = {}
+              for path in git("ls-tree", "-r", "--name-only", rev, "src").split():
+                  if not path.endswith(".csproj"):
+                      continue
+                  for element in re.findall(r"<PackageReference\b.*?/?>", git("show", f"{rev}:{path}"), re.S):
+                      name = re.search(r'Include="([^"]+)"', element)
+                      version = re.search(r'Version="([^"]+)"', element)
+                      if name and version and 'PrivateAssets="all"' not in element:
+                          framework = re.search(r"net\d+\.\d+", element)
+                          found[(name.group(1), framework.group(0) if framework else "", path.rsplit("/", 1)[-1][:-7])] = version.group(1)
+              return found
+
+          features, fixes, breaking = [], [], []
+          for line in reversed(git("log", "--no-merges", "--format=%H%x09%s", span).splitlines()):
+              sha, subject = line.split("\t", 1)
+              match = re.match(r"^(feat|fix|docs|refactor|chore)(!)?: (.+)$", subject)
+              if not match:
+                  continue
+              kind, bang, text = match.groups()
+              paths = git("show", "--name-only", "--format=", sha).split()
+              if paths and all(path.startswith(("tests/", ".github/")) for path in paths):
+                  continue
+              if bang:
+                  breaking.append(text)
+              elif kind == "feat":
+                  features.append(text)
+              elif kind == "fix":
+                  fixes.append(text)
+
+          before = references(previous) if previous else {}
+          after = references(tag)
+          shared = {name for name, _, project in after if sum(other == name for other, _, _ in after) > 1}
+          dependencies = [
+              f"{name} {version}" + "".join(f" ({note})" for note in (framework, project if name in shared and not framework else "") if note)
+              for (name, framework, project), version in sorted(after.items())
+              if before.get((name, framework, project)) != version
+          ]
+          lines = []
+          for title, items in (("Breaking changes", breaking), ("Features", features), ("Fixes", fixes), ("Dependencies", dependencies)):
+              if items:
+                  lines += [f"## {title}", ""] + [f"- {item}" for item in items] + [""]
+          print("\n".join(lines).strip() or "No user-facing changes.")
+          PY
+      - name: Create the release
+        if: steps.release.outputs.tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md --latest
