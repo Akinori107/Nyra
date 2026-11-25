@@ -421,4 +421,39 @@ public sealed class VoiceListeners
             .That(() => new Node(new Endpoint("127.0.0.1", 1, "p"), options))
             .Throws<ArgumentOutOfRangeException>();
     }
+
+    [Test]
+    public async Task ListenerReturningDuringTheTimeoutHandlerStartsANewAlonePeriod()
+    {
+        var rig = await StartAsync(Leave).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var count = 0;
+            rig.Connection.AloneTimedOut += (_, _) =>
+            {
+                if (Interlocked.Increment(ref count) == 1)
+                {
+                    rig.Bridge.Move(1, 555);
+                    rig.Bridge.Move(1, null);
+                }
+                return Task.CompletedTask;
+            };
+
+            rig.Time.Advance(Timeout5);
+            await Eventually(() => Volatile.Read(ref count) == 1).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(1))
+                .ConfigureAwait(false);
+            await Assert.That(rig.Connected).IsTrue();
+            await Assert.That(count).IsEqualTo(1);
+            var left = await AdvanceUntilAsync(
+                    rig.Time,
+                    () => !rig.Connected,
+                    TimeSpan.FromMinutes(2),
+                    TimeSpan.FromSeconds(1)
+                )
+                .ConfigureAwait(false);
+            await Assert.That(left).IsTrue();
+            await Assert.That(count).IsEqualTo(2);
+        }
+    }
 }

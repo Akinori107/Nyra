@@ -1381,9 +1381,14 @@ public sealed class GuildConnection
             _idleTimer.Arm(timeout);
     }
 
-    private void OnIdleTimerFired()
+    private void OnIdleTimerFired(long generation)
     {
-        if (_tearingDown || CurrentTrack is not null || ChannelId is not { } channelId)
+        if (
+            _tearingDown
+            || !_idleTimer.IsValid(generation)
+            || CurrentTrack is not null
+            || ChannelId is not { } channelId
+        )
             return;
 
         if (_restoring)
@@ -1392,17 +1397,23 @@ public sealed class GuildConnection
             return;
         }
 
-        LeaveIdleAsync(channelId).ObserveFaults(Node.HandleError);
+        LeaveIdleAsync(channelId, generation).ObserveFaults(Node.HandleError);
     }
 
-    private async Task LeaveIdleAsync(ulong channelId)
+    private async Task LeaveIdleAsync(ulong channelId, long generation)
     {
         await IdleTimedOut
             .RaiseAsync(this, new GuildConnectionIdleEventArgs(GuildId, channelId), _handlerError)
             .ConfigureAwait(false);
 
-        if (_tearingDown || CurrentTrack is not null)
+        if (_tearingDown || !_idleTimer.IsValid(generation) || CurrentTrack is not null)
             return;
+
+        if (_restoring)
+        {
+            UpdateIdleTimer();
+            return;
+        }
 
         await DisconnectAsync().ConfigureAwait(false);
     }
@@ -1526,13 +1537,13 @@ public sealed class GuildConnection
         }
     }
 
-    private void OnAloneTimerFired()
+    private void OnAloneTimerFired(long generation)
     {
         if (_tearingDown || ChannelId is not { } channelId)
             return;
 
         SyncListeners();
-        if (Listeners != 0)
+        if (!_aloneTimer.IsValid(generation) || Listeners != 0)
             return;
 
         if (_restoring)
@@ -1541,10 +1552,10 @@ public sealed class GuildConnection
             return;
         }
 
-        LeaveAloneAsync(channelId).ObserveFaults(Node.HandleError);
+        LeaveAloneAsync(channelId, generation).ObserveFaults(Node.HandleError);
     }
 
-    private async Task LeaveAloneAsync(ulong channelId)
+    private async Task LeaveAloneAsync(ulong channelId, long generation)
     {
         await AloneTimedOut
             .RaiseAsync(
@@ -1554,8 +1565,14 @@ public sealed class GuildConnection
             )
             .ConfigureAwait(false);
 
-        if (_tearingDown || Listeners != 0)
+        if (_tearingDown || !_aloneTimer.IsValid(generation) || Listeners != 0)
             return;
+
+        if (_restoring)
+        {
+            _aloneTimer.Arm(Node.Options.AloneTimeout);
+            return;
+        }
 
         await DisconnectAsync().ConfigureAwait(false);
     }

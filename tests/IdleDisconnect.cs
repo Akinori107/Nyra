@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.Extensions.Time.Testing;
+using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -141,5 +143,52 @@ public sealed class IdleDisconnect
         await Assert
             .That(() => new Node(new Endpoint("127.0.0.1", 1, "p"), options))
             .Throws<ArgumentOutOfRangeException>();
+    }
+
+    [Test]
+    public async Task PlaybackDuringTheTimeoutHandlerStartsANewIdlePeriod()
+    {
+        var rig = await StartAsync(Timeout5).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var count = 0;
+            var restarted = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Connection.IdleTimedOut += async (_, _) =>
+            {
+                if (Interlocked.Increment(ref count) != 1)
+                    return;
+
+                await rig
+                    .Connection.PlayAsync(JsonSerializer.Deserialize<Track>(TrackJson("brief"))!)
+                    .ConfigureAwait(false);
+                await rig
+                    .Server.PushAsync(
+                        $$"""{"op":"event","guildId":"777","type":"TrackEndEvent","track":{{TrackJson("brief")}},"reason":"finished"}"""
+                    )
+                    .ConfigureAwait(false);
+                await Assert
+                    .That(() => rig.Connection.CurrentTrack is null)
+                    .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
+                restarted.TrySetResult();
+            };
+
+            rig.Time.Advance(Timeout5);
+            await restarted.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(1))
+                .ConfigureAwait(false);
+            await Assert.That(rig.Connected).IsTrue();
+            await Assert.That(count).IsEqualTo(1);
+            var left = await AdvanceUntilAsync(
+                    rig.Time,
+                    () => !rig.Connected,
+                    TimeSpan.FromMinutes(2),
+                    TimeSpan.FromSeconds(1)
+                )
+                .ConfigureAwait(false);
+            await Assert.That(left).IsTrue();
+            await Assert.That(count).IsEqualTo(2);
+        }
     }
 }
