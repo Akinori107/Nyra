@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
@@ -104,6 +105,64 @@ public sealed class PlayPath
             await Assert
                 .That(() => Volatile.Read(ref errorVisits) == 1)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Test]
+    public async Task AnEndFromAnotherSourceWithTheSameIdentifierDoesNotStopTheCurrentTrack()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var conn = stack.Node.GetConnection(777)!;
+            var current = TrackJson.Replace(
+                "}}",
+                ","
+                    + JsonSerializer.Serialize("sourceName")
+                    + ":"
+                    + JsonSerializer.Serialize("deezer")
+                    + "}}",
+                StringComparison.Ordinal
+            );
+            stack.Server.On(
+                "PATCH",
+                PlayerPath,
+                200,
+                PlayerWithTrack.Replace(TrackJson, current, StringComparison.Ordinal)
+            );
+            await conn.PlayAsync(JsonSerializer.Deserialize<Track>(current)!).ConfigureAwait(false);
+            async Task EndAsync(string source)
+            {
+                var delivered = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                Task Handler(object? sender, Nyra.EventArgs.TrackFinishedEventArgs args)
+                {
+                    delivered.TrySetResult();
+                    return Task.CompletedTask;
+                }
+                conn.TrackFinished += Handler;
+                try
+                {
+                    var other = current
+                        .Replace("QXRsZWFzdA==", "other-encoding", StringComparison.Ordinal)
+                        .Replace("deezer", source, StringComparison.Ordinal);
+                    await stack
+                        .Server.PushAsync(
+                            $$"""{"op":"event","guildId":"777","type":"TrackEndEvent","track":{{other}},"reason":"finished"}"""
+                        )
+                        .ConfigureAwait(false);
+                    await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                }
+                finally
+                {
+                    conn.TrackFinished -= Handler;
+                }
+            }
+            await EndAsync("qobuz").ConfigureAwait(false);
+            await Assert.That(conn.CurrentTrack?.Encoded).IsEqualTo("QXRsZWFzdA==");
+            await EndAsync("deezer").ConfigureAwait(false);
+            await Assert.That(conn.CurrentTrack).IsNull();
         }
     }
 }

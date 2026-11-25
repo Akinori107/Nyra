@@ -1307,6 +1307,7 @@ public sealed class GuildConnection
             (
                 !string.IsNullOrEmpty(current.Info.Identifier)
                 && current.Info.Identifier == candidate.Info.Identifier
+                && current.Info.SourceName == candidate.Info.SourceName
             ) || (!string.IsNullOrEmpty(current.Encoded) && current.Encoded == candidate.Encoded)
         );
 
