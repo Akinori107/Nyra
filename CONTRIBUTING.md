@@ -18,7 +18,7 @@ A commit body is optional. Say why in a short paragraph, or use one bullet per c
 
 ## Tests
 
-Tests are not required, but they are appreciated. If you write some, `FakeTimeProvider` is handy for advancing time, and `FakeNodeServer` and `FakeBridge` in `FakeNode.cs` stand in for the node and the Discord side. For voice handshakes and reconnects, wait for the task or event the test needs. Remember to raise `--minimum-expected-tests` in `tests.yml` to match.
+Tests are not required, but they are appreciated. If you write some, `FakeTimeProvider` is handy for advancing time, and `FakeNodeServer` and `FakeBridge` in `FakeNode.cs` stand in for the node and the Discord side. For voice handshakes and reconnects, wait for the task or event the test needs.
 
 ## Local checks
 
