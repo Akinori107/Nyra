@@ -123,7 +123,7 @@ public sealed class GuildQueue
     }
 
     /// <summary>Gets how long it takes for an upcoming track to start playing.</summary>
-    /// <remarks>Streams are left out, they have no length.</remarks>
+    /// <remarks>Streams are left out, and start offsets are subtracted from upcoming tracks.</remarks>
     /// <param name="index">The position of the track in <see cref="Upcoming"/>, 0 plays next.</param>
     /// <returns>
     /// The time until the track starts, null when there is no track at the index, when
@@ -150,8 +150,15 @@ public sealed class GuildQueue
         }
 
         for (var before = 0; before < index; before++)
-            if (!state.Upcoming[before].Info.IsStream)
-                wait += state.Upcoming[before].Info.Length;
+        {
+            var track = state.Upcoming[before];
+            if (track.Info.IsStream)
+                continue;
+
+            var left = track.Info.Length - (track.StartPosition ?? TimeSpan.Zero);
+            if (left > TimeSpan.Zero)
+                wait += left;
+        }
 
         return wait;
     }

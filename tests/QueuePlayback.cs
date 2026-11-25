@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using Nyra.Entities;
 using Nyra.Queue;
 using static Nyra.Tests.NodeHarness;
@@ -92,7 +93,7 @@ public sealed class QueuePlayback
         );
     }
 
-    private static async Task<Rig> StartAsync()
+    private static async Task<Rig> StartAsync(TimeProvider? time = null)
     {
         var server = new FakeNodeServer();
         var bridge = new FakeBridge();
@@ -103,6 +104,7 @@ public sealed class QueuePlayback
             new NodeOptions
             {
                 Name = "queue",
+                TimeProvider = time ?? TimeProvider.System,
                 VoiceHandshakeTimeout = TimeSpan.FromSeconds(5),
                 ReadyTimeout = TimeSpan.FromSeconds(5),
             }
@@ -361,6 +363,54 @@ public sealed class QueuePlayback
             await Assert
                 .That(Ids(rig.Queue.Upcoming.OrderBy(track => track.Info.Identifier)))
                 .IsEqualTo("b,c,d,e");
+        }
+    }
+
+    private static async Task<Track> OffsetAsync(Rig rig, long length)
+    {
+        rig.Server.On(
+            "GET",
+            "/v4/loadtracks",
+            200,
+            $$"""{"loadType":"track","data":{{TrackJson("b", length)}}}"""
+        );
+        try
+        {
+            var loaded = (TrackLoaded)
+                await rig.Node.LoadTracksAsync("https://example.test/b?t=30").ConfigureAwait(false);
+            await Assert.That(loaded.Track.StartPosition).IsEqualTo(TimeSpan.FromSeconds(30));
+            return loaded.Track;
+        }
+        finally
+        {
+            rig.Server.On("GET", "/v4/loadtracks", call => new FakeRestResponse(
+                200,
+                $$"""{"loadType":"track","data":{{LoadedTrackJson(call.Query)}}}"""
+            ));
+        }
+    }
+
+    [Test]
+    public async Task TimeUntilAccountsForUpcomingStartOffsets()
+    {
+        var time = new FakeTimeProvider();
+        var rig = await StartAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var offset = await OffsetAsync(rig, 60000).ConfigureAwait(false);
+            await rig
+                .Queue.EnqueueAsync([
+                    await rig.MakeAsync("a").ConfigureAwait(false),
+                    offset,
+                    await rig.MakeAsync("c").ConfigureAwait(false),
+                ])
+                .ConfigureAwait(false);
+
+            await Assert.That(rig.Queue.TimeUntil(0)).IsEqualTo(TimeSpan.FromSeconds(100));
+            await Assert.That(rig.Queue.TimeUntil(1)).IsEqualTo(TimeSpan.FromSeconds(130));
+            await Assert
+                .That(rig.Queue.Upcoming[0].StartPosition)
+                .IsEqualTo(TimeSpan.FromSeconds(30));
         }
     }
 }
