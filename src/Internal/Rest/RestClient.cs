@@ -180,7 +180,7 @@ internal sealed class RestClient
                 $"Node '{Node.Name}' has no usable session id: the node is not ready yet, or the ready's id was dropped as header-hostile."
             );
 
-    internal string SessionPath(string route, params object[] arguments) =>
+    internal string SessionPath(string route, params ReadOnlySpan<object> arguments) =>
         string.Format(
             CultureInfo.InvariantCulture,
             route,
