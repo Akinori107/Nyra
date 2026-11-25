@@ -37,7 +37,10 @@ internal abstract class GatewayBridgeBase(
     public IReadOnlyCollection<ulong>? GetListeners(ulong guildId, ulong channelId)
     {
         var client = GetClient(guildId);
-        if (!client.Cache.Guilds.TryGetValue(guildId, out var guild))
+        if (
+            !client.Cache.Guilds.TryGetValue(guildId, out var guild)
+            || !guild.Channels.ContainsKey(channelId)
+        )
             return null;
 
         return

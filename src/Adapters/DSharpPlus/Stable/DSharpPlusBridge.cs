@@ -137,7 +137,10 @@ public sealed class DSharpPlusBridge
     public IReadOnlyCollection<ulong>? GetListeners(ulong guildId, ulong channelId)
     {
         var client = GetClientForGuild(guildId);
-        if (!client.Guilds.TryGetValue(guildId, out var guild))
+        if (
+            !client.Guilds.TryGetValue(guildId, out var guild)
+            || !guild.Channels.ContainsKey(channelId)
+        )
             return null;
 
         var self = client.CurrentUser?.Id;
