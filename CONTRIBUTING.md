@@ -31,6 +31,6 @@ csharpier format .
 CI=true dotnet build --configuration Release
 
 for framework in net10.0 net11.0; do
-  dotnet run --project tests/Nyra.Tests --configuration Release --no-build -f "$framework"
+  dotnet run --project tests --configuration Release --no-build -f "$framework"
 done
 ```

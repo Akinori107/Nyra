@@ -5,5 +5,5 @@
   <Project Path="src/Adapters/DSharpPlus/Nightly/Nyra.DSharpPlus.Nightly.csproj" />
   <Project Path="src/Adapters/NetCord/Nyra.NetCord.csproj" />
   <Project Path="src/Nyra.csproj" />
-  <Project Path="tests/Nyra.Tests/Nyra.Tests.csproj" />
+  <Project Path="tests/Nyra.Tests.csproj" />
 </Solution>

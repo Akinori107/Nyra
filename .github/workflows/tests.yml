@@ -44,7 +44,7 @@ jobs:
           exit "$failed"
       - run: dotnet build --configuration Release -f ${{ matrix.framework }}
       - run: >-
-          dotnet run --project tests/Nyra.Tests --configuration Release --no-build -f ${{ matrix.framework }} --
+          dotnet run --project tests --configuration Release --no-build -f ${{ matrix.framework }} --
           --fail-fast --timeout 3m --maximum-parallel-tests 16
           --results-directory results --coverage --coverage-output-format cobertura
           --coverage-output results.xml
