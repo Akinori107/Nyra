@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
@@ -25,7 +27,12 @@ public sealed class PositionPath
         FakeNodeServer Server,
         GuildConnection Conn,
         NyraExtension Extension
-    )> ConnectAsync(bool pausedEcho, string? filtersEcho = null, FakeNodeServer? lavalink = null)
+    )> ConnectAsync(
+        bool pausedEcho,
+        string? filtersEcho = null,
+        FakeNodeServer? lavalink = null,
+        TimeProvider? time = null
+    )
     {
         var server = lavalink ?? new FakeNodeServer();
         var bridge = new FakeBridge();
@@ -36,6 +43,7 @@ public sealed class PositionPath
             new NodeOptions
             {
                 Name = "position",
+                TimeProvider = time ?? TimeProvider.System,
                 ReconnectDelay = TimeSpan.FromMilliseconds(50),
                 MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
                 VoiceHandshakeTimeout = TimeSpan.FromSeconds(5),
@@ -49,7 +57,7 @@ public sealed class PositionPath
             PlayerBody(pausedEcho, filtersEcho)
         ));
         var connect = node.ConnectAsync(777, 555);
-        await Task.Delay(100).ConfigureAwait(false);
+        await WaitForJoinAsync(bridge).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
         bridge.FireVoiceServer(777, "tok", "127.0.0.1");
         var conn = await connect.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
@@ -85,5 +93,61 @@ public sealed class PositionPath
         await conn.DisconnectAsync().ConfigureAwait(false);
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
+    }
+
+    [Test]
+    public async Task AResumeEventDoesNotDiscardAlreadyProjectedPlayback()
+    {
+        var time = new FakeTimeProvider();
+        var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false, time: time)
+            .ConfigureAwait(false);
+        using (server)
+        await using (extension.ConfigureAwait(false))
+        {
+            await conn.PlayAsync(JsonSerializer.Deserialize<Track>(TrackJson)!)
+                .ConfigureAwait(false);
+            async Task PauseEvent(bool paused)
+            {
+                var observed = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                Task Handler(object? _, Nyra.EventArgs.PauseChangedEventArgs args)
+                {
+                    observed.TrySetResult(args.IsPaused);
+                    return Task.CompletedTask;
+                }
+                conn.PauseChanged += Handler;
+                try
+                {
+                    await server
+                        .PushAsync(
+                            $$"""{"op":"event","guildId":"777","type":"PauseEvent","paused":{{(paused ? "true" : "false")}}}"""
+                        )
+                        .ConfigureAwait(false);
+                    await Assert
+                        .That(
+                            await observed
+                                .Task.WaitAsync(TimeSpan.FromSeconds(5))
+                                .ConfigureAwait(false)
+                        )
+                        .IsEqualTo(paused);
+                }
+                finally
+                {
+                    conn.PauseChanged -= Handler;
+                }
+            }
+            time.Advance(TimeSpan.FromSeconds(5));
+            await Assert.That(conn.Position).IsEqualTo(TimeSpan.FromSeconds(5));
+            await PauseEvent(false).ConfigureAwait(false);
+            await Assert.That(conn.Position).IsEqualTo(TimeSpan.FromSeconds(5));
+            time.Advance(TimeSpan.FromSeconds(2));
+            await PauseEvent(true).ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(3));
+            await Assert.That(conn.Position).IsEqualTo(TimeSpan.FromSeconds(7));
+            await PauseEvent(false).ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(2));
+            await Assert.That(conn.Position).IsEqualTo(TimeSpan.FromSeconds(9));
+        }
     }
 }

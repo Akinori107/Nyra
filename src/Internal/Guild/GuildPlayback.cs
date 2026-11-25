@@ -313,7 +313,8 @@ internal sealed class GuildPlayback
                 FreezePosition();
             else
             {
-                _positionTick = _time.GetMilliseconds();
+                if (!_positionAdvancing)
+                    _positionTick = _time.GetMilliseconds();
                 _positionAdvancing =
                     (_connection.State?.Connected ?? true)
                     && _connection.CurrentTrack is { Info.IsStream: false };
