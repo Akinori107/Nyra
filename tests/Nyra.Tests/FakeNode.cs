@@ -9,7 +9,6 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
-using Nyra.Exceptions;
 
 namespace Nyra.Tests;
 
@@ -115,7 +114,7 @@ internal sealed class RecordingList<T> : IEnumerable<T>
         GetEnumerator();
 }
 
-internal class FakeBridge : IDiscordBridge, IGuildRemovalSource, IAsyncDisposable
+internal class FakeBridge : IDiscordBridge, IAsyncDisposable
 {
     public const ulong UserId = 424242424242424242;
 
@@ -181,11 +180,6 @@ internal class FakeBridge : IDiscordBridge, IGuildRemovalSource, IAsyncDisposabl
     public ClientInformation Identification { get; set; } = new(UserId);
 
     public void GoReady() => _ready.TrySetResult(Identification);
-
-    public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
-
-    public void FireGuildRemoved(ulong guildId) =>
-        GuildRemoved?.Invoke(this, new GuildRemovedEventArgs(guildId));
 
     public ValueTask DisposeAsync()
     {
@@ -809,27 +803,6 @@ internal static class NodeHarness
             await Task.Delay(1).ConfigureAwait(false);
     }
 
-    public static async Task WriteTruncatedReplyAsync(Stream stream, string status)
-    {
-        var head =
-            $"HTTP/1.1 {status}\r\nContent-Type: application/json\r\n"
-            + "Content-Length: 100\r\nConnection: close\r\n\r\n";
-        await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-        await stream.WriteAsync(Encoding.UTF8.GetBytes("short")).ConfigureAwait(false);
-        await stream.FlushAsync().ConfigureAwait(false);
-        stream.Close();
-    }
-
-    private static readonly ConcurrentBag<Socket> HeldDeadPorts = [];
-
-    public static int DeadPort()
-    {
-        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-        HeldDeadPorts.Add(socket);
-        return ((IPEndPoint)socket.LocalEndPoint!).Port;
-    }
-
     public static async Task AdvanceUntilAsync(
         FakeTimeProvider time,
         Task task,
@@ -898,16 +871,6 @@ internal static class NodeHarness
         while (!condition() && real.Elapsed < TimeSpan.FromSeconds(1))
             await Task.Delay(5).ConfigureAwait(false);
         return condition();
-    }
-
-    public static async Task AwaitRestAsync(Func<Task> call)
-    {
-        await Assert
-            .That(async () =>
-            {
-                await call().ConfigureAwait(false);
-            })
-            .Throws<RestException>();
     }
 }
 

@@ -1,6 +1,4 @@
 using Microsoft.Extensions.Time.Testing;
-using Nyra.Abstractions;
-using Nyra.Internal;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -43,25 +41,6 @@ public sealed class LoopAndVoiceCloseLavalink
     }
 
     [Test]
-    public async Task VoiceServerAfterARemoval()
-    {
-        var bridge = new FakeBridge();
-        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(5));
-        var wait = coordinator.WaitForUpdatesAsync(999, 555, bridge, CancellationToken.None);
-
-        coordinator.FailPendingGuildRemoval(999);
-        var refused = coordinator.HandleVoiceServerUpdate(
-            bridge,
-            new VoiceServerUpdatedEventArgs(999, new VoiceServer("tok", "127.0.0.1"))
-        );
-
-        await Assert.That(refused).IsFalse();
-        await Assert
-            .That(async () => await wait.ConfigureAwait(false))
-            .Throws<Exceptions.VoiceHandshakeException>();
-    }
-
-    [Test]
     public async Task VoiceCloseReentryOnLavalink()
     {
         var server = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
@@ -91,9 +70,4 @@ public sealed class LoopAndVoiceCloseLavalink
             await RunForAsync(time, TimeSpan.FromMilliseconds(10_500)).ConfigureAwait(false);
         }
     }
-}
-
-internal static class LoopAndVoiceCloseLavalinkExtensions
-{
-    internal static void Forget(this Task task) => _ = task;
 }

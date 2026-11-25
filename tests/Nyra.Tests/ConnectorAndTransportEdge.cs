@@ -1,76 +1,11 @@
-using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
-using Nyra.Entities;
-using Nyra.Exceptions;
-using Nyra.Internal;
-using Nyra.WebSocket;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
 
 public sealed class ConnectorAndTransportEdge
 {
-    [Test]
-    public async Task JsonNullable()
-    {
-        var options = NyraJson.SerializerOptions;
-
-        using var snowflakeStream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(snowflakeStream))
-            new NullableSnowflakeConverter().Write(writer, null, options);
-        await Assert.That(Encoding.UTF8.GetString(snowflakeStream.ToArray())).IsEqualTo("null");
-
-        using var stringStream = new MemoryStream();
-        using (var writer2 = new Utf8JsonWriter(stringStream))
-            new StringOrNumberConverter().Write(writer2, null, options);
-        await Assert.That(Encoding.UTF8.GetString(stringStream.ToArray())).IsEqualTo("null");
-    }
-
-    [Test]
-    public async Task PluginFiltersMakeAChainNonEmpty()
-    {
-        var withPlugins = new FilterChain
-        {
-            PluginFilters = new Dictionary<string, JsonElement>
-            {
-                ["party"] = JsonDocument.Parse("""{"amount":1}""").RootElement,
-            },
-        };
-
-        await Assert.That(FilterComparer.IsEmpty(new FilterChain())).IsTrue();
-        await Assert.That(FilterComparer.IsEmpty(withPlugins)).IsFalse();
-    }
-
-    [Test]
-    public async Task MissingSessionRawFallback()
-    {
-        var arrayBody = new RestException(404, "/v4/x", "[1,2]", null);
-        await Assert.That(RestClient.IndicatesMissingSession(arrayBody)).IsFalse();
-
-        var sessionStringBody = new RestException(404, "/v4/x", "\"session\"", null);
-        await Assert.That(RestClient.IndicatesMissingSession(sessionStringBody)).IsTrue();
-
-        var quietObjectBody = new RestException(
-            404,
-            "/v4/x",
-            """{"message":"player gone"}""",
-            null
-        );
-        await Assert.That(RestClient.IndicatesMissingSession(quietObjectBody)).IsFalse();
-    }
-
-    [Test]
-    public async Task WsDoubleStopWithoutConnect()
-    {
-        using var client = new WebSocketClient();
-        await Assert.That(client.IsConnected).IsFalse();
-        await client.StopAsync(CancellationToken.None).ConfigureAwait(false);
-        await client.StopAsync(CancellationToken.None).ConfigureAwait(false);
-        await Assert.That(client.IsConnected).IsFalse();
-    }
-
     private static async Task<Stack> StartAsync(
         FakeNodeServer? server = null,
         TimeProvider? time = null
@@ -100,87 +35,6 @@ public sealed class ConnectorAndTransportEdge
             Bridge = bridge,
             Server = server,
         };
-    }
-
-    [Test]
-    public async Task RestTruncatedErrorBody()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            stack.Server.OnRaw("GET", "/v4/sessions/fake-session/groups", async (_, stream) =>
-            {
-                var head =
-                    "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
-                    + "Content-Length: 100\r\nConnection: close\r\n\r\n";
-                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                await stream.WriteAsync(Encoding.UTF8.GetBytes("short")).ConfigureAwait(false);
-                await stream.FlushAsync().ConfigureAwait(false);
-                stream.Close();
-            });
-            var truncated = await Assert
-                .That(async () =>
-                    await stack
-                        .Node.Rest.Groups.ListAsync(CancellationToken.None)
-                        .ConfigureAwait(false)
-                )
-                .Throws<RestException>();
-            await Assert.That(truncated!.StatusCode).IsEqualTo(404);
-            await Assert.That(truncated.ResponseBody).IsEqualTo(string.Empty);
-        }
-    }
-
-    [Test]
-    public async Task AnUnreadableNotFoundIsNotAMissingPlayer()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            stack.Server.OnRaw("GET", PlayerPath, (_, stream) =>
-                WriteTruncatedReplyAsync(stream, "404 Not Found")
-            );
-
-            var unreadable = await Assert
-                .That(async () =>
-                    await stack
-                        .Node.Rest.Players.GetAsync(777, CancellationToken.None)
-                        .ConfigureAwait(false)
-                )
-                .Throws<RestException>();
-            await Assert.That(unreadable!.StatusCode).IsEqualTo(404);
-        }
-    }
-
-    [Test]
-    public async Task RestTruncatedSuccessBody()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            stack.Server.OnRaw("GET", "/v4/sessions/fake-session/groups", async (_, stream) =>
-            {
-                var head =
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-                    + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
-                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                await stream
-                    .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the payload"))
-                    .ConfigureAwait(false);
-                await stream.FlushAsync().ConfigureAwait(false);
-                stream.Close();
-            });
-            var unreachable = await Assert
-                .That(async () =>
-                    await stack
-                        .Node.Rest.Groups.ListAsync(CancellationToken.None)
-                        .ConfigureAwait(false)
-                )
-                .Throws<NodeUnreachableException>()
-                .WithMessageContaining("transport-edge");
-            await Assert
-                .That(unreachable!.InnerException is IOException or HttpRequestException)
-                .IsTrue();
-        }
     }
 
     private sealed class HostileLogger : Microsoft.Extensions.Logging.ILogger
@@ -322,30 +176,6 @@ public sealed class ConnectorAndTransportEdge
     }
 
     [Test]
-    public async Task NodeSkipWithHostileLogger()
-    {
-        var bridge = new FakeBridge { Logger = new HostileLogger() };
-        bridge.GoReady();
-        var extension = new NyraExtension(bridge);
-        var node = new Node(
-            new Endpoint("127.0.0.1", DeadPort(), "unused"),
-            new NodeOptions
-            {
-                Name = "transport-edge-dead",
-                ReconnectDelay = TimeSpan.FromMilliseconds(50),
-                MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
-                MaxReconnectAttempts = 0,
-            }
-        );
-        extension.AddNode(node);
-        await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-        await Assert.That(node.IsConnected).IsFalse();
-        await Assert.That(node.IsReady).IsFalse();
-        await Assert.That(extension.ContainsNode(node)).IsTrue();
-        await extension.DisposeAsync().ConfigureAwait(false);
-    }
-
-    [Test]
     public async Task BridgeDisposeThrows()
     {
         var bridge = new ExplodingDisposeBridge();
@@ -432,58 +262,6 @@ public sealed class ConnectorAndTransportEdge
         }
         catch (OperationCanceledException) { }
         server.Dispose();
-    }
-
-    [Test]
-    public async Task HandshakeFaultedSend()
-    {
-        var bridge = new FakeBridge { FaultVoiceSends = true };
-        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(5));
-        var refused = await Assert
-            .That(async () =>
-                await coordinator
-                    .WaitForUpdatesAsync(888, 555, bridge, CancellationToken.None)
-                    .ConfigureAwait(false)
-            )
-            .Throws<InvalidOperationException>()
-            .WithMessageContaining("refuses the send");
-        await Assert.That(refused!.Message).Contains("refuses the send");
-    }
-
-    [Test]
-    public async Task LoadStreamBodyWall()
-    {
-        var time = new FakeTimeProvider();
-        var stack = await StartAsync(time: time).ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            stack.Server.OnRaw("GET", "/v4/loadstream", async (_, stream) =>
-            {
-                var head =
-                    "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n"
-                    + "Content-Length: 500\r\nConnection: close\r\n\r\n";
-                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                await stream
-                    .WriteAsync(Encoding.UTF8.GetBytes("{\"message\":"))
-                    .ConfigureAwait(false);
-                await stream.FlushAsync().ConfigureAwait(false);
-                stack.Server.Stopping.WaitHandle.WaitOne(TimeSpan.FromSeconds(61));
-                stream.Close();
-            });
-            var open = stack.Node.Rest.Tracks.OpenLoadStreamAsync(
-                "track",
-                100,
-                0,
-                null,
-                LoadStreamFormat.Raw,
-                CancellationToken.None
-            );
-            await AdvanceUntilAsync(time, open, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(61))
-                .ConfigureAwait(false);
-            await Assert
-                .That(async () => await open.ConfigureAwait(false))
-                .Throws<TimeoutException>();
-        }
     }
 
     [Test]

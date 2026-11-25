@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
 
@@ -7,85 +5,6 @@ namespace Nyra.Tests;
 
 public sealed class JsonEdge
 {
-    private static void Throws<T>(Action action)
-        where T : Exception
-    {
-        try
-        {
-            action();
-        }
-        catch (T)
-        {
-            return;
-        }
-        throw new InvalidOperationException($"the expected {typeof(T).Name} never came");
-    }
-
-    private sealed record SnowflakeProbe(ulong G);
-
-    private sealed record RoundedProbe(
-        [property: JsonConverter(typeof(RoundedInt64Converter))] long L,
-        [property: JsonConverter(typeof(RoundedInt64Converter))] long? LN,
-        [property: JsonConverter(typeof(RoundedInt32Converter))] int I
-    );
-
-    [Test]
-    public async Task RoundedRefuses()
-    {
-        var options = new JsonSerializerOptions();
-        Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<RoundedProbe>("""{"L":"abc","LN":null,"I":0}""", options)
-        );
-
-        Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<RoundedProbe>("""{"L":true,"LN":null,"I":0}""", options)
-        );
-
-        Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<RoundedProbe>("""{"L":0,"LN":null,"I":"abc"}""", options)
-        );
-
-        var written = JsonSerializer.Serialize(new RoundedProbe(0, null, 0), options);
-        await Assert.That(written).Contains(""""LN":null"""");
-    }
-
-    [Test]
-    public async Task FiniteFloatRefuses()
-    {
-        var options = NyraJson.SerializerOptions;
-        var converter = new FiniteFloatConverter();
-
-        var trueReader = new Utf8JsonReader("true"u8, isFinalBlock: true, state: default);
-        trueReader.Read();
-        JsonException? wrongToken = null;
-        try
-        {
-            converter.Read(ref trueReader, typeof(float), options);
-        }
-        catch (JsonException ex)
-        {
-            wrongToken = ex;
-        }
-        await Assert.That(wrongToken).IsNotNull();
-
-        var hugeReader = new Utf8JsonReader("1e40"u8, isFinalBlock: true, state: default);
-        hugeReader.Read();
-        JsonException? nonFinite = null;
-        try
-        {
-            converter.Read(ref hugeReader, typeof(float), options);
-        }
-        catch (JsonException ex)
-        {
-            nonFinite = ex;
-        }
-        await Assert.That(nonFinite).IsNotNull();
-
-        using var stream = new MemoryStream();
-        using var writer = new Utf8JsonWriter(stream);
-        Throws<JsonException>(() => converter.Write(writer, float.NaN, options));
-    }
-
     [Test]
     public async Task ChainHash()
     {
@@ -100,36 +19,6 @@ public sealed class JsonEdge
             Tremolo = new TremoloFilter { Frequency = 8, Depth = 0.5f },
         };
         await Assert.That(one.GetHashCode()).IsEqualTo(same.GetHashCode());
-    }
-
-    [Test]
-    public async Task TrackUserDataEquality()
-    {
-        var element = JsonSerializer.Deserialize<JsonElement>("""{"a":1}""");
-        var elementAgain = JsonSerializer.Deserialize<JsonElement>("""{"a":1}""");
-
-        var bare = new PlayerUpdateTrack { Encoded = "t" };
-        var bareAgain = new PlayerUpdateTrack { Encoded = "t" };
-        var carrying = new PlayerUpdateTrack { Encoded = "t", UserData = element };
-        var carryingAgain = new PlayerUpdateTrack { Encoded = "t", UserData = elementAgain };
-
-        await Assert.That(bare).IsEqualTo(bareAgain);
-        await Assert.That(carrying).IsNotEqualTo(bare);
-        await Assert.That(carrying).IsEqualTo(carryingAgain);
-        await Assert.That(bare.GetHashCode() != 0 || bareAgain.GetHashCode() != 0).IsTrue();
-
-        var identified = new PlayerIdentifierUpdateTrack { Identifier = "ph8" };
-        var identifiedAgain = new PlayerIdentifierUpdateTrack { Identifier = "ph8" };
-        var identifiedCarrying = new PlayerIdentifierUpdateTrack
-        {
-            Identifier = "ph8",
-            UserData = element,
-        };
-        await Assert.That(identified).IsEqualTo(identifiedAgain);
-        await Assert.That(identifiedCarrying).IsNotEqualTo(identified);
-        await Assert
-            .That(identified.GetHashCode() != 0 || identifiedAgain.GetHashCode() != 0)
-            .IsTrue();
     }
 
     private static string PaddedInfo(int length)
@@ -180,78 +69,5 @@ public sealed class JsonEdge
             oversized.Dispose();
             fitting.Dispose();
         }
-    }
-
-    private sealed record StringOrNumberProbe(
-        [property: JsonConverter(typeof(StringOrNumberConverter))] string? X
-    );
-
-    private sealed record FiniteProbe(
-        [property: JsonConverter(typeof(FiniteFloatConverter))] float F
-    );
-
-    [Test]
-    public async Task ConverterEdges()
-    {
-        var options = new JsonSerializerOptions();
-
-        Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<StringOrNumberProbe>("""{"X":{}}""", options)
-        );
-
-        var rawText = JsonSerializer.Deserialize<StringOrNumberProbe>("""{"X":1e400}""", options);
-        await Assert.That(rawText?.X).IsEqualTo("1e400");
-
-        var intBoundaries = JsonSerializer.Deserialize<RoundedProbe>(
-            """{"L":9223372036854775807.5,"LN":null,"I":2.5}""",
-            options
-        );
-        await Assert.That(intBoundaries?.L).IsEqualTo(long.MaxValue);
-        await Assert.That(intBoundaries?.I).IsEqualTo(3);
-
-        Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<RoundedProbe>("""{"L":-9.3e18,"LN":null,"I":0}""", options)
-        );
-
-        Throws<JsonException>(() =>
-            JsonSerializer.Serialize(new FiniteProbe(float.PositiveInfinity), options)
-        );
-    }
-
-    [Test]
-    public async Task JsonShapes()
-    {
-        var options = new JsonSerializerOptions();
-        var entityOptions = NyraJson.OptionsFor(true);
-
-        Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<SponsorBlockState>(
-                """{"enabled":[],"categories":[]}""",
-                entityOptions
-            )
-        );
-
-        var roundedFromString = JsonSerializer.Deserialize<RoundedProbe>(
-            """{"L":"9.5","LN":null,"I":"2.5"}""",
-            options
-        );
-        await Assert.That(roundedFromString?.L).IsEqualTo(10);
-        await Assert.That(roundedFromString!.I).IsEqualTo(3);
-
-        Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<RoundedProbe>("""{"L":0,"LN":null,"I":{}}""", options)
-        );
-
-        var finiteFromString = JsonSerializer.Deserialize<FiniteProbe>("""{"F":"1.5"}""", options);
-        await Assert.That(finiteFromString?.F).IsEqualTo(1.5f);
-
-        var finiteWritten = JsonSerializer.Serialize(new FiniteProbe(2.5f), options);
-        await Assert.That(finiteWritten).Contains("2.5");
-
-        var nullableWrittenWithValue = JsonSerializer.Serialize(new RoundedProbe(0, 5, 0), options);
-        await Assert.That(nullableWrittenWithValue).Contains(""""LN":5"""");
-
-        var snowflakeWritten = JsonSerializer.Serialize(new SnowflakeProbe(777), options);
-        await Assert.That(snowflakeWritten).Contains("777");
     }
 }

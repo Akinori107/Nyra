@@ -21,7 +21,4 @@
       Condition="'$(TargetFramework)' == 'net11.0'"
     />
   </ItemGroup>
-  <ItemGroup>
-    <InternalsVisibleTo Include="Nyra.Tests" />
-  </ItemGroup>
 </Project>

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
 using static Nyra.Tests.NodeHarness;
@@ -90,95 +89,6 @@ public sealed class FilterStateMachine
             Echo(server, DesiredJson);
             await conn.Filters.ApplyAsync(Desired()).ConfigureAwait(false);
             await Assert.That(conn.Filters.Applied.Tremolo?.Frequency).IsEqualTo(8);
-        }
-    }
-
-    [Test]
-    public async Task CaptureFencing()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
-            var conn = await ConnectGuildAsync(bridge, node, server, DivergentJson)
-                .ConfigureAwait(false);
-            var filters = conn.Filters;
-
-            await conn.Filters.ApplyAsync(Desired()).ConfigureAwait(false);
-            await Assert.That(conn.Filters.Applied.Tremolo?.Frequency).IsEqualTo(5);
-
-            static Player CapturePlayer(string filtersJson) =>
-                JsonSerializer.Deserialize<Player>(
-                    "{\"guildId\":\"777\",\"filters\":" + filtersJson + "}",
-                    NyraJson.SerializerOptions
-                )!;
-
-            var staleTicket = 0L;
-            await filters
-                .CaptureServerFiltersAsync(
-                    CapturePlayer("""{"tremolo":{"frequency":2,"depth":0.5}}"""),
-                    staleTicket,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            await Assert.That(conn.Filters.Applied.Tremolo?.Frequency).IsEqualTo(5);
-
-            var freshTicket = GuildFilters.NextTicket();
-            await filters
-                .CaptureServerFiltersAsync(
-                    CapturePlayer("""{"tremolo":{"frequency":3,"depth":0.5}}"""),
-                    freshTicket,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            await Assert.That(conn.Filters.Applied.Tremolo?.Frequency).IsEqualTo(3);
-
-            await filters
-                .CaptureServerFiltersAsync(
-                    CapturePlayer("""{"tremolo":{"frequency":2,"depth":0.5}}"""),
-                    staleTicket,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            await Assert.That(conn.Filters.Applied.Tremolo?.Frequency).IsEqualTo(3);
-
-            var emptyTicket = GuildFilters.NextTicket();
-            await filters
-                .CaptureServerFiltersAsync(
-                    JsonSerializer.Deserialize<Player>(
-                        """{"guildId":"777"}""",
-                        NyraJson.SerializerOptions
-                    )!,
-                    emptyTicket,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            await filters
-                .CaptureServerFiltersAsync(
-                    CapturePlayer("""{"tremolo":{"frequency":9,"depth":0.5}}"""),
-                    emptyTicket - 1,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            await Assert.That(conn.Filters.Applied.Tremolo?.Frequency).IsEqualTo(3);
-        }
-    }
-
-    [Test]
-    public async Task ClearResetsState()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
-            var conn = await ConnectGuildAsync(bridge, node, server, DivergentJson)
-                .ConfigureAwait(false);
-            var filters = conn.Filters;
-
-            await conn.Filters.ApplyAsync(Desired()).ConfigureAwait(false);
-
-            await filters.ResetAsync().ConfigureAwait(false);
-            await Assert.That(conn.Filters.Applied.Tremolo).IsNull();
         }
     }
 

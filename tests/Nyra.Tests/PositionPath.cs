@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
@@ -55,98 +54,6 @@ public sealed class PositionPath
         bridge.FireVoiceServer(777, "tok", "127.0.0.1");
         var conn = await connect.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         return (bridge, node, server, conn, extension);
-    }
-
-    private static Track Track() =>
-        JsonSerializer.Deserialize<Track>(TrackJson, NyraJson.SerializerOptions)!;
-
-    [Test]
-    public async Task AnchorAndRegression()
-    {
-        var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false)
-            .ConfigureAwait(false);
-        await conn.PlayAsync(Track()).ConfigureAwait(false);
-        await Assert.That(conn.CurrentTrack).IsNotNull();
-
-        var updated = new TaskCompletionSource<long>();
-        conn.PlayerUpdated += (_, args) =>
-        {
-            updated.TrySetResult(args.State.PositionMilliseconds);
-            return Task.CompletedTask;
-        };
-        await server
-            .PushAsync(
-                """{"op":"playerUpdate","guildId":"777","state":{"time":1500,"position":60000,"connected":true,"ping":50}}"""
-            )
-            .ConfigureAwait(false);
-        await Assert
-            .That(await updated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
-            .IsEqualTo(60000);
-        var anchored = conn.Position;
-        await Assert
-            .That(
-                anchored >= TimeSpan.FromMilliseconds(60_000)
-                    && anchored < TimeSpan.FromMilliseconds(63_000)
-            )
-            .IsTrue();
-
-        var stale = new TaskCompletionSource<long>();
-        conn.PlayerUpdated += (_, args) =>
-        {
-            stale.TrySetResult(args.State.PositionMilliseconds);
-            return Task.CompletedTask;
-        };
-        await server
-            .PushAsync(
-                """{"op":"playerUpdate","guildId":"777","state":{"time":1000,"position":10,"connected":true,"ping":50}}"""
-            )
-            .ConfigureAwait(false);
-        await stale.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-        await Assert.That(conn.Position >= anchored).IsTrue();
-
-        await conn.DisconnectAsync().ConfigureAwait(false);
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-    }
-
-    [Test]
-    [Arguments(170_000L, null, false, 0, 5)]
-    [Arguments(170_000L, 30, false, 30, 35)]
-    [Arguments(90_000L, null, true, 90, 95)]
-    public async Task PlayAnchorsTheStartInsteadOfTheResponse(
-        long serverPosition,
-        int? startSeconds,
-        bool noReplace,
-        int fromSeconds,
-        int toSeconds
-    )
-    {
-        var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false)
-            .ConfigureAwait(false);
-        server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
-            200,
-            PlayerBody(paused: false, positionMilliseconds: serverPosition)
-        ));
-
-        await conn.PlayAsync(
-                Track(),
-                new PlayOptions(
-                    StartPosition: startSeconds is { } start ? TimeSpan.FromSeconds(start) : null,
-                    NoReplace: noReplace
-                )
-            )
-            .ConfigureAwait(false);
-
-        await Assert
-            .That(
-                conn.Position >= TimeSpan.FromSeconds(fromSeconds)
-                    && conn.Position < TimeSpan.FromSeconds(toSeconds)
-            )
-            .IsTrue();
-
-        await conn.DisconnectAsync().ConfigureAwait(false);
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
     }
 
     [Test]

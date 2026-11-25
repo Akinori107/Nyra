@@ -5,52 +5,6 @@ namespace Nyra.Tests;
 public sealed class NodeAndExtensionSurface
 {
     [Test]
-    public async Task NodeGetter()
-    {
-        var stranger = new Node(
-            new Endpoint("127.0.0.1", 1, "pass"),
-            new NodeOptions { Name = "surface-stranger" }
-        );
-        await Assert.That(stranger.IsNodeLink).IsFalse();
-        await Assert.That(stranger.Version).IsNull();
-
-        using var lavalink = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };
-        var bridge = new FakeBridge();
-        bridge.GoReady();
-        var extension = new NyraExtension(bridge);
-        var lavaNode = new Node(
-            new Endpoint("127.0.0.1", lavalink.Port, lavalink.Password),
-            new NodeOptions { Name = "surface-lava" }
-        );
-        extension.AddNode(lavaNode);
-        await lavaNode.EnsureServerInfoAsync(default, forceProbe: true).ConfigureAwait(false);
-        await Assert.That(lavaNode.IsNodeLink).IsFalse();
-        await Assert.That(lavaNode.Version is { Major: 4 }).IsTrue();
-
-        using var nodelink = new FakeNodeServer();
-        var linkNode = new Node(
-            new Endpoint("127.0.0.1", nodelink.Port, nodelink.Password),
-            new NodeOptions { Name = "surface-link" }
-        );
-        extension.AddNode(linkNode);
-        await linkNode.EnsureServerInfoAsync(default, forceProbe: true).ConfigureAwait(false);
-        await Assert.That(linkNode.IsNodeLink).IsTrue();
-        await Assert.That(linkNode.Version).IsNotNull();
-    }
-
-    [Test]
-    public async Task LogSafe()
-    {
-        using (Assert.Multiple())
-        {
-            await Assert.That(Node.LogSafe(null)).IsEqualTo(string.Empty);
-            await Assert.That(Node.LogSafe("plain")).IsEqualTo("plain");
-            await Assert.That(Node.LogSafe("bad\u0001")).IsEqualTo("bad");
-            await Assert.That(Node.LogSafe("ação")).IsEqualTo("ao");
-        }
-    }
-
-    [Test]
     public async Task LogAttempt()
     {
         var server = new FakeNodeServer();

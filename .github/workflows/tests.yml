@@ -26,15 +26,22 @@ jobs:
           dotnet-version: |
             10.0.x
             11.0.x
-      - name: Reject reflection in tests
+      - name: Reject internal access in tests
         run: |
-          pattern='System\.Reflection|BindingFlags|DispatchProxy|UnsafeAccessor|GetUninitializedObject|Activator\.CreateInstance|(Method|Field|Property|Member|Constructor)Info[^A-Za-z]|(typeof\([^)]*\)|GetType\(\))[[:space:]]*\.[[:space:]]*Get(Method|Field|Property|Member|Constructor)s?\('
-          if git grep -nE "$pattern" -- 'tests/*.cs' > hits; then
+          pattern='System\.Reflection|BindingFlags|(Method|Field|Property|Member|Constructor|Event|Parameter)Info\b|MethodBase\b|TypeInfo\b|Runtime(Method|Field|Type)Handle|\.Assembly\b|\bAssembly\.|Type\.GetType\(|\.Get(Method|Field|Member|Constructor|Event|NestedType|Interface|Runtime\w+)s?\(|\.GetProperties\(|\.GetProperty\((?!"[a-z])|InvokeMember|MakeGeneric(Method|Type)|CreateDelegate|\bActivator\.|GetUninitializedObject|\bExpression\.\w+\(|Reflection\.Emit|DynamicMethod|AssemblyLoadContext|UnsafeAccessor|IgnoresAccessChecksTo|\bUnsafe\.|\bunsafe\b|MemoryMarshal|\bMarshal\.|GCHandle|TypedReference|__makeref|<Compile\b|<Reference\b'
+          failed=0
+          if git grep -nP "$pattern" -- 'tests/*.cs' 'tests/*.csproj' 'tests/*.props' 'tests/*.targets' > hits; then
             while IFS=: read -r file line _; do
-              echo "::error file=$file,line=$line,title=Reflection::Tests must not use reflection"
+              echo "::error file=$file,line=$line,title=Internal access::Tests only use the public API"
             done < hits
-            exit 1
+            failed=1
           fi
+          packages=$(git grep -hoP '<PackageReference Include="\K[^"]+' -- 'tests/*.csproj' 'tests/*.props' 'tests/*.targets' | grep -vxE 'TUnit|Microsoft\.Extensions\.TimeProvider\.Testing' || true)
+          for package in $packages; do
+            echo "::error title=Test package::$package is not allowed in tests"
+            failed=1
+          done
+          exit "$failed"
       - run: dotnet build --configuration Release -f ${{ matrix.framework }}
       - run: >-
           dotnet run --project tests/Nyra.Tests --configuration Release --no-build -f ${{ matrix.framework }} --

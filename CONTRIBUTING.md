@@ -18,7 +18,7 @@ A commit body is optional. Say why in a short paragraph, or use one bullet per c
 
 ## Tests
 
-A test should fail when something breaks, not when the code changes. Reflection breaks on harmless renames and sleeps race the clock, so avoid both and wait for the task or event the test needs. `FakeTimeProvider` is handy for advancing time, and `FakeNodeServer` and `FakeBridge` in `FakeNode.cs` stand in for the node and the Discord side.
+Tests use the public API only and should fail when something breaks, not when the code changes. That rules out reflection, which breaks on harmless renames, and sleeps, which race the clock. Wait for the task or event the test needs instead. `FakeNodeServer` and `FakeBridge` in `FakeNode.cs` stand in for the node and the Discord side, and `FakeTimeProvider` advances time.
 
 ## Local checks
 

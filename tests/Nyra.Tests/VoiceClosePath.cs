@@ -227,32 +227,4 @@ public sealed class VoiceClosePath
             await Assert.That(conn.IsConnected).IsFalse();
         }
     }
-
-    [Test]
-    public async Task InvalidationRaiseDetachesWhenPumpIsGone()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
-            var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
-
-            var raised = new TaskCompletionSource<ulong>(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            conn.GuildConnectionInvalidated += (_, args) =>
-            {
-                raised.TrySetResult(args.GuildId);
-                return Task.CompletedTask;
-            };
-
-            await conn.CompleteEventPumpAsync().ConfigureAwait(false);
-            await conn.Teardown.HandleSessionInvalidatedAsync().ConfigureAwait(false);
-
-            await Assert
-                .That(await raised.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
-                .IsEqualTo(777);
-            await Assert.That(node.GetConnection(777)).IsNull();
-        }
-    }
 }

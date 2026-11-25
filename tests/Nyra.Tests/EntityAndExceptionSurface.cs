@@ -1,9 +1,5 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Nyra.Abstractions;
-using Nyra.Entities;
 using Nyra.Exceptions;
-using Nyra.Internal;
 
 namespace Nyra.Tests;
 
@@ -21,31 +17,6 @@ public sealed class EntityAndExceptionSurface
             return exception;
         }
         throw new InvalidOperationException($"the expected {typeof(T).Name} never came");
-    }
-
-    [Test]
-    public async Task EntitySurfaces()
-    {
-        var data = new LyricsData { Lines = [], Message = "ok" };
-        var resultA = new LyricsResult { LoadType = LyricsLoadType.Lyrics, Data = data };
-        var resultB = new LyricsResult { LoadType = LyricsLoadType.Lyrics, Data = data };
-        await Assert.That(resultA).IsEqualTo(resultB);
-        await Assert.That(resultA.GetHashCode()).IsEqualTo(resultB.GetHashCode());
-        var state = new SponsorBlockState { Enabled = true, Categories = ["music"] };
-        await Assert.That(state).IsEqualTo(state with { });
-        await Assert.That(state.GetHashCode()).IsEqualTo((state with { }).GetHashCode());
-        var settings = new SponsorBlockSettings { Categories = ["music"] };
-        await Assert.That(settings.GetHashCode()).IsEqualTo((settings with { }).GetHashCode());
-        var overrideSeg = new SponsorBlockSegmentOverride([new SponsorBlockSegment { Uuid = "u" }]);
-        await Assert
-            .That(overrideSeg.GetHashCode())
-            .IsEqualTo((overrideSeg with { }).GetHashCode());
-        var group = new Group { Id = "g" };
-        await Assert.That(group.CreatedAtTime).IsEqualTo(group.CreatedAtTime);
-        var groupErr = new GroupGuildError { GuildId = 777 };
-        await Assert.That(groupErr.GetHashCode()).IsEqualTo((groupErr with { }).GetHashCode());
-        var yt = new YouTubeTokenRefresh("super-secret");
-        await Assert.That(yt.ToString()).DoesNotContain("super-secret");
     }
 
     [Test]
@@ -93,42 +64,6 @@ public sealed class EntityAndExceptionSurface
         await Assert.That(blankPassword).IsNotNull();
     }
 
-    private static readonly JsonConverter<LoadType> LoadTypeConv = WireEnumRegistry.For<LoadType>();
-
-    private static readonly JsonConverter<LyricsLoadType> LyricsLoadTypeConv =
-        WireEnumRegistry.For<LyricsLoadType>();
-
-    [Test]
-    public async Task WireEnumFallbacks()
-    {
-        var rawReader = new Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes("{}"));
-        rawReader.Read();
-        var objectToken = LoadTypeConv.Read(
-            ref rawReader,
-            typeof(LoadType),
-            new JsonSerializerOptions()
-        );
-        await Assert.That(objectToken).IsEqualTo(LoadType.Unknown);
-        var unknownReader = new Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes("\"bogus\""));
-        unknownReader.Read();
-        var unknownString = LoadTypeConv.Read(
-            ref unknownReader,
-            typeof(LoadType),
-            new JsonSerializerOptions()
-        );
-        await Assert.That(unknownString).IsEqualTo(LoadType.Unknown);
-        var unknownSearchReader = new Utf8JsonReader(
-            System.Text.Encoding.UTF8.GetBytes("\"bogus\"")
-        );
-        unknownSearchReader.Read();
-        var unknownSearch = LyricsLoadTypeConv.Read(
-            ref unknownSearchReader,
-            typeof(LyricsLoadType),
-            new JsonSerializerOptions()
-        );
-        await Assert.That(unknownSearch).IsEqualTo(LyricsLoadType.Unknown);
-    }
-
     [Test]
     public async Task ClientInformation()
     {
@@ -151,70 +86,6 @@ public sealed class EntityAndExceptionSurface
             .Throws<ArgumentException>();
     }
 
-    private static T? LavaParse<T>(string json)
-        where T : class => JsonSerializer.Deserialize<T>(json, NyraJson.OptionsFor(false));
-
     private sealed class ProbeException(string message, Exception? inner)
         : NyraException(message, inner);
-
-    [Test]
-    public async Task JsonAndLoad()
-    {
-        var forwardNodelink = NyraJson.OptionsFor(true);
-        await Assert.That(forwardNodelink).IsNotNull();
-        var forwardLavalink = NyraJson.OptionsFor(false);
-        await Assert.That(forwardLavalink).IsNotNull();
-        var forwardSetLava = NyraJson.OptionsFor(new HashSet<string> { "volume" });
-        await Assert.That(forwardSetLava).IsNotNull();
-
-        var probeInner = new ProbeException("plain", null);
-        await Assert.That(probeInner.Message).IsEqualTo("plain");
-        var probeWithInner = new ProbeException("wrapped", new InvalidOperationException("cause"));
-        await Assert.That(probeWithInner.InnerException is InvalidOperationException).IsTrue();
-
-        Throws<JsonException>(() => LavaParse<LoadResult>("5"));
-
-        var errorFallback = JsonSerializer.Deserialize<LoadResult>(
-            """{"loadType":"error","data":{"message":"nope"}}""",
-            NyraJson.OptionsFor(true)
-        );
-        await Assert
-            .That(errorFallback is LoadFailed fallback && fallback.Error.Message == "nope")
-            .IsTrue();
-        Throws<JsonException>(() =>
-            JsonSerializer.Deserialize<LoadResult>(
-                """{"loadType":"error","data":5}""",
-                NyraJson.OptionsFor(true)
-            )
-        );
-        var errorLava = JsonSerializer.Deserialize<LoadResult>(
-            """{"loadType":"error","data":{"message":"lava"}}""",
-            NyraJson.OptionsFor(false)
-        );
-        await Assert.That(errorLava is LoadFailed lava && lava.Error.Message == "lava").IsTrue();
-
-        const string trackJson =
-            """{"encoded":"QXRsZWFzdA==","info":{"identifier":"ph8qt3dhvwo","author":"SoAD - Topic","title":"ATWA","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
-        Throws<JsonException>(() =>
-            LavaParse<LoadResult>(
-                $$$"""{"loadType":"playlist","data":{"info":{},"tracks":[{{{trackJson}}},null]}}"""
-            )
-        );
-
-        var unknownData = LavaParse<LoadResult>(
-            $$$"""{"loadType":"playlist","data":{"extra":1,"info":{"name":123},"tracks":[{{{trackJson}}}]}}"""
-        );
-        await Assert.That(unknownData).IsNotNull();
-
-        var errorLoad = LavaParse<LoadResult>(
-            """{"loadType":"error","data":{"message":"x","severity":"fault","cause":"y","exception":{"message":"boom","severity":"fault","cause":"upstream"}}}"""
-        );
-        await Assert
-            .That(errorLoad is LoadFailed { LoadType: var lt } && lt == LoadType.Error)
-            .IsTrue();
-
-        Throws<JsonException>(() =>
-            JsonSerializer.Serialize(errorLoad, NyraJson.OptionsFor(false))
-        );
-    }
 }

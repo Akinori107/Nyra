@@ -1,6 +1,4 @@
-using System.Text.Json;
 using Nyra.Entities;
-using Nyra.Exceptions;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -47,141 +45,6 @@ public sealed class PlayPath
         };
     }
 
-    private static Track Track() =>
-        JsonSerializer.Deserialize<Track>(TrackJson, NyraJson.SerializerOptions)!;
-
-    private static async Task<RestException> PlayThrowsAsync(Func<Task> play)
-    {
-        try
-        {
-            await play().ConfigureAwait(false);
-        }
-        catch (RestException exception)
-        {
-            return exception;
-        }
-        throw new InvalidOperationException("the ambiguous play never threw");
-    }
-
-    [Test]
-    public async Task PlayOptionGuards()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var conn = stack.Node.GetConnection(777)!;
-            var track = Track();
-
-            var guards = new PlayOptions[]
-            {
-                new(EndTime: TimeSpan.Zero),
-                new(EndTime: TimeSpan.FromSeconds(-1)),
-                new(StartPosition: TimeSpan.FromSeconds(10), EndTime: TimeSpan.FromSeconds(5)),
-                new(AudioTrackId: " "),
-                new(UserData: JsonDocument.Parse("[1]").RootElement),
-            };
-            var patchesBefore = stack.Server.RestCalls.Count(call => call.Method == "PATCH");
-            foreach (var options in guards)
-                await Assert
-                    .That(async () => await conn.PlayAsync(track, options).ConfigureAwait(false))
-                    .Throws<ArgumentException>();
-            await Assert
-                .That(stack.Server.RestCalls.Count(call => call.Method == "PATCH"))
-                .IsEqualTo(patchesBefore);
-        }
-    }
-
-    [Test]
-    public async Task AudioTrackIdGuardFlavors()
-    {
-        var lava = await StartAsync(new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" })
-            .ConfigureAwait(false);
-        await using (lava.ConfigureAwait(false))
-        {
-            var lavaConn = lava.Node.GetConnection(777)!;
-            await Assert
-                .That(async () =>
-                    await lavaConn
-                        .PlayAsync(Track(), new PlayOptions { AudioTrackId = "x" })
-                        .ConfigureAwait(false)
-                )
-                .Throws<NotSupportedException>();
-
-            var link = await StartAsync().ConfigureAwait(false);
-            await using (link.ConfigureAwait(false))
-            {
-                var linkConn = link.Node.GetConnection(777)!;
-                await Assert
-                    .That(async () =>
-                        await linkConn
-                            .PlayAsync(Track(), new PlayOptions { AudioTrackId = "x" })
-                            .ConfigureAwait(false)
-                    )
-                    .ThrowsNothing();
-                await Assert
-                    .That(link.Server.RestCalls.Last(call => call is { Method: "PATCH" }).Body)
-                    .Contains("\"audioTrackId\":\"x\"");
-            }
-        }
-    }
-
-    [Test]
-    public async Task AmbiguousLanding()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var conn = stack.Node.GetConnection(777)!;
-            stack.Server.On("PATCH", PlayerPath, 200, "@");
-            stack.Server.On("GET", PlayerPath, 200, PlayerWithTrack);
-            await PlayThrowsAsync(() => conn.PlayAsync(Track())).ConfigureAwait(false);
-            await Assert.That(conn.CurrentTrack?.Encoded).IsEqualTo("QXRsZWFzdA==");
-        }
-
-        var renewal = await StartAsync().ConfigureAwait(false);
-        await using (renewal.ConfigureAwait(false))
-        {
-            var conn = renewal.Node.GetConnection(777)!;
-            renewal.Server.On("PATCH", PlayerPath, 200, "@");
-            renewal.Server.On("GET", PlayerPath, 404, """{"message":"Player not found"}""");
-            var exception = await PlayThrowsAsync(() => conn.PlayAsync(Track()))
-                .ConfigureAwait(false);
-            await Assert.That(exception).IsNotNull();
-            await Assert.That(exception.StatusCode).IsEqualTo(200);
-            await Assert.That(conn.CurrentTrack).IsNull();
-        }
-    }
-
-    [Test]
-    public async Task IdentifierLanding()
-    {
-        var stack = await StartAsync(new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" })
-            .ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var conn = stack.Node.GetConnection(777)!;
-            var track = Track();
-
-            await conn.PlayAsync(track).ConfigureAwait(false);
-            await Assert.That(conn.CurrentTrack?.Encoded).IsEqualTo(track.Encoded);
-
-            stack.Server.On("PATCH", PlayerPath, 200, "@");
-            stack.Server.On("GET", PlayerPath, 200, PlayerWithOtherTrack);
-            await PlayThrowsAsync(() => conn.PlayIdentifierAsync("ytsearch:atwa"))
-                .ConfigureAwait(false);
-            await Assert.That(conn.CurrentTrack?.Info.Title).IsEqualTo("Other");
-
-            stack.Server.On("PATCH", PlayerPath, 200, "@");
-            stack.Server.On("GET", PlayerPath, 200, PlayerWithOtherTrack);
-            var missed = await PlayThrowsAsync(() => conn.PlayIdentifierAsync("ytsearch:atwa"))
-                .ConfigureAwait(false);
-            await Assert.That(missed).IsNotNull();
-            await Assert.That(missed.StatusCode).IsEqualTo(200);
-            await Assert.That(conn.CurrentTrack).IsNotNull();
-            await Assert.That(conn.CurrentTrack!.Info.Title).IsEqualTo("Other");
-        }
-    }
-
     [Test]
     public async Task IdentifierGuards()
     {
@@ -203,9 +66,6 @@ public sealed class PlayPath
                 .Throws<ArgumentException>();
         }
     }
-
-    private static string PlayerWithOtherTrack =>
-        $$$"""{"guildId":"777","track":{"encoded":"T3RoZXI=","info":{"identifier":"other","author":"X","title":"Other","length":1000,"isStream":false,"isSeekable":true,"position":0}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}""";
 
     [Test]
     public async Task HandlerErrorFloor()

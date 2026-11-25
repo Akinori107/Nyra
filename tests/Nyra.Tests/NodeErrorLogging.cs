@@ -89,42 +89,6 @@ public sealed class NodeErrorLogging
     }
 
     [Test]
-    public async Task DisposedNodeLogsBeforeFailingFast()
-    {
-        var server = new FakeNodeServer();
-        var bridge = new FakeBridge();
-        bridge.GoReady();
-        var logger = new RecordingLogger();
-        bridge.Logger = logger;
-        var extension = new NyraExtension(bridge);
-        var node = new Node(
-            new Endpoint("127.0.0.1", server.Port, server.Password),
-            Options("floors-dead")
-        );
-        extension.AddNode(node);
-        await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-
-        node.Dispose();
-        await Assert
-            .That(async () =>
-            {
-                await node.ConnectAsync(bridge, extension, CancellationToken.None)
-                    .ConfigureAwait(false);
-            })
-            .Throws<TaskCanceledException>();
-
-        await Assert
-            .That(async () =>
-            {
-                await node.LoadTracksAsync("atwa").ConfigureAwait(false);
-            })
-            .Throws<ObjectDisposedException>();
-
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-    }
-
-    [Test]
     public async Task EmptyExtensionAnswersNoConnection()
     {
         var bridge = new FakeBridge();

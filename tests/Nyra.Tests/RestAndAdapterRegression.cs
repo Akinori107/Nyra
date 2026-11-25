@@ -1,28 +1,11 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using DSharpPlus;
 using Nyra.DSharpPlus;
 using Nyra.Entities;
-using Nyra.Exceptions;
-using Nyra.Internal;
-using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
 
 public sealed class RestAndAdapterRegression
 {
-    private sealed record SnowflakeNullProbe(
-        [property: JsonPropertyName("g")]
-        [property: JsonConverter(typeof(NullableSnowflakeConverter))]
-            ulong? G
-    );
-
-    private sealed record StringOrNullProbe(
-        [property: JsonPropertyName("s")]
-        [property: JsonConverter(typeof(StringOrNumberConverter))]
-            string? S
-    );
-
     private static async Task<Stack> StartAsync(FakeNodeServer? server = null)
     {
         server ??= new FakeNodeServer();
@@ -48,130 +31,6 @@ public sealed class RestAndAdapterRegression
             Bridge = bridge,
             Server = server,
         };
-    }
-
-    [Test]
-    public async Task RestUnreachableGroupList()
-    {
-        var node = new Node(
-            new Endpoint("127.0.0.1", DeadPort(), "unused"),
-            new NodeOptions { Name = "dead-planner" }
-        );
-        var unreachable = await Assert
-            .That(async () =>
-                await node
-                    .Rest.Info.GetRoutePlannerStatusAsync(CancellationToken.None)
-                    .ConfigureAwait(false)
-            )
-            .Throws<NodeUnreachableException>()
-            .WithMessageContaining("dead-planner");
-        await Assert.That(unreachable!.InnerException).IsTypeOf<HttpRequestException>();
-        await Assert.That(node.Rest.BaseUri.Host).IsEqualTo("127.0.0.1");
-        await Assert.That(node.Rest.BaseUri.Port).IsNotEqualTo(0);
-    }
-
-    [Test]
-    public async Task RestTrashRetryAfter()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            stack.Server.On("GET", "/v4/sessions/fake-session/groups", _ => new FakeRestResponse(
-                429,
-                """{"message":"slow down"}""",
-                "not-a-date"
-            ));
-            var throttled = await Assert
-                .That(async () =>
-                    await stack
-                        .Node.Rest.Groups.ListAsync(CancellationToken.None)
-                        .ConfigureAwait(false)
-                )
-                .Throws<RestException>()
-                .WithMessageContaining("slow down");
-            await Assert.That(throttled!.RetryAfter).IsNull();
-        }
-    }
-
-    [Test]
-    public async Task RestMissingSessionBody()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            stack.Server.On(
-                "GET",
-                "/v4/sessions/fake-session/players/777",
-                _ => new FakeRestResponse(404, """{"message":"session removed by an admin"}""")
-            );
-            var missing = await Assert
-                .That(async () =>
-                    await stack
-                        .Node.Rest.Players.GetAsync(777, CancellationToken.None)
-                        .ConfigureAwait(false)
-                )
-                .Throws<RestException>()
-                .WithMessageContaining("session removed");
-            await Assert.That(missing!.StatusCode).IsEqualTo(404);
-
-            stack.Server.On(
-                "GET",
-                "/v4/sessions/fake-session/players/778",
-                _ => new FakeRestResponse(404, """{"message":"player not found"}""")
-            );
-            var gone = await stack
-                .Node.Rest.Players.GetAsync(778, CancellationToken.None)
-                .ConfigureAwait(false);
-            await Assert.That(gone).IsNull();
-        }
-    }
-
-    [Test]
-    public async Task LoadStreamErrorBranch()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var refused = await Assert
-                .That(async () =>
-                    await stack
-                        .Node.Rest.Tracks.OpenLoadStreamAsync(
-                            "QXRsZWFkdA==",
-                            100,
-                            0,
-                            null,
-                            LoadStreamFormat.Raw,
-                            CancellationToken.None
-                        )
-                        .ConfigureAwait(false)
-                )
-                .Throws<RestException>();
-            await Assert.That(refused!.StatusCode).IsEqualTo(404);
-        }
-    }
-
-    [Test]
-    public async Task JsonNullRoundTrips()
-    {
-        var options = new JsonSerializerOptions();
-
-        var snowflakeNull = JsonSerializer.Deserialize<SnowflakeNullProbe>(
-            """{"g":null}""",
-            options
-        );
-        await Assert.That(snowflakeNull?.G).IsNull();
-        var snowflakeValue = JsonSerializer.Deserialize<SnowflakeNullProbe>(
-            """{"g":314}""",
-            options
-        );
-        await Assert.That(snowflakeValue?.G).IsEqualTo(314);
-        var snowflakeWritten = JsonSerializer.Serialize(new SnowflakeNullProbe(null), options);
-        await Assert.That(snowflakeWritten).Contains("null");
-
-        var stringNull = JsonSerializer.Deserialize<StringOrNullProbe>("""{"s":null}""", options);
-        await Assert.That(stringNull?.S).IsNull();
-        var stringWritten = JsonSerializer.Serialize(new StringOrNullProbe(null), options);
-        await Assert.That(stringWritten).Contains("null");
     }
 
     [Test]
@@ -207,34 +66,5 @@ public sealed class RestAndAdapterRegression
             .That(async () => await ((DiscordClient)null!).RemoveNyraAsync().ConfigureAwait(false))
             .Throws<ArgumentNullException>()
             .WithParameterName("client");
-    }
-
-    [Test]
-    public async Task RaiseAsyncOnErrorHostile()
-    {
-        AsyncEventHandler<System.EventArgs>? handlers = null;
-        handlers += (_, _) => throw new InvalidOperationException("handler boom");
-
-        var seen = new List<Exception>();
-        await handlers
-            .RaiseAsync(new object(), System.EventArgs.Empty, (error, _) =>
-            {
-                seen.Add(error);
-                return Task.CompletedTask;
-            })
-            .ConfigureAwait(false);
-        await Assert.That(seen.Count).IsEqualTo(1);
-        await Assert.That(seen[0]).IsTypeOf<InvalidOperationException>();
-        await Assert.That(seen[0].Message).IsEqualTo("handler boom");
-
-        await Assert
-            .That(async () =>
-                await handlers
-                    .RaiseAsync(new object(), System.EventArgs.Empty, (_, _) =>
-                        throw new InvalidOperationException("logger boom")
-                    )
-                    .ConfigureAwait(false)
-            )
-            .ThrowsNothing();
     }
 }

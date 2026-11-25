@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 using Microsoft.Extensions.Time.Testing;
-using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -37,9 +35,6 @@ public sealed class IdleDisconnect
 
     private static string TrackJson(string id) =>
         $$$"""{"encoded":"enc-{{{id}}}","info":{"identifier":"{{{id}}}","author":"a","title":"{{{id}}}","length":100000,"isStream":false,"isSeekable":true,"position":0}}""";
-
-    private static Track Make(string id) =>
-        JsonSerializer.Deserialize<Track>(TrackJson(id), NyraJson.SerializerOptions)!;
 
     private static async Task<Rig> StartAsync(TimeSpan? idle = null)
     {
@@ -96,17 +91,6 @@ public sealed class IdleDisconnect
         return rig;
     }
 
-    private static Task PushEndAsync(Rig rig, string id) =>
-        rig.Server.PushAsync(
-            $$"""{"op":"event","guildId":"777","type":"TrackEndEvent","track":{{TrackJson(id)}},"reason":"finished"}"""
-        );
-
-    private static async Task PlayAsync(Rig rig, string id)
-    {
-        await rig.Connection.PlayAsync(Make(id)).ConfigureAwait(false);
-        await Assert.That(rig.Connection.CurrentTrack?.Info.Identifier).IsEqualTo(id);
-    }
-
     [Test]
     public async Task LeavesAfterTheTimeoutWithoutATrack()
     {
@@ -133,92 +117,6 @@ public sealed class IdleDisconnect
     }
 
     [Test]
-    public async Task StaysWhileATrackPlays()
-    {
-        var rig = await StartAsync(Timeout5).ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await PlayAsync(rig, "a").ConfigureAwait(false);
-
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(5))
-                .ConfigureAwait(false);
-
-            await Assert.That(rig.Connected).IsTrue();
-            await Assert.That(rig.Log).IsEmpty();
-        }
-    }
-
-    [Test]
-    public async Task APausedTrackStillCountsAsPlaying()
-    {
-        var rig = await StartAsync(Timeout5).ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await PlayAsync(rig, "a").ConfigureAwait(false);
-            await rig.Connection.PauseAsync().ConfigureAwait(false);
-
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(5))
-                .ConfigureAwait(false);
-
-            await Assert.That(rig.Connected).IsTrue();
-            await Assert.That(rig.Log).IsEmpty();
-        }
-    }
-
-    [Test]
-    public async Task TheCountStartsWhenTheTrackEnds()
-    {
-        var rig = await StartAsync(Timeout5).ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(1))
-                .ConfigureAwait(false);
-            await PlayAsync(rig, "a").ConfigureAwait(false);
-            await PushEndAsync(rig, "a").ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.CurrentTrack is null)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(1))
-                .ConfigureAwait(false);
-            await Assert.That(rig.Connected).IsTrue();
-
-            var left = await AdvanceUntilAsync(
-                    rig.Time,
-                    () => !rig.Connected,
-                    TimeSpan.FromMinutes(2),
-                    TimeSpan.FromSeconds(1)
-                )
-                .ConfigureAwait(false);
-            await Assert.That(left).IsTrue();
-        }
-    }
-
-    [Test]
-    public async Task AHandlerThatPlaysKeepsTheConnection()
-    {
-        var rig = await StartAsync(Timeout5).ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            rig.Connection.IdleTimedOut += async (_, _) =>
-                await rig.Connection.PlayAsync(Make("kept")).ConfigureAwait(false);
-
-            var fired = await AdvanceUntilAsync(
-                    rig.Time,
-                    () => !rig.Log.IsEmpty,
-                    TimeSpan.FromMinutes(6),
-                    TimeSpan.FromSeconds(1)
-                )
-                .ConfigureAwait(false);
-            await RunForAsync(rig.Time, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-
-            await Assert.That(fired).IsTrue();
-            await Assert.That(rig.Connected).IsTrue();
-            await Assert.That(rig.Connection.CurrentTrack?.Info.Identifier).IsEqualTo("kept");
-        }
-    }
-
-    [Test]
     public async Task ADisconnectBeforeTheTimeoutStopsIt()
     {
         var rig = await StartAsync(Timeout5).ConfigureAwait(false);
@@ -229,22 +127,6 @@ public sealed class IdleDisconnect
             await RunForAsync(rig.Time, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(5))
                 .ConfigureAwait(false);
 
-            await Assert.That(rig.Log).IsEmpty();
-        }
-    }
-
-    [Test]
-    public async Task OffByDefault()
-    {
-        var rig = await StartAsync().ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await Assert.That(rig.Node.Options.IdleTimeout).IsEqualTo(Timeout.InfiniteTimeSpan);
-
-            await RunForAsync(rig.Time, TimeSpan.FromMinutes(30), TimeSpan.FromSeconds(10))
-                .ConfigureAwait(false);
-
-            await Assert.That(rig.Connected).IsTrue();
             await Assert.That(rig.Log).IsEmpty();
         }
     }

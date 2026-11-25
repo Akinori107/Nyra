@@ -1,6 +1,5 @@
 using Nyra.Entities;
 using Nyra.Entities.Filters;
-using Nyra.Internal;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -47,128 +46,6 @@ public sealed class FilterKind
     }
 
     [Test]
-    public async Task AddRemove()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var conn = stack.Node.GetConnection(777)!;
-            var server = stack.Server;
-
-            var kinds = new (IFilter Filter, string Wire)[]
-            {
-                (new KaraokeFilter { Level = 0.8f }, "karaoke"),
-                (new TimescaleFilter { Speed = 1.5 }, "timescale"),
-                (new TremoloFilter { Frequency = 8, Depth = 0.5f }, "tremolo"),
-                (new VibratoFilter { Frequency = 8, Depth = 0.5f }, "vibrato"),
-                (new DistortionFilter { SinOffset = 1 }, "distortion"),
-                (new RotationFilter { RotationHz = 1.5 }, "rotation"),
-                (new ChannelMixFilter { LeftToLeft = 1 }, "channelMix"),
-                (new LowPassFilter { Smoothing = 1 }, "lowPass"),
-                (new EchoFilter { DelayMilliseconds = 200, Mix = 0.5f }, "echo"),
-                (new ReverbFilter { RoomSize = 0.5f }, "reverb"),
-                (new HighPassFilter { Smoothing = 1 }, "highpass"),
-                (
-                    new ChorusFilter
-                    {
-                        Rate = 2,
-                        Depth = 0.5f,
-                        Feedback = 0.5f,
-                        DelayMilliseconds = 20,
-                    },
-                    "chorus"
-                ),
-                (new PhaserFilter { Rate = 2, Feedback = 0.5f }, "phaser"),
-                (new FlangerFilter { Rate = 2, Depth = 0.5f }, "flanger"),
-                (new SpatialFilter { X = 0.5f }, "spatial"),
-                (new CompressorFilter { Threshold = -20f, Ratio = 4f }, "compressor"),
-                (new PhonographFilter { Frequency = 1000 }, "phonograph"),
-                (new TesseractFilter { RotationHz = 1 }, "tesseract"),
-            };
-            foreach (var (filter, wire) in kinds)
-            {
-                await conn.Filters.AddAsync(filter).ConfigureAwait(false);
-                var addBody = server
-                    .RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath })
-                    .Body
-                    ?? string.Empty;
-                await Assert.That(addBody).Contains($"\"{wire}\":{{");
-
-                await conn.Filters.RemoveAsync(filter).ConfigureAwait(false);
-                var removeBody = server
-                    .RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath })
-                    .Body
-                    ?? string.Empty;
-                await Assert.That(removeBody).Contains($"\"{wire}\":null");
-
-                await conn.Filters.AddAsync(filter).ConfigureAwait(false);
-                await RemoveByTypeAsync(conn, filter.GetType()).ConfigureAwait(false);
-                var genericBody = server
-                    .RestCalls.Last(c => c is { Method: "PATCH", Path: PlayerPath })
-                    .Body
-                    ?? string.Empty;
-                await Assert.That(genericBody).Contains($"\"{wire}\":null");
-            }
-        }
-    }
-
-    private static async Task RemoveByTypeAsync(GuildConnection conn, Type type)
-    {
-        var method = typeof(GuildFilters)
-            .GetMethods()
-            .First(m => m.Name == "RemoveAsync" && m.IsGenericMethod);
-        var closed = method.MakeGenericMethod(type);
-        var task = (Task)closed.Invoke(conn.Filters, [default(CancellationToken)])!;
-        await task.ConfigureAwait(false);
-    }
-
-    [Test]
-    public async Task UnsupportedTypeGuards()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var conn = stack.Node.GetConnection(777)!;
-
-            await Assert
-                .That(async () =>
-                {
-                    await conn.Filters.AddAsync(new FakeFilter()).ConfigureAwait(false);
-                })
-                .Throws<ArgumentException>();
-
-            var genericRejected = await Assert
-                .That(async () => await RemoveFakeAsync(conn).ConfigureAwait(false))
-                .Throws<ArgumentException>();
-            await Assert.That(genericRejected!.ParamName).IsNull();
-
-            var instanceRejected = await Assert
-                .That(async () =>
-                    await conn.Filters.RemoveAsync(new FakeFilter()).ConfigureAwait(false)
-                )
-                .Throws<ArgumentException>();
-            await Assert.That(instanceRejected!.ParamName).IsEqualTo("filter");
-
-            await Assert
-                .That(async () =>
-                {
-                    await conn.Filters.RemoveAsync(null!).ConfigureAwait(false);
-                })
-                .Throws<ArgumentNullException>();
-        }
-    }
-
-    private static async Task RemoveFakeAsync(GuildConnection conn)
-    {
-        var method = typeof(GuildFilters)
-            .GetMethods()
-            .First(m => m.Name == "RemoveAsync" && m.IsGenericMethod);
-        var closed = method.MakeGenericMethod(typeof(FakeFilter));
-        var task = (Task)closed.Invoke(conn.Filters, [default(CancellationToken)])!;
-        await task.ConfigureAwait(false);
-    }
-
-    [Test]
     public async Task NonFinite()
     {
         var stack = await StartAsync().ConfigureAwait(false);
@@ -205,18 +82,6 @@ public sealed class FilterKind
                     })
                     .Throws<ArgumentOutOfRangeException>();
         }
-    }
-
-    [Test]
-    public async Task HighPassChainBounds()
-    {
-        var touched = new FilterChain { HighPass = new HighPassFilter(Smoothing: -1f) };
-        await Assert
-            .That(() => FilterValidation.ValidateFilterBounds(touched, nodeLink: true))
-            .Throws<ArgumentOutOfRangeException>();
-        await Assert
-            .That(() => FilterValidation.ValidateFilterBounds(touched, touched, nodeLink: true))
-            .ThrowsNothing();
     }
 
     [Test]

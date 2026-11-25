@@ -103,25 +103,4 @@ public sealed class PatchTeardown
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
     }
-
-    [Test]
-    public async Task ForeignCancellationIsNotBlamedOnTheTeardown()
-    {
-        var (extension, node, bridge, server) = await StartAsync().ConfigureAwait(false);
-        var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
-        await Assert
-            .That(async () =>
-            {
-                await conn
-                    .Patches.SendAsync(
-                        _ => throw new OperationCanceledException("a cancellation of its own"),
-                        CancellationToken.None
-                    )
-                    .ConfigureAwait(false);
-            })
-            .Throws<OperationCanceledException>()
-            .WithMessageContaining("a cancellation of its own");
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-    }
 }

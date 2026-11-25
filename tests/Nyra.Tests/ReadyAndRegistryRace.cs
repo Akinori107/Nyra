@@ -1,10 +1,6 @@
-using System.Net.Http.Headers;
-using System.Text;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
 using Nyra.EventArgs;
-using Nyra.Internal;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -107,48 +103,6 @@ public sealed class ReadyAndRegistryRace
     }
 
     [Test]
-    public async Task ExtensionDisposeOutwaitsNode()
-    {
-        var time = new FakeTimeProvider();
-        var stack = await StartAsync("ext-timeout", time).ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var node = stack.Node;
-            var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var holder = Task.Run(() =>
-            {
-                lock (node.EventsLock)
-                {
-                    held.TrySetResult();
-                    hold.Task.Wait(TimeSpan.FromSeconds(40));
-                }
-            });
-            await held.Task.ConfigureAwait(false);
-
-            try
-            {
-                var disposal = Task.Run(stack.Extension.Dispose);
-                await AdvanceUntilAsync(
-                        time,
-                        disposal,
-                        TimeSpan.FromSeconds(1),
-                        TimeSpan.FromSeconds(40)
-                    )
-                    .ConfigureAwait(false);
-                await Assert
-                    .That(async () => await disposal.ConfigureAwait(false))
-                    .Throws<TimeoutException>();
-            }
-            finally
-            {
-                hold.TrySetResult();
-                await holder.ConfigureAwait(false);
-            }
-        }
-    }
-
-    [Test]
     public async Task BridgeFaultFastDispose()
     {
         var bridge = new FaultingAsyncBridge();
@@ -189,59 +143,5 @@ public sealed class ReadyAndRegistryRace
 
         public ValueTask DisposeAsync() =>
             ValueTask.FromException(new InvalidOperationException("bridge dispose refused"));
-    }
-
-    [Test]
-    public async Task RetryAfterDateFollowsTheNodeClock()
-    {
-        var time = new FakeTimeProvider();
-        using var past = new HttpResponseMessage();
-        past.Headers.RetryAfter = new RetryConditionHeaderValue(
-            time.GetUtcNow() - TimeSpan.FromHours(1)
-        );
-        using var future = new HttpResponseMessage();
-        future.Headers.RetryAfter = new RetryConditionHeaderValue(
-            time.GetUtcNow() + TimeSpan.FromSeconds(30)
-        );
-
-        await Assert.That(RestClient.ReadRetryAfter(past, time)).IsNull();
-        await Assert
-            .That(RestClient.ReadRetryAfter(future, time))
-            .IsEqualTo(TimeSpan.FromSeconds(30));
-    }
-
-    [Test]
-    public async Task LoadStreamCallerCancel()
-    {
-        var stack = await StartAsync("stream-cancel").ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            stack.Server.OnRaw("GET", "/v4/loadstream", async (_, stream) =>
-            {
-                var head =
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
-                    + "Content-Length: 500\r\nConnection: close\r\n\r\n";
-                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                await stream.FlushAsync().ConfigureAwait(false);
-            });
-
-            using var cancelled = new CancellationTokenSource();
-            cancelled.Cancel();
-            await Assert
-                .That(async () =>
-                {
-                    _ = await stack
-                        .Node.Rest.Tracks.OpenLoadStreamAsync(
-                            "track",
-                            100,
-                            0,
-                            null,
-                            LoadStreamFormat.Raw,
-                            cancelled.Token
-                        )
-                        .ConfigureAwait(false);
-                })
-                .Throws<OperationCanceledException>();
-        }
     }
 }

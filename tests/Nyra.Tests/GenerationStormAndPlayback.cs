@@ -1,29 +1,11 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
 
 public sealed class GenerationStormAndPlayback
 {
-    private static readonly JsonSerializerOptions Options = NyraJson.SerializerOptions;
-
-    private const string TrackJson =
-        """{"encoded":"QXRsZWFzdA==","info":{"identifier":"ph8qt3dhvwo","author":"SoAD - Topic","title":"ATWA","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
-
-    private const string StreamTrackJson =
-        """{"encoded":"c3RyZWFt","info":{"identifier":"livestream","author":"Radio","title":"Live","length":0,"isStream":true,"isSeekable":false,"position":0}}""";
-
-    private const string OpenTrackJson =
-        """{"encoded":"emVybw==","info":{"identifier":"zerolength","author":"Odd","title":"Zero","length":0,"isStream":false,"isSeekable":true,"position":0}}""";
-
-    private static Track ParseTrack() => JsonSerializer.Deserialize<Track>(TrackJson, Options)!;
-
-    private static Track ParseStreamTrack() =>
-        JsonSerializer.Deserialize<Track>(StreamTrackJson, Options)!;
-
     private static string PlayerJson(
         string? trackJson,
         bool paused = false,
@@ -39,9 +21,6 @@ public sealed class GenerationStormAndPlayback
             "voice": {"token": "tok", "endpoint": "127.0.0.1", "sessionId": "vsess"}
         }
         """;
-
-    private static string StateJson(long time, long position, bool connected) =>
-        $$"""{"time": {{time}}, "position": {{position}}, "connected": {{(connected ? "true" : "false")}}, "ping": 42}""";
 
     private sealed class Rig : IAsyncDisposable
     {
@@ -155,60 +134,6 @@ public sealed class GenerationStormAndPlayback
         };
     }
 
-    private static void SetReply(Rig rig, string reply) => rig.PlayerReply = reply;
-
-    private static async Task PushAsync(Rig rig, string json)
-    {
-        await rig.Server.PushAsync(json).ConfigureAwait(false);
-    }
-
-    private static Task PushUpdateAsync(
-        Rig rig,
-        long position,
-        bool connected,
-        long time,
-        bool withState = true
-    ) =>
-        PushAsync(
-            rig,
-            withState
-                ? $$"""{"op":"playerUpdate","guildId":"777","state":{{StateJson(time, position, connected)}}}"""
-                : """{"op":"playerUpdate","guildId":"777"}"""
-        );
-
-    private static Task PushEndAsync(Rig rig, string? trackBody, string reason) =>
-        PushAsync(
-            rig,
-            $$"""{"op":"event","guildId":"777","type":"TrackEndEvent","track":{{trackBody ?? "null"}},"reason":"{{reason}}"}"""
-        );
-
-    private static Task PushPauseAsync(Rig rig, bool paused) =>
-        PushAsync(
-            rig,
-            $$"""{"op":"event","guildId":"777","type":"PauseEvent","paused":{{(paused ? "true" : "false")}}}"""
-        );
-
-    private static Task PushVolumeAsync(Rig rig, int volume) =>
-        PushAsync(
-            rig,
-            $$"""{"op":"event","guildId":"777","type":"VolumeChangedEvent","volume":{{volume}}}"""
-        );
-
-    private static async Task PlayAsync(Rig rig, Track track)
-    {
-        await Clock.NextTickAsync().ConfigureAwait(false);
-        SetReply(rig, PlayerJson(TrackBodyFor(track)));
-        await rig.Connection.PlayAsync(track).ConfigureAwait(false);
-        await Assert
-            .That(() => rig.Connection.CurrentTrack?.Encoded)
-            .WaitsFor(assert => assert.IsEqualTo(track.Encoded), TimeSpan.FromSeconds(5));
-    }
-
-    private static string TrackBodyFor(Track track) =>
-        track.Info.IsStream ? StreamTrackJson
-        : track.Encoded == "emVybw==" ? OpenTrackJson
-        : TrackJson;
-
     [Test]
     public async Task HandshakeStorm()
     {
@@ -249,101 +174,6 @@ public sealed class GenerationStormAndPlayback
             await Assert
                 .That(() => rig.Node.GetConnection(888_000UL) is null)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-        }
-    }
-
-    [Test]
-    public async Task PlaybackCapture()
-    {
-        var rig = await RigAsync().ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            var track = ParseTrack();
-            var stream = ParseStreamTrack();
-            await PlayAsync(rig, track).ConfigureAwait(false);
-            await PushUpdateAsync(rig, 777, false, 100).ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.Position?.TotalMilliseconds == 777)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-
-            SetReply(rig, PlayerJson(TrackJson, stateJson: StateJson(150, 12345, true)));
-            var callsAtStart = rig.RestCalls;
-            rig.GetGate = new TaskCompletionSource(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            var endRefresh = rig.Connection.RefreshAsync();
-            await Assert
-                .That(() => rig.RestCalls > callsAtStart)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await PushEndAsync(rig, TrackJson, "finished").ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.CurrentTrack is null)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            rig.GetGate?.TrySetResult();
-            await endRefresh.ConfigureAwait(false);
-            await Assert.That(rig.Connection.CurrentTrack).IsNull();
-            await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(777);
-
-            SetReply(rig, PlayerJson(null, paused: true));
-            await rig.Connection.PauseAsync().ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.IsPaused)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await Clock.NextTickAsync().ConfigureAwait(false);
-
-            SetReply(rig, PlayerJson(null, paused: false, stateJson: StateJson(260, 0, true)));
-            var callsAtPause = rig.RestCalls;
-            rig.GetGate = new TaskCompletionSource(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            var pauseRefresh = rig.Connection.RefreshAsync();
-            await Assert
-                .That(() => rig.RestCalls > callsAtPause)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            var pauseEchoed = new TaskCompletionSource(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            rig.Connection.PauseChanged += (_, _) =>
-            {
-                pauseEchoed.TrySetResult();
-                return Task.CompletedTask;
-            };
-            await PushPauseAsync(rig, true).ConfigureAwait(false);
-            await pauseEchoed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-            await Assert.That(rig.Connection.IsPaused).IsTrue();
-            rig.GetGate?.TrySetResult();
-            await pauseRefresh.ConfigureAwait(false);
-            await Assert.That(rig.Connection.IsPaused).IsTrue();
-
-            SetReply(rig, PlayerJson(null, volume: 99, stateJson: StateJson(270, 0, true)));
-            var callsAtVolume = rig.RestCalls;
-            rig.GetGate = new TaskCompletionSource(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            var volumeRefresh = rig.Connection.RefreshAsync();
-            await Assert
-                .That(() => rig.RestCalls > callsAtVolume)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await PushVolumeAsync(rig, 80).ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.Volume == 80)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            rig.GetGate?.TrySetResult();
-            await volumeRefresh.ConfigureAwait(false);
-            await Assert.That(rig.Connection.Volume).IsEqualTo(80);
-
-            SetReply(rig, PlayerJson(StreamTrackJson));
-            await rig.Connection.RefreshAsync().ConfigureAwait(false);
-            await Assert.That(rig.Connection.CurrentTrack?.Encoded).IsEqualTo(stream.Encoded);
-            await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(777);
-
-            SetReply(rig, PlayerJson(null, stateJson: StateJson(90, 9999, true)));
-            await rig.Connection.RefreshAsync().ConfigureAwait(false);
-            await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(777);
-
-            SetReply(rig, PlayerJson(TrackJson, stateJson: StateJson(400, 12345, false)));
-            await rig.Connection.RefreshAsync().ConfigureAwait(false);
-            await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(12345);
         }
     }
 

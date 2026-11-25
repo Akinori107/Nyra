@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
-using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -70,9 +69,6 @@ public sealed class VoiceListeners
 
     private static string TrackJson(string id) =>
         $$$"""{"encoded":"enc-{{{id}}}","info":{"identifier":"{{{id}}}","author":"a","title":"{{{id}}}","length":100000,"isStream":false,"isSeekable":true,"position":0}}""";
-
-    private static Track Make(string id) =>
-        JsonSerializer.Deserialize<Track>(TrackJson(id), NyraJson.SerializerOptions)!;
 
     private static Task<Rig> StartAsync(
         Func<NodeOptions, NodeOptions> configure,
@@ -306,42 +302,6 @@ public sealed class VoiceListeners
     }
 
     [Test]
-    public async Task PausesWhenAloneAndResumesWhenSomeoneJoins()
-    {
-        var rig = await StartAsync(Pause, 1).ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
-
-            rig.Bridge.Move(1, null);
-            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
-
-            rig.Bridge.Move(2, 555);
-            await Eventually(() => !rig.Connection.IsPaused).ConfigureAwait(false);
-        }
-    }
-
-    [Test]
-    public async Task StartsPlayingWhileAlreadyAlonePausesTheNewTrack()
-    {
-        var rig = await StartAsync(Pause).ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await Assert.That(rig.Connection.Listeners).IsEqualTo(0);
-            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
-
-            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
-            await Assert
-                .That(
-                    rig.Server.RestCalls.Any(call =>
-                        call.Body?.Contains("\"paused\":true", StringComparison.Ordinal) == true
-                    )
-                )
-                .IsTrue();
-        }
-    }
-
-    [Test]
     public async Task TrackStartEventWhileAlreadyAlonePausesTheNewTrack()
     {
         var rig = await StartAsync(Pause).ConfigureAwait(false);
@@ -363,23 +323,6 @@ public sealed class VoiceListeners
                     )
                 )
                 .IsTrue();
-        }
-    }
-
-    [Test]
-    public async Task APauseByTheAppIsNotResumed()
-    {
-        var rig = await StartAsync(Pause, 1).ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
-            await rig.Connection.PauseAsync().ConfigureAwait(false);
-
-            rig.Bridge.Move(1, null);
-            rig.Bridge.Move(2, 555);
-            await RunForAsync(rig.Time, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-
-            await Assert.That(rig.Connection.IsPaused).IsTrue();
         }
     }
 
@@ -431,263 +374,6 @@ public sealed class VoiceListeners
             bridge.Move(1, 555);
 
             await Assert.That(rig.Connection.Listeners).IsEqualTo(1);
-        }
-    }
-
-    [Test]
-    public async Task AJoinDuringARestoreResumesAfterIt()
-    {
-        var rig = await StartAsync(
-                options =>
-                    options with
-                    {
-                        PauseWhenAlone = true,
-                        RescuePlayback = true,
-                        TimeProvider = TimeProvider.System,
-                        ReconnectDelay = TimeSpan.FromMilliseconds(50),
-                        MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
-                    },
-                1
-            )
-            .ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
-            rig.Bridge.Move(1, null);
-            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
-
-            var restoring = new TaskCompletionSource();
-            var restored = new TaskCompletionSource();
-            using var release = new ManualResetEventSlim();
-            rig.Connection.GuildConnectionRestored += (_, _) =>
-            {
-                restored.TrySetResult();
-                return Task.CompletedTask;
-            };
-            rig.BeforePatch = body =>
-            {
-                if (!body.Contains("\"voice\"", StringComparison.Ordinal))
-                    return;
-
-                restoring.TrySetResult();
-                release.Wait(TimeSpan.FromSeconds(10));
-            };
-            rig.Server.ResumeOnReconnect = false;
-            var before = rig.Server.RestCalls.Count;
-
-            await rig.Server.DropConnectionAsync(1000, "restore").ConfigureAwait(false);
-            await restoring.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-            rig.Bridge.Move(2, 555);
-            release.Set();
-            await restored.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-
-            await Eventually(() =>
-                    !rig.Connection.IsPaused
-                    && rig.Server.RestCalls.Skip(before)
-                        .Any(call =>
-                            call.Body?.Contains("\"paused\":false", StringComparison.Ordinal)
-                            == true
-                        )
-                )
-                .ConfigureAwait(false);
-        }
-    }
-
-    [Test]
-    public async Task AJoinWhileTheNodeIsDownResumesAfterItReconnects()
-    {
-        var rig = await StartAsync(
-                options =>
-                    options with
-                    {
-                        PauseWhenAlone = true,
-                        TimeProvider = TimeProvider.System,
-                        ReconnectDelay = TimeSpan.FromSeconds(1),
-                        MaxReconnectDelay = TimeSpan.FromSeconds(2),
-                    },
-                1
-            )
-            .ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
-            rig.Bridge.Move(1, null);
-            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
-            var errors = 0;
-            rig.Node.Error += (_, e) =>
-            {
-                if (e.Exception is InvalidOperationException)
-                    Interlocked.Increment(ref errors);
-                return Task.CompletedTask;
-            };
-            var before = rig.Server.RestCalls.Count;
-
-            await rig.Server.DropConnectionAsync(1000, "down").ConfigureAwait(false);
-            await Eventually(() => !rig.Node.IsReady).ConfigureAwait(false);
-            rig.Bridge.Move(2, 555);
-
-            await Assert
-                .That(() =>
-                    rig.Node.IsReady
-                    && !rig.Connection.IsPaused
-                    && rig.Server.RestCalls.Skip(before)
-                        .Any(call =>
-                            call.Body?.Contains("\"paused\":false", StringComparison.Ordinal)
-                            == true
-                        )
-                )
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(10));
-            await Assert.That(errors).IsEqualTo(0);
-        }
-    }
-
-    [Test]
-    public async Task AJoinWhileTheNodeIsDownRestoresThePlaybackInOneUpdate()
-    {
-        var rig = await StartAsync(
-                options =>
-                    options with
-                    {
-                        PauseWhenAlone = true,
-                        RescuePlayback = true,
-                        TimeProvider = TimeProvider.System,
-                        ReconnectDelay = TimeSpan.FromSeconds(1),
-                        MaxReconnectDelay = TimeSpan.FromSeconds(2),
-                    },
-                1
-            )
-            .ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
-            rig.Bridge.Move(1, null);
-            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
-
-            var restored = new TaskCompletionSource();
-            rig.Connection.GuildConnectionRestored += (_, _) =>
-            {
-                restored.TrySetResult();
-                return Task.CompletedTask;
-            };
-            rig.Server.ResumeOnReconnect = false;
-            var before = rig.Server.RestCalls.Count;
-
-            rig.LosePlayer();
-            await rig.Server.DropConnectionAsync(1000, "down").ConfigureAwait(false);
-            await Eventually(() => !rig.Node.IsReady).ConfigureAwait(false);
-            rig.Bridge.Move(2, 555);
-            await restored.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-
-            var patches = rig
-                .Server.RestCalls.Skip(before)
-                .Where(call =>
-                    call.Method == "PATCH"
-                    && call.Path.EndsWith("/players/777", StringComparison.Ordinal)
-                )
-                .Select(call => call.Body ?? string.Empty)
-                .ToList();
-            await Assert.That(rig.Connection.IsPaused).IsFalse();
-            await Assert.That(patches.Count).IsEqualTo(1);
-            await Assert.That(patches[0]).Contains("\"voice\"");
-            await Assert.That(patches[0]).Contains("\"track\"");
-            await Assert.That(patches[0]).DoesNotContain("\"paused\"");
-        }
-    }
-
-    [Test]
-    public async Task ALeaveWhileTheNodeIsDownPausesAfterTheRestore()
-    {
-        var rig = await StartAsync(
-                options =>
-                    options with
-                    {
-                        PauseWhenAlone = true,
-                        RescuePlayback = true,
-                        TimeProvider = TimeProvider.System,
-                        ReconnectDelay = TimeSpan.FromSeconds(1),
-                        MaxReconnectDelay = TimeSpan.FromSeconds(2),
-                    },
-                1
-            )
-            .ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
-
-            var restored = new TaskCompletionSource();
-            rig.Connection.GuildConnectionRestored += (_, _) =>
-            {
-                restored.TrySetResult();
-                return Task.CompletedTask;
-            };
-            rig.Server.ResumeOnReconnect = false;
-            var before = rig.Server.RestCalls.Count;
-
-            rig.LosePlayer();
-            await rig.Server.DropConnectionAsync(1000, "down").ConfigureAwait(false);
-            await Eventually(() => !rig.Node.IsReady).ConfigureAwait(false);
-            rig.Bridge.Move(1, null);
-            await restored.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
-
-            var patches = rig
-                .Server.RestCalls.Skip(before)
-                .Where(call =>
-                    call.Method == "PATCH"
-                    && call.Path.EndsWith("/players/777", StringComparison.Ordinal)
-                )
-                .Select(call => call.Body ?? string.Empty)
-                .ToList();
-            await Assert.That(patches[0]).Contains("\"voice\"");
-            await Assert.That(patches[0]).Contains("\"track\"");
-            await Assert.That(patches[0]).DoesNotContain("\"paused\"");
-            await Assert
-                .That(
-                    patches
-                        .Skip(1)
-                        .Any(body => body.Contains("\"paused\":true", StringComparison.Ordinal))
-                )
-                .IsTrue();
-
-            rig.Bridge.Move(2, 555);
-            await Eventually(() => !rig.Connection.IsPaused).ConfigureAwait(false);
-        }
-    }
-
-    [Test]
-    public async Task ALeaveDuringTheResumePausesAgain()
-    {
-        var rig = await StartAsync(Pause, 1).ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.Connection.PlayAsync(Make("a")).ConfigureAwait(false);
-            rig.Bridge.Move(1, null);
-            await Eventually(() => rig.Connection.IsPaused).ConfigureAwait(false);
-
-            var resuming = new TaskCompletionSource();
-            using var release = new ManualResetEventSlim();
-            rig.BeforePatch = body =>
-            {
-                if (!body.Contains("\"paused\":false", StringComparison.Ordinal))
-                    return;
-
-                resuming.TrySetResult();
-                release.Wait(TimeSpan.FromSeconds(10));
-            };
-
-            rig.Bridge.Move(2, 555);
-            await resuming.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-            rig.Bridge.Move(2, null);
-            release.Set();
-
-            await Eventually(() =>
-                    rig.Connection.IsPaused
-                    && rig.Server.RestCalls.LastOrDefault(call =>
-                            call.Body?.Contains("\"paused\":", StringComparison.Ordinal) == true
-                        )
-                        ?.Body?.Contains("\"paused\":true", StringComparison.Ordinal) == true
-                )
-                .ConfigureAwait(false);
         }
     }
 

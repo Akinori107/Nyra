@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -51,35 +50,6 @@ public sealed class AdapterHappyPathAndTeardown
             Node = node,
             Server = server,
         };
-    }
-
-    [Test]
-    public async Task RetryAfterFallThrough()
-    {
-        using var response = new HttpResponseMessage();
-        response.Headers.RetryAfter = new RetryConditionHeaderValue(
-            DateTimeOffset.UtcNow - TimeSpan.FromHours(1)
-        );
-        var read = Internal.RestClient.ReadRetryAfter(response, TimeProvider.System);
-        await Assert.That(read).IsNull();
-    }
-
-    [Test]
-    public async Task InfoSecondDocument()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            stack.Server.On("GET", "/v4/info", 200, "{} {}");
-            var rejected = await Assert
-                .That(async () =>
-                    await stack
-                        .Node.Rest.Info.GetServerInfoAsync(CancellationToken.None)
-                        .ConfigureAwait(false)
-                )
-                .Throws<Exceptions.IncompatibleServerException>();
-            await Assert.That(rejected!.InnerException).IsTypeOf<System.Text.Json.JsonException>();
-        }
     }
 
     [Test]
