@@ -67,4 +67,21 @@ public sealed class RestAndAdapterRegression
             .Throws<ArgumentNullException>()
             .WithParameterName("client");
     }
+
+    [Test]
+    public async Task MissingGroupNamedSessionReturnsNull()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            stack.Server.On(
+                "GET",
+                "/v4/sessions/fake-session/groups/session",
+                _ => new FakeRestResponse(404, """{"message":"Group 'session' not found."}""")
+            );
+            await Assert
+                .That(await stack.Node.Groups.GetAsync("session").ConfigureAwait(false))
+                .IsNull();
+        }
+    }
 }

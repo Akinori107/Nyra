@@ -116,12 +116,21 @@ internal sealed class RestClient
                 return doc.RootElement.TryGetProperty("message", out var message)
                     && message.ValueKind == JsonValueKind.String
                     && message.GetString() is { } text
-                    && text.Contains("session", StringComparison.OrdinalIgnoreCase)
-                    && !text.Contains("No endpoint", StringComparison.Ordinal);
+                    && IsMissingSessionMessage(text);
+            if (doc.RootElement.ValueKind == JsonValueKind.String)
+                return IsMissingSessionMessage(doc.RootElement.GetString()!);
         }
         catch (JsonException) { }
 
-        return body.Contains("session", StringComparison.OrdinalIgnoreCase);
+        return IsMissingSessionMessage(body);
+    }
+
+    private static bool IsMissingSessionMessage(string text)
+    {
+        text = text.TrimStart();
+        return text.Equals("Session", StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith("Session ", StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith("The provided sessionId ", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static T? Deserialize<T>(byte[] json, string path, JsonSerializerOptions options)
