@@ -491,13 +491,14 @@ public sealed class GuildFilters
     internal async Task CaptureServerFiltersAsync(
         Player player,
         long requestTicket,
+        string? session,
         CancellationToken cancellationToken
     )
     {
         await _filterGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_connection.IsTearingDown)
+            if (_connection.IsTearingDown || session != _node.SessionId)
                 return;
 
             if (requestTicket < _lastWriteTicket || requestTicket < _lastCaptureTicket)

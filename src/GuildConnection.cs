@@ -573,7 +573,7 @@ public sealed class GuildConnection
     /// resumed reconnect or an out-of-band change.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The fetched player, now the connection's state.</returns>
+    /// <returns>The fetched player, applied to the connection if its session has not been replaced.</returns>
     public Task<Player> RefreshAsync(CancellationToken cancellationToken = default) =>
         _commands.RefreshAsync(cancellationToken);
 

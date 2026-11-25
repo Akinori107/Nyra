@@ -288,4 +288,64 @@ public sealed class FilterStateMachine
                 .Throws<ArgumentOutOfRangeException>();
         }
     }
+
+    [Test]
+    public async Task RefreshFromReplacedSessionDoesNotRestoreOldFilters()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
+            var conn = await ConnectGuildAsync(bridge, node, server, DivergentJson)
+                .ConfigureAwait(false);
+            await conn.Filters.ApplyAsync(Desired()).ConfigureAwait(false);
+
+            var entered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var ready = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            node.Ready += (_, _) =>
+            {
+                ready.TrySetResult();
+                return Task.CompletedTask;
+            };
+            server.On("GET", PlayerPath, _ =>
+            {
+                entered.TrySetResult();
+                release.Task.WaitAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
+                return new FakeRestResponse(
+                    200,
+                    PlayerBody(DivergentJson)
+                        .Replace("\"volume\":100", "\"volume\":75", StringComparison.Ordinal)
+                );
+            });
+            server.On("PATCH", "/v4/sessions/new-session/players/777", 200, PlayerBody(null));
+            var refresh = conn.RefreshAsync();
+            try
+            {
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                server.SessionId = "new-session";
+                server.ResumeOnReconnect = false;
+                await server.DropConnectionAsync(1012, "restart").ConfigureAwait(false);
+                await ready.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                await Assert.That(node.SessionId).IsEqualTo("new-session");
+                await Assert.That(node.GetConnection(777)).IsSameReferenceAs(conn);
+                await Assert.That(conn.Filters.Applied.Tremolo).IsNull();
+            }
+            finally
+            {
+                release.TrySetResult();
+            }
+
+            var oldPlayer = await refresh.ConfigureAwait(false);
+            await Assert.That(oldPlayer.Volume).IsEqualTo(75);
+            await Assert.That(conn.Volume).IsEqualTo(100);
+            await Assert.That(conn.Filters.Applied.Tremolo).IsNull();
+        }
+    }
 }
