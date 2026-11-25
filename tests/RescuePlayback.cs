@@ -1,3 +1,6 @@
+using System.Text.Json;
+using Nyra.Entities;
+using Nyra.EventArgs;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -20,9 +23,19 @@ public sealed class RescuePlayback
         FakeNodeServer Server,
         GuildConnection Conn,
         NyraExtension Extension
-    )> ConnectAsync(bool rescue, TimeSpan? rescueTimeout = null, bool paused = true)
+    )> ConnectAsync(
+        bool rescue,
+        TimeSpan? rescueTimeout = null,
+        bool paused = true,
+        bool nodeLink = true
+    )
     {
-        var server = new FakeNodeServer { ResumeOnReconnect = false };
+        var server = new FakeNodeServer
+        {
+            ResumeOnReconnect = false,
+            IsNodeLink = nodeLink,
+            Semver = nodeLink ? "3.9.1" : "4.2.0",
+        };
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
@@ -72,5 +85,87 @@ public sealed class RescuePlayback
 
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
+    }
+
+    private static async Task<(GuildConnectionRestoredEventArgs Args, string[] Patches)> DropAsync(
+        FakeNodeServer server,
+        GuildConnection conn
+    )
+    {
+        var restored = new TaskCompletionSource<GuildConnectionRestoredEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        conn.GuildConnectionRestored += (_, args) =>
+        {
+            restored.TrySetResult(args);
+            return Task.CompletedTask;
+        };
+        var before = server.RestCalls.Count;
+        await server.DropConnectionAsync(1000, "rescue").ConfigureAwait(false);
+        var args = await restored.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        var patches = server
+            .RestCalls.Skip(before)
+            .Where(call => call.Method == "PATCH" && call.Path == PlayerPath)
+            .Select(call => call.Body ?? string.Empty)
+            .ToArray();
+        return (args, patches);
+    }
+
+    private static async Task CleanUpAsync(
+        FakeNodeServer server,
+        GuildConnection conn,
+        NyraExtension extension
+    )
+    {
+        await conn.DisconnectAsync().ConfigureAwait(false);
+        await extension.DisposeAsync().ConfigureAwait(false);
+        server.Dispose();
+    }
+
+    [Test]
+    [Arguments(25_000L, 19_999L)]
+    [Arguments(10_000L, 10_000L)]
+    public async Task RescueClampsPositionToTheConfiguredEndTime(long position, long expected)
+    {
+        var (_, _, server, conn, extension) = await ConnectAsync(rescue: true)
+            .ConfigureAwait(false);
+        try
+        {
+            await conn.PlayAsync(
+                    JsonSerializer.Deserialize<Track>(TrackJson)!,
+                    new PlayOptions(EndTime: TimeSpan.FromSeconds(20))
+                )
+                .ConfigureAwait(false);
+            var updated = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            conn.PlayerUpdated += (_, _) =>
+            {
+                updated.TrySetResult();
+                return Task.CompletedTask;
+            };
+            await server
+                .PushAsync(
+                    $$$"""{"op":"playerUpdate","guildId":"777","state":{"time":1,"position":{{{position}}},"connected":true}}"""
+                )
+                .ConfigureAwait(false);
+            await updated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await Assert.That(conn.Position).IsEqualTo(TimeSpan.FromMilliseconds(position));
+            var (args, patches) = await DropAsync(server, conn).ConfigureAwait(false);
+            await Assert.That(args.PlaybackResent).IsTrue();
+            using var body = JsonDocument.Parse(
+                patches.Single(patch => patch.Contains("track", StringComparison.Ordinal))
+            );
+            await Assert
+                .That(body.RootElement.GetProperty("position").GetInt64())
+                .IsEqualTo(expected);
+            await Assert
+                .That(body.RootElement.GetProperty("endTime").GetInt64())
+                .IsEqualTo(20_000L);
+        }
+        finally
+        {
+            await CleanUpAsync(server, conn, extension).ConfigureAwait(false);
+        }
     }
 }
