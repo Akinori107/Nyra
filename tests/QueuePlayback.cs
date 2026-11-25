@@ -363,4 +363,50 @@ public sealed class QueuePlayback
                 .IsEqualTo("b,c,d,e");
         }
     }
+
+    [Test]
+    public async Task QueueMutationsAreRejectedAfterDisconnect()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            await rig.Queue.Connection.DisconnectAsync().ConfigureAwait(false);
+
+            await Assert.That(rig.Queue.Connection.IsConnected).IsFalse();
+            await Assert
+                .That(async () => await rig.Queue.ClearAsync().ConfigureAwait(false))
+                .Throws<InvalidOperationException>();
+            await Assert.That(rig.Queue.Connection.UseQueue).Throws<InvalidOperationException>();
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
+        }
+    }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task NoOpQueueMutationsAreRejectedAfterDisconnect(bool enqueue)
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            await rig.Queue.Connection.DisconnectAsync().ConfigureAwait(false);
+            int PlayerUpdates() =>
+                rig.Server.RestCalls.Count(call => call is { Method: "PATCH", Path: PlayerPath });
+            var calls = PlayerUpdates();
+            if (enqueue)
+                await Assert
+                    .That(async () => await rig.Queue.EnqueueAsync([]).ConfigureAwait(false))
+                    .Throws<InvalidOperationException>();
+            else
+                await Assert
+                    .That(async () =>
+                        await rig.Queue.RemoveAllAsync(_ => false).ConfigureAwait(false)
+                    )
+                    .Throws<InvalidOperationException>();
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
+            await Assert.That(PlayerUpdates()).IsEqualTo(calls);
+        }
+    }
 }
