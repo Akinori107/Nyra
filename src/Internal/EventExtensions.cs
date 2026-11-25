@@ -10,10 +10,7 @@ internal static class EventExtensions
     )
         where TArgs : System.EventArgs
     {
-        if (handler is null)
-            return;
-
-        foreach (AsyncEventHandler<TArgs> invocation in handler.GetInvocationList())
+        foreach (var invocation in Delegate.EnumerateInvocationList(handler))
             try
             {
                 await invocation(sender, args).ConfigureAwait(false);
