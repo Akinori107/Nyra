@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -411,16 +410,8 @@ internal sealed class SnowflakeListConverter : JsonConverter<IReadOnlyList<ulong
 
         var ids = new List<ulong>();
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-            if (
-                reader.TokenType is JsonTokenType.String
-                && JsonNumberParsing.TryParseUtf8UInt64(ref reader, out var id)
-            )
+            if (SnowflakeConverter.TryRead(ref reader, out var id))
                 ids.Add(id);
-            else if (
-                reader.TokenType is JsonTokenType.Number
-                && reader.TryGetUInt64(out var number)
-            )
-                ids.Add(number);
             else
                 reader.Skip();
 
@@ -434,12 +425,8 @@ internal sealed class SnowflakeListConverter : JsonConverter<IReadOnlyList<ulong
     )
     {
         writer.WriteStartArray();
-        Span<char> buffer = stackalloc char[20];
         foreach (var id in value)
-        {
-            id.TryFormat(buffer, out var written, provider: CultureInfo.InvariantCulture);
-            writer.WriteStringValue(buffer[..written]);
-        }
+            SnowflakeConverter.WriteValue(writer, id);
         writer.WriteEndArray();
     }
 }
