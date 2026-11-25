@@ -226,24 +226,16 @@ internal sealed class RestClient
             path,
             what,
             NyraJson.SerializeToUtf8Bytes(payload, Options),
-            cancellationToken
+            cancellationToken: cancellationToken
         );
-
-    internal Task<T> SendExpectingAsync<T>(
-        HttpMethod method,
-        string path,
-        string what,
-        byte[]? jsonBody = null,
-        CancellationToken cancellationToken = default
-    ) => SendExpectingAsync<T>(method, path, what, jsonBody, RequestTimeout, cancellationToken);
 
     internal async Task<T> SendExpectingAsync<T>(
         HttpMethod method,
         string path,
         string what,
-        byte[]? jsonBody,
-        TimeSpan timeout,
-        CancellationToken cancellationToken
+        byte[]? jsonBody = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
     )
     {
         var options = Options;
@@ -265,28 +257,27 @@ internal sealed class RestClient
         CancellationToken cancellationToken = default
     ) =>
         (
-            await SendWithStatusAsync(method, path, jsonBody, cancellationToken)
+            await SendWithStatusAsync(method, path, jsonBody, cancellationToken: cancellationToken)
                 .ConfigureAwait(false)
         ).Body;
 
-    internal Task<(int Status, byte[] Body)> SendWithStatusAsync(
+    internal async Task<(int Status, byte[] Body)> SendWithStatusAsync(
         HttpMethod method,
         string path,
         byte[]? jsonBody = null,
+        TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) => SendWithStatusAsync(method, path, jsonBody, RequestTimeout, cancellationToken);
-
-    private async Task<(int Status, byte[] Body)> SendWithStatusAsync(
-        HttpMethod method,
-        string path,
-        byte[]? jsonBody,
-        TimeSpan timeout,
-        CancellationToken cancellationToken
     )
     {
         try
         {
-            var reply = await SendCoreAsync(method, path, jsonBody, timeout, cancellationToken)
+            var reply = await SendCoreAsync(
+                    method,
+                    path,
+                    jsonBody,
+                    timeout ?? RequestTimeout,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
             Node.NoteRestSuccess();
             return reply;

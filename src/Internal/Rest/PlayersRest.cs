@@ -28,7 +28,7 @@ internal sealed class PlayersRest
                 BuildPlayerPath(guildId) + (noReplace ? "?noReplace=true" : string.Empty),
                 "player response",
                 body,
-                timeout ?? RestClient.RequestTimeout,
+                timeout,
                 cancellationToken
             )
             .ConfigureAwait(false);
