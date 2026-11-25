@@ -10,7 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="StyleCop.Analyzers" Version="1.4.26-beta" PrivateAssets="all" />
+    <PackageReference Include="StyleCop.Analyzers" Version="1.4.47-beta" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Discord.Net.WebSocket" Version="3.20.2" />
