@@ -342,7 +342,7 @@ public sealed class WireModel
         await Assert
             .That(() =>
             {
-                _ = WireEnumRegistry.For(typeof(SearchType));
+                _ = WireEnumRegistry.For<SearchType>();
             })
             .Throws<KeyNotFoundException>();
     }

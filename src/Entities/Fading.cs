@@ -196,7 +196,7 @@ internal sealed class FadeCurveConverter : JsonConverter<string?>
 
 internal sealed class FadeTypeConverter : JsonConverter<FadeType?>
 {
-    private static readonly WireEnumConverter<FadeTypeWire, FadeType> Wire = new();
+    private static readonly JsonConverter<FadeType> Wire = WireEnumRegistry.For<FadeType>();
 
     public override bool HandleNull => true;
 
