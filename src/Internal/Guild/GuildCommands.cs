@@ -42,7 +42,8 @@ internal sealed class GuildCommands
         if (urlStart is not null)
             positionMilliseconds = (long)urlStart.Value.TotalMilliseconds;
 
-        var refusable = options?.NoReplace == true && _connection.CurrentTrack is not null;
+        var before = _connection.CurrentTrack;
+        var refusable = options?.NoReplace == true && before is not null;
 
         var stamps = _connection.Playback.StampPlayRequested();
         var requestTick = _node.Time.GetMilliseconds();
@@ -77,7 +78,14 @@ internal sealed class GuildCommands
             )
             .ConfigureAwait(false);
 
-        var landed = !refusable && GuildConnection.IsSameTrack(player.Track, track);
+        var refused =
+            refusable
+            && player.Track is { } retained
+            && GuildConnection.IsSameTrack(before, retained);
+        if (refused)
+            _connection.Playback.RestoreRequestTicks(stamps);
+
+        var landed = !refused && GuildConnection.IsSameTrack(player.Track, track);
         if (urlStart is not null && landed)
             track.StartPosition = null;
         if (landed)
@@ -141,6 +149,13 @@ internal sealed class GuildCommands
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        if (
+            options?.NoReplace == true
+            && player.Track is { } retained
+            && GuildConnection.IsSameTrack(before, retained)
+        )
+            _connection.Playback.RestoreRequestTicks(stamps);
 
         var landed = options?.NoReplace != true && player.Track is not null;
         if (landed)

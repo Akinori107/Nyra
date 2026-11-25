@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -191,5 +193,111 @@ public sealed class GenerationStormAndPlayback
             Exception? exception,
             Func<TState, Exception?, string> formatter
         ) => throw new InvalidOperationException("generation storm: the logger itself dies");
+    }
+
+    private const string TrackJson =
+        """{"encoded":"fixture","info":{"identifier":"first","length":176000,"isSeekable":true,"isStream":false}}""";
+    private const string OtherTrackJson =
+        """{"encoded":"other","info":{"identifier":"other","length":176000,"isSeekable":true,"isStream":false}}""";
+
+    private static string StateJson(long stamp) =>
+        $$$"""{"time":{{{stamp}}},"position":0,"connected":true,"ping":42}""";
+
+    private static async Task PlayAsync(Rig rig)
+    {
+        rig.PlayerReply = PlayerJson(TrackJson, stateJson: StateJson(0));
+        await rig
+            .Connection.PlayAsync(JsonSerializer.Deserialize<Track>(TrackJson)!)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task StartEventAsync(Rig rig, string track)
+    {
+        var seen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task Handler(object? sender, Nyra.EventArgs.TrackStartedEventArgs args)
+        {
+            seen.TrySetResult();
+            return Task.CompletedTask;
+        }
+        rig.Connection.TrackStarted += Handler;
+        try
+        {
+            await rig
+                .Server.PushAsync(
+                    $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{track}}}"""
+                )
+                .ConfigureAwait(false);
+            await seen.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        }
+        finally
+        {
+            rig.Connection.TrackStarted -= Handler;
+        }
+    }
+
+    [Test]
+    [Arguments(true, false)]
+    [Arguments(true, true)]
+    [Arguments(false, false)]
+    public async Task RefusedPlayDoesNotDiscardAnEarlierPause(bool lavalink, bool identifier)
+    {
+        var rig = await RigAsync(lavalink: lavalink).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await PlayAsync(rig).ConfigureAwait(false);
+            rig.PlayerReply = PlayerJson(TrackJson, paused: true);
+            await rig.Connection.PauseAsync().ConfigureAwait(false);
+            if (identifier)
+                await rig
+                    .Connection.PlayIdentifierAsync("other", new PlayOptions(NoReplace: true))
+                    .ConfigureAwait(false);
+            else
+                await rig
+                    .Connection.PlayAsync(
+                        JsonSerializer.Deserialize<Track>(OtherTrackJson)!,
+                        new PlayOptions(NoReplace: true)
+                    )
+                    .ConfigureAwait(false);
+            await Assert.That(rig.Connection.IsPaused).IsTrue();
+            await Assert.That(rig.Connection.CurrentTrack?.Encoded).IsEqualTo("fixture");
+            await StartEventAsync(rig, TrackJson).ConfigureAwait(false);
+            await Assert.That(rig.Connection.IsPaused).IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task AcceptedNoReplacePlayDoesNotRetainAnEarlierPause()
+    {
+        var rig = await RigAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await PlayAsync(rig).ConfigureAwait(false);
+            rig.PlayerReply = PlayerJson(TrackJson, paused: true);
+            await rig.Connection.PauseAsync().ConfigureAwait(false);
+            rig.Server.On(
+                "GET",
+                "/v4/loadtracks",
+                200,
+                $$"""{"loadType":"track","data":{{OtherTrackJson}}}"""
+            );
+            var other = (
+                (TrackLoaded)
+                    await rig
+                        .Node.LoadTracksAsync("https://example.test/b?t=10")
+                        .ConfigureAwait(false)
+            ).Track;
+            await Assert.That(other.StartPosition).IsEqualTo(TimeSpan.FromSeconds(10));
+            rig.PlayerReply = PlayerJson(OtherTrackJson);
+            await rig
+                .Connection.PlayAsync(
+                    other,
+                    new PlayOptions(EndTime: TimeSpan.FromSeconds(20), NoReplace: true)
+                )
+                .ConfigureAwait(false);
+            await StartEventAsync(rig, OtherTrackJson).ConfigureAwait(false);
+            await Assert.That(rig.Connection.IsPaused).IsFalse();
+            await Assert.That(rig.Connection.CurrentTrack?.Encoded).IsEqualTo("other");
+            await Assert.That(other.StartPosition).IsNull();
+        }
     }
 }
