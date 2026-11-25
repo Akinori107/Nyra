@@ -232,7 +232,7 @@ public sealed class GenerationStormAndPlayback
 
     private static async Task PlayAsync(Rig rig, Track track)
     {
-        await Reflect.NextTickAsync().ConfigureAwait(false);
+        await Clock.NextTickAsync().ConfigureAwait(false);
         SetReply(rig, PlayerJson(TrackBodyFor(track)));
         await rig.Connection.PlayAsync(track).ConfigureAwait(false);
         await Assert
@@ -574,7 +574,7 @@ public sealed class GenerationStormAndPlayback
             await Assert
                 .That(() => rig.Connection.IsPaused)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-            await Reflect.NextTickAsync().ConfigureAwait(false);
+            await Clock.NextTickAsync().ConfigureAwait(false);
 
             SetReply(rig, PlayerJson(null, paused: false, stateJson: StateJson(260, 0, true)));
             var callsAtPause = rig.RestCalls;

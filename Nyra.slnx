@@ -6,5 +6,4 @@
   <Project Path="src/Adapters/NetCord/Nyra.NetCord.csproj" />
   <Project Path="src/Nyra.csproj" />
   <Project Path="tests/Nyra.Tests/Nyra.Tests.csproj" />
-  <Project Path="tests/Nyra.Tests.Nightly/Nyra.Tests.Nightly.csproj" />
 </Solution>

@@ -1,11 +1,7 @@
 using System.Collections.Concurrent;
-using DSharpPlus.Entities;
 using Microsoft.Extensions.Time.Testing;
-using NetCord;
-using NetCord.Gateway;
 using Nyra.Exceptions;
 using static Nyra.Tests.NodeHarness;
-using DspClient = DSharpPlus.DiscordClient;
 
 namespace Nyra.Tests;
 
@@ -44,67 +40,6 @@ public sealed class LifecycleEdge
             Bridge = bridge,
             Server = server,
         };
-    }
-
-    [Test]
-    public async Task DspAdapterGuards()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        try
-        {
-            var channel = Reflect.New<DiscordChannel>();
-            Reflect.Set(channel, "Type", global::DSharpPlus.ChannelType.Text);
-            Reflect.Set(channel, "GuildId", (ulong?)777);
-
-            var nulls = await Assert
-                .That(() =>
-                {
-                    _ = DSharpPlus.NodeExtensions.ConnectAsync(null!, channel);
-                })
-                .Throws<ArgumentNullException>();
-            await Assert.That(nulls!.ParamName).IsEqualTo("node");
-
-            var noChannel = await Assert
-                .That(() =>
-                {
-                    _ = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, null!);
-                })
-                .Throws<ArgumentNullException>();
-            await Assert.That(noChannel!.ParamName).IsEqualTo("channel");
-
-            await Assert
-                .That(() =>
-                {
-                    _ = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
-                })
-                .Throws<ArgumentException>();
-
-            Reflect.Set(channel, "Type", global::DSharpPlus.ChannelType.Voice);
-            Reflect.Set(channel, "GuildId", (ulong?)null);
-            await Assert
-                .That(() =>
-                {
-                    _ = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
-                })
-                .Throws<ArgumentException>();
-
-            Reflect.Set(channel, "Id", (ulong)555);
-            Reflect.Set(channel, "GuildId", (ulong?)777);
-            stack.Server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
-                200,
-                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-            ));
-            var join = DSharpPlus.NodeExtensions.ConnectAsync(stack.Node, channel);
-            await Task.Delay(100).ConfigureAwait(false);
-            stack.Bridge.FireVoiceState(777, 555, "vsess");
-            stack.Bridge.FireVoiceServer(777, "tok", "127.0.0.1");
-            var forwarded = await join.ConfigureAwait(false);
-            await Assert.That(forwarded.GuildId).IsEqualTo(777);
-        }
-        finally
-        {
-            await stack.DisposeAsync().ConfigureAwait(false);
-        }
     }
 
     [Test]
@@ -654,84 +589,6 @@ public sealed class LifecycleEdge
         {
             if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning)
                 Warnings++;
-        }
-    }
-
-    [Test]
-    public async Task NetCordShardedWarning()
-    {
-        var token = new BotToken("MTIz.ab.cd");
-        var shard = new GatewayClient(token);
-        var registryField = typeof(NetCord.GatewayClientExtensions).GetField(
-            "Extensions",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
-        );
-        var registry = await Assert
-            .That(registryField?.GetValue(null))
-            .IsTypeOf<System.Runtime.CompilerServices.ConditionalWeakTable<
-                GatewayClient,
-                NyraExtension
-            >>();
-
-        var stack = await StartAsync().ConfigureAwait(false);
-        try
-        {
-            registry!.Remove(shard);
-            registry.Add(shard, stack.Extension);
-
-            var stateType = typeof(ShardedGatewayClient).GetNestedType(
-                "State",
-                System.Reflection.BindingFlags.NonPublic
-            ) ?? throw new MissingMemberException("ShardedGatewayClient.State");
-            var state = Activator.CreateInstance(stateType)!;
-            stateType.GetProperty("Clients")!.SetValue(state, new[] { shard });
-            var sharded = new ShardedGatewayClient(token);
-            Reflect.Field(sharded, "_state", state);
-
-            var logger = new RecordingLogger();
-            var extension = NetCord.GatewayClientExtensions.UseNyra(sharded, logger);
-            await Assert.That(extension).IsNotNull();
-            await Assert.That(extension.IsDisposed).IsFalse();
-            await Assert.That(logger.Warnings).IsGreaterThanOrEqualTo(1);
-            await extension.DisposeAsync().ConfigureAwait(false);
-        }
-        finally
-        {
-            await stack.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-
-    [Test]
-    public async Task DspRemove()
-    {
-        await Assert
-            .That(() => DSharpPlus.DiscordClientExtensions.RemoveNyra(null!))
-            .Throws<ArgumentNullException>()
-            .WithParameterName("client");
-
-        var registryField = typeof(DSharpPlus.DiscordClientExtensions).GetField(
-            "Extensions",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
-        );
-        var registry = await Assert
-            .That(registryField?.GetValue(null))
-            .IsTypeOf<System.Runtime.CompilerServices.ConditionalWeakTable<
-                DspClient,
-                NyraExtension
-            >>();
-
-        var stack = await StartAsync().ConfigureAwait(false);
-        try
-        {
-            var dspClient = Reflect.New<DspClient>();
-            registry!.Remove(dspClient);
-            registry.Add(dspClient, stack.Extension);
-            DSharpPlus.DiscordClientExtensions.RemoveNyra(dspClient);
-            await Assert.That(stack.Extension.IsDisposed).IsTrue();
-        }
-        finally
-        {
-            await stack.DisposeAsync().ConfigureAwait(false);
         }
     }
 

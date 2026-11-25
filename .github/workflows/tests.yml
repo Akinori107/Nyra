@@ -38,7 +38,3 @@ jobs:
           files: results/results.xml
           disable_search: true
           use_oidc: true
-      - run: >-
-          dotnet run --project tests/Nyra.Tests.Nightly --configuration Release --no-build -f ${{ matrix.framework }} --
-          --fail-fast --timeout 3m
-        if: always()

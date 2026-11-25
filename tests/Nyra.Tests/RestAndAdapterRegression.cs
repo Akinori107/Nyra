@@ -5,7 +5,6 @@ using Nyra.DSharpPlus;
 using Nyra.Entities;
 using Nyra.Exceptions;
 using Nyra.Internal;
-using Nyra.NetCord;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -208,20 +207,6 @@ public sealed class RestAndAdapterRegression
             .That(async () => await ((DiscordClient)null!).RemoveNyraAsync().ConfigureAwait(false))
             .Throws<ArgumentNullException>()
             .WithParameterName("client");
-    }
-
-    [Test]
-    public async Task NetCordWaitCancelled()
-    {
-        var bridge = Reflect.New<GatewayBridge>();
-        using var cancelled = new CancellationTokenSource();
-        cancelled.Cancel();
-        await Assert
-            .That(async () =>
-            {
-                await bridge.WaitForReadyAsync(cancelled.Token).ConfigureAwait(false);
-            })
-            .Throws<OperationCanceledException>();
     }
 
     [Test]

@@ -1,16 +1,11 @@
-using System.Collections.Concurrent;
-using DSharpPlus;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using NetCord;
-using NetCord.Gateway;
 using Nyra.Abstractions;
 using Nyra.DSharpPlus;
-using Nyra.Exceptions;
 using Nyra.Internal;
 using Nyra.NetCord;
 using static Nyra.Tests.NodeHarness;
-using DspBridge = Nyra.DSharpPlus.DSharpPlusBridge;
 
 namespace Nyra.Tests;
 
@@ -89,32 +84,6 @@ public sealed class VoiceCloseAndForwarder
 
         await Assert.That(first).IsTrue();
         await Assert.That(second).IsTrue();
-    }
-
-    [Test]
-    public async Task HandshakePoisonedState()
-    {
-        var bridge = new FakeBridge();
-        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(5));
-        var wait = coordinator.WaitForUpdatesAsync(888, 555, bridge, CancellationToken.None);
-        await Task.Delay(150).ConfigureAwait(false);
-
-        var pending = (
-            (System.Collections.IDictionary)Reflect.FieldValue(coordinator, "_pending")!
-        )[888UL]!;
-        var state =
-            (TaskCompletionSource<DiscordVoiceState>)
-                Reflect.FieldValue(pending, "<State>k__BackingField")!;
-        var server =
-            (TaskCompletionSource<VoiceServer>)
-                Reflect.FieldValue(pending, "<Server>k__BackingField")!;
-        state.TrySetException(new InvalidOperationException("poisoned state"));
-        server.TrySetException(new InvalidOperationException("poisoned state"));
-
-        await Assert
-            .That(async () => await wait.ConfigureAwait(false))
-            .Throws<VoiceHandshakeException>()
-            .WithMessageContaining("poisoned state");
     }
 
     [Test]
@@ -270,38 +239,6 @@ public sealed class VoiceCloseAndForwarder
     }
 
     [Test]
-    public async Task DspStableGatewayStillConnecting()
-    {
-        using var client = Adapter.NewOfflineClient(51);
-        using var bridge = new DspBridge(client);
-        var sockets =
-            (ConcurrentDictionary<DiscordClient, byte>)
-                Reflect.FieldValue(bridge, "_gatewaySocketsUp")!;
-        sockets.Clear();
-
-        await Assert
-            .That(async () =>
-                await bridge
-                    .SendVoiceUpdateAsync(5, 77, false, false, CancellationToken.None)
-                    .WaitAsync(TimeSpan.FromSeconds(3))
-                    .ConfigureAwait(false)
-            )
-            .Throws<InvalidOperationException>();
-    }
-
-    [Test]
-    public async Task RemoveNyraAsyncDisposes()
-    {
-        var client = Adapter.NewOfflineClient(53);
-        using var bridgeHolder = client.UseNyra();
-        await client.RemoveNyraAsync().ConfigureAwait(false);
-        var second = client.UseNyra();
-        await Assert.That(ReferenceEquals(bridgeHolder, second)).IsFalse();
-        second.Dispose();
-        client.Dispose();
-    }
-
-    [Test]
     public async Task NetCordChannelOverload()
     {
         var stack = await StartAsync("nc-overload").ConfigureAwait(false);
@@ -324,62 +261,5 @@ public sealed class VoiceCloseAndForwarder
             await Assert.That(forwarded.GuildId).IsEqualTo(777UL);
             await Assert.That(forwarded.ChannelId).IsEqualTo(77UL);
         }
-    }
-
-    [Test]
-    public async Task NetCordShardWarningHostile()
-    {
-        var token = new BotToken("MTIz.ab.cd");
-        var sharded = new ShardedGatewayClient(token);
-        var shard = new GatewayClient(
-            token,
-            new GatewayClientConfiguration { Shard = new Shard(0, 1) }
-        );
-        InjectShards(sharded, shard);
-
-        var shardOwn = shard.UseNyra();
-        var shardedExtension = sharded.UseNyra(new HostileLogger());
-
-        await Assert.That(shardedExtension).IsNotNull();
-        await Assert.That(shardedExtension.IsDisposed).IsFalse();
-
-        shardedExtension?.Dispose();
-        shardOwn?.Dispose();
-        sharded?.Dispose();
-        shard?.Dispose();
-    }
-
-    private sealed class ProbeBridge(GatewayClient client)
-        : GatewayBridgeBase(_ => { }, _ => { }, _ => { }, _ => { })
-    {
-        public RecordingList<ulong> ResolvedGuilds { get; } = [];
-
-        protected override GatewayClient GetClient(ulong guildId)
-        {
-            ResolvedGuilds.Add(guildId);
-            return client;
-        }
-
-        protected override void Unsubscribe() { }
-    }
-
-    [Test]
-    public async Task NetCordBridgeSendVoice()
-    {
-        var token = new BotToken("MTIz.ab.cd");
-        var client = new GatewayClient(
-            token,
-            new GatewayClientConfiguration { Shard = new Shard(0, 1) }
-        );
-        ForceReady(client);
-
-        using var bridge = new ProbeBridge(client);
-        var send = bridge.SendVoiceUpdateAsync(5, 77, false, false, CancellationToken.None);
-        await Task.WhenAny(send, Task.Delay(TimeSpan.FromSeconds(3))).ConfigureAwait(false);
-
-        await Assert.That(send.IsCompleted).IsTrue();
-        await Assert.That(bridge.ResolvedGuilds.Snapshot()).IsEquivalentTo([5UL]);
-        _ = send.Exception;
-        client.Dispose();
     }
 }

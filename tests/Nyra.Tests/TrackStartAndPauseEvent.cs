@@ -111,7 +111,7 @@ public sealed class TrackStartAndPauseEvent
 
     private static async Task PlayAsync(Rig rig, string trackJson)
     {
-        await Reflect.NextTickAsync().ConfigureAwait(false);
+        await Clock.NextTickAsync().ConfigureAwait(false);
         rig.Reply[0] = PlayerBody(trackJson);
         var track = JsonSerializer.Deserialize<Track>(trackJson, Options)!;
         await rig.Connection.PlayAsync(track).ConfigureAwait(false);

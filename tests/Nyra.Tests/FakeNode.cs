@@ -3,13 +3,11 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Sockets;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using NetCord.Gateway;
 using Nyra.Abstractions;
 using Nyra.Exceptions;
 
@@ -927,29 +925,5 @@ internal static class NodeHarness
                 await call().ConfigureAwait(false);
             })
             .Throws<RestException>();
-    }
-
-    public static void InjectShards(ShardedGatewayClient sharded, params GatewayClient[] clients)
-    {
-        var stateType = typeof(ShardedGatewayClient).GetNestedType("State", BindingFlags.NonPublic)
-            ?? throw new MissingMemberException("ShardedGatewayClient.State");
-        var state = Activator.CreateInstance(stateType)!;
-        stateType.GetProperty("Clients")!.SetValue(state, clients);
-        Reflect.Field(sharded, "_state", state);
-    }
-
-    public static void ForceReady(GatewayClient client) =>
-        Reflect.Field(client, "_state", NewWsState(ready: true));
-
-    public static object NewWsState(bool ready)
-    {
-        var stateType = typeof(WebSocketClient).GetNestedType("State", BindingFlags.NonPublic)
-            ?? throw new MissingMemberException("WebSocketClient.State");
-        var state = Activator.CreateInstance(stateType)!;
-        if (ready)
-            stateType
-                .GetMethod("IndicateReady", BindingFlags.Public | BindingFlags.Instance)!
-                .Invoke(state, [null]);
-        return state;
     }
 }

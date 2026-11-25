@@ -77,7 +77,7 @@ public sealed class TrackEndAndPositionEvent
 
     private static async Task PlayAsync(Rig rig, Track track, string trackBody)
     {
-        await Reflect.NextTickAsync().ConfigureAwait(false);
+        await Clock.NextTickAsync().ConfigureAwait(false);
         rig.Reply.Reply = PlayerReply(trackBody);
         await rig.Connection.PlayAsync(track).ConfigureAwait(false);
         await Assert
@@ -120,7 +120,7 @@ public sealed class TrackEndAndPositionEvent
             await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
 
             var requestTick = TimeProvider.System.GetMilliseconds();
-            await Reflect.NextTickAsync().ConfigureAwait(false);
+            await Clock.NextTickAsync().ConfigureAwait(false);
             rig.Connection.Playback.OnTrackEnd(
                 new TrackFinishedEventArgs { Track = track, EndReason = TrackEndReason.Finished }
             );
@@ -149,7 +149,7 @@ public sealed class TrackEndAndPositionEvent
             await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
 
             var requestTick = TimeProvider.System.GetMilliseconds();
-            await Reflect.NextTickAsync().ConfigureAwait(false);
+            await Clock.NextTickAsync().ConfigureAwait(false);
             rig.Connection.Playback.OnTrackEnd(
                 new TrackFinishedEventArgs { Track = null, EndReason = TrackEndReason.Cleanup }
             );
