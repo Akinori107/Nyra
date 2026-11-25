@@ -6,6 +6,7 @@ public static class GuildConnectionQueueExtensions
     /// <summary>Gets the queue of the connection, and creates it on the first call.</summary>
     /// <param name="connection">The connection to get the queue of.</param>
     /// <returns>The queue of the connection, the same instance on every call.</returns>
+    /// <exception cref="InvalidOperationException">The connection is being torn down or has been disconnected.</exception>
     public static GuildQueue UseQueue(this GuildConnection connection)
     {
         ArgumentNullException.ThrowIfNull(connection);

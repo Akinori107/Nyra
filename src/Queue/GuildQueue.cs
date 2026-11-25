@@ -238,6 +238,7 @@ public sealed class GuildQueue
     {
         lock (RegistryLock)
         {
+            connection.EnsureNotTearingDown();
             if (Queues.TryGetValue(connection, out var existing))
                 return existing;
 
@@ -346,7 +347,10 @@ public sealed class GuildQueue
         }
 
         if (copies.Count == 0)
+        {
+            EnsureAttached();
             return null;
+        }
 
         var notes = new QueueNotes();
         Track? started = null;
@@ -401,6 +405,7 @@ public sealed class GuildQueue
     )
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(position, 1);
+        EnsureAttached();
         if (
             position == 1
             && Autoplay
@@ -455,6 +460,7 @@ public sealed class GuildQueue
     )
     {
         ArgumentNullException.ThrowIfNull(match);
+        EnsureAttached();
 
         var doomed = new HashSet<Track>(ReferenceEqualityComparer.Instance);
         foreach (var track in _state.Upcoming)
@@ -462,7 +468,10 @@ public sealed class GuildQueue
                 doomed.Add(track);
 
         if (doomed.Count == 0)
+        {
+            EnsureAttached();
             return 0;
+        }
 
         return await ChangeAsync(state => state.RemoveAll(doomed, Policy), cancellationToken)
             .ConfigureAwait(false);
@@ -572,6 +581,7 @@ public sealed class GuildQueue
             throw new InvalidOperationException(
                 "The guild connection of this queue was invalidated, use the queue of the new connection."
             );
+        Connection.EnsureNotTearingDown();
     }
 
     private void Reset(QueueState after)
