@@ -192,4 +192,62 @@ public sealed class GenerationStormAndPlayback
             Func<TState, Exception?, string> formatter
         ) => throw new InvalidOperationException("generation storm: the logger itself dies");
     }
+
+    private const string TrackJson =
+        """{"encoded":"fixture","info":{"identifier":"first","length":176000,"isSeekable":true,"isStream":false}}""";
+
+    private static string StateJson(long stamp) =>
+        $$$"""{"time":{{{stamp}}},"position":0,"connected":true,"ping":42}""";
+
+    [Test]
+    public async Task OlderPlayingSnapshotCannotResurrectAStoppedTrack()
+    {
+        var rig = await RigAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.PlayerReply = PlayerJson(null, stateJson: StateJson(2000));
+            await rig.Connection.RefreshAsync().ConfigureAwait(false);
+            rig.PlayerReply = PlayerJson(TrackJson, stateJson: StateJson(1000));
+            await rig.Connection.RefreshAsync().ConfigureAwait(false);
+            await Assert.That(rig.Connection.CurrentTrack).IsNull();
+            await Assert.That(rig.Connection.State?.TimeMilliseconds).IsEqualTo(2000L);
+        }
+    }
+
+    [Test]
+    public async Task OlderIdleUpdateCannotReplaceNewerPlayerState()
+    {
+        var rig = await RigAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            async Task UpdateAsync(long stamp)
+            {
+                var seen = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                Task Handler(object? sender, Nyra.EventArgs.PlayerUpdateEventArgs args)
+                {
+                    seen.TrySetResult();
+                    return Task.CompletedTask;
+                }
+                rig.Connection.PlayerUpdated += Handler;
+                try
+                {
+                    await rig
+                        .Server.PushAsync(
+                            $$"""{"op":"playerUpdate","guildId":"777","state":{{StateJson(stamp)}}}"""
+                        )
+                        .ConfigureAwait(false);
+                    await seen.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                }
+                finally
+                {
+                    rig.Connection.PlayerUpdated -= Handler;
+                }
+            }
+            await UpdateAsync(2000).ConfigureAwait(false);
+            await UpdateAsync(1000).ConfigureAwait(false);
+            await Assert.That(rig.Connection.State?.TimeMilliseconds).IsEqualTo(2000L);
+        }
+    }
 }
