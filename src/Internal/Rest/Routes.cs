@@ -2,6 +2,9 @@ namespace Nyra.Internal;
 
 internal static class Routes
 {
+    internal static string WithQuery(string route, string name, string value) =>
+        string.Concat(route, "?", name, "=", Uri.EscapeDataString(value));
+
     public const string WebSocketPath = "/v4/websocket";
 
     public const string Info = "/v4/info";
