@@ -35,4 +35,17 @@ public sealed class EntityAndOptionsSurface
 
         await Assert.That(written).DoesNotContain("duration");
     }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task TrackLengthKeepsRawStreamDuration(bool stream)
+    {
+        var info = JsonSerializer.Deserialize<TrackInfo>(
+            $$$"""{"length":60000,"isStream":{{{(stream ? "true" : "false")}}},"position":3000}"""
+        )!;
+        await Assert.That(info.LengthMilliseconds).IsEqualTo(60_000L);
+        await Assert.That(info.Length).IsEqualTo(stream ? TimeSpan.Zero : TimeSpan.FromMinutes(1));
+        await Assert.That(info.Position).IsEqualTo(TimeSpan.FromSeconds(3));
+    }
 }
