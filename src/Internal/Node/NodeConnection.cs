@@ -198,14 +198,7 @@ internal sealed class NodeConnection(
             disconnectSignal = _disconnectSignal;
         }
 
-        try
-        {
-            await StopClientAsync(wired, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception stopException)
-        {
-            node.HandleError(stopException);
-        }
+        await StopClientSafelyAsync(wired).ConfigureAwait(false);
 
         disconnectSignal.TrySetResult();
     }
@@ -354,6 +347,18 @@ internal sealed class NodeConnection(
 
         client.StartReceiving();
         return true;
+    }
+
+    private async Task StopClientSafelyAsync(WiredClient wired)
+    {
+        try
+        {
+            await StopClientAsync(wired, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            node.HandleError(exception);
+        }
     }
 
     private static async Task StopClientAsync(
@@ -549,14 +554,7 @@ internal sealed class NodeConnection(
             }
 
             if (wired is not null)
-                try
-                {
-                    await StopClientAsync(wired, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception stopException)
-                {
-                    node.HandleError(stopException);
-                }
+                await StopClientSafelyAsync(wired).ConfigureAwait(false);
 
             EndSupervision(generation);
             loopCompletion?.TrySetResult(false);
