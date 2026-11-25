@@ -788,11 +788,15 @@ public sealed class GuildQueue
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (
-                _detached
-                || _state.Current is not { } current
-                || (ended is not null && !GuildConnection.IsSameTrack(current, ended))
-            )
+            if (_detached)
+                return;
+
+            if (_state.Current is { } current)
+            {
+                if (ended is not null && !GuildConnection.IsSameTrack(current, ended))
+                    return;
+            }
+            else if (!_preloader.HasPreloaded || _state.Upcoming.IsEmpty)
                 return;
 
             _state = _state.ServerAdvanced(Policy);

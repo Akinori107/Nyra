@@ -363,4 +363,95 @@ public sealed class QueuePlayback
                 .IsEqualTo("b,c,d,e");
         }
     }
+
+    private static string? PreloadedId(string? body)
+    {
+        if (body is null)
+            return null;
+        using var document = JsonDocument.Parse(body);
+        return
+            document.RootElement.TryGetProperty("nextTrack", out var track)
+            && track.ValueKind == JsonValueKind.Object
+            && track.TryGetProperty("encoded", out var encoded)
+            && encoded.GetString() is { } value
+            && value.StartsWith("enc-", StringComparison.Ordinal)
+            ? value[4..]
+            : null;
+    }
+
+    private static Task PushStartAsync(Rig rig, string id) =>
+        rig.Server.PushAsync(
+            $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{TrackJson(id)}}}"""
+        );
+
+    [Test]
+    [Arguments("gapless")]
+    [Arguments("crossfading")]
+    public async Task APreloadedTrackAfterDirectPlaybackIsAdopted(string reason)
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig
+                .Queue.Connection.PlayAsync(await rig.MakeAsync("a").ConfigureAwait(false))
+                .ConfigureAwait(false);
+            rig.Queue.PreloadNext = true;
+            await rig.EnqueueAsync("b", "c").ConfigureAwait(false);
+            await Assert.That(rig.CurrentId).IsNull();
+            await Assert
+                .That(rig.Server.RestCalls.Any(call => PreloadedId(call.Body) == "b"))
+                .IsTrue();
+            var started = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Queue.Connection.TrackStarted += (_, _) =>
+            {
+                started.TrySetResult();
+                return Task.CompletedTask;
+            };
+            await PushEndAsync(rig, "a", reason).ConfigureAwait(false);
+            await PushStartAsync(rig, "b").ConfigureAwait(false);
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            await Assert.That(rig.CurrentId).IsEqualTo("b");
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("c");
+            await Assert.That(rig.Queue.History.Count).IsEqualTo(0);
+            await Assert.That(rig.Played).IsEqualTo("a");
+        }
+    }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task AnUnrelatedTransitionDoesNotAdvanceTheQueue(bool queueOwned)
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            if (queueOwned)
+                await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            else
+            {
+                await rig
+                    .Queue.Connection.PlayAsync(await rig.MakeAsync("a").ConfigureAwait(false))
+                    .ConfigureAwait(false);
+                await rig.EnqueueAsync("b").ConfigureAwait(false);
+            }
+
+            var delivered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Queue.Connection.TrackFinished += (_, _) =>
+            {
+                delivered.TrySetResult();
+                return Task.CompletedTask;
+            };
+            await PushEndAsync(rig, "unrelated", "gapless").ConfigureAwait(false);
+            await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await Assert.That(rig.CurrentId).IsEqualTo(queueOwned ? "a" : null);
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
+            await Assert.That(rig.Queue.History.Count).IsEqualTo(0);
+            await Assert.That(rig.Played).IsEqualTo("a");
+        }
+    }
 }
