@@ -18,7 +18,7 @@ internal sealed class NodeQueries
         _node.ThrowIfDisposed();
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
 
-        query = TrimFormatCharacters(query.Trim());
+        query = TrimQueryPadding(query);
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
 
         await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
@@ -96,17 +96,21 @@ internal sealed class NodeQueries
             .ConfigureAwait(false);
     }
 
-    private static string TrimFormatCharacters(string query)
+    private static string TrimQueryPadding(string query)
     {
         var start = 0;
         var end = query.Length;
-        while (start < end && char.GetUnicodeCategory(query[start]) == UnicodeCategory.Format)
+        while (start < end && IsQueryPadding(query[start]))
             start++;
-        while (end > start && char.GetUnicodeCategory(query[end - 1]) == UnicodeCategory.Format)
+        while (end > start && IsQueryPadding(query[end - 1]))
             end--;
 
         return start == 0 && end == query.Length ? query : query[start..end];
     }
+
+    private static bool IsQueryPadding(char character) =>
+        char.IsWhiteSpace(character)
+        || char.GetUnicodeCategory(character) == UnicodeCategory.Format;
 
     private string RequireLavaSrc(string prefix)
     {
