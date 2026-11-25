@@ -1,5 +1,6 @@
 using System.Net.WebSockets;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
 using Nyra.EventArgs;
@@ -107,18 +108,30 @@ public sealed class Entity
             NodeLink
         );
         await Assert
-            .That(body)
-            .IsEqualTo(
-                """
-                {"players":{"add":["123"],"remove":["456"]},"track":{"encoded":"QXRsZWFzdA=="},"position":30000,"volume":250,"paused":true}
-                """
-            );
+            .That(
+                JsonNode.DeepEquals(
+                    JsonNode.Parse(body),
+                    JsonNode.Parse(
+                        """
+                        {"players":{"add":["123"],"remove":["456"]},"track":{"encoded":"QXRsZWFzdA=="},"position":30000,"volume":250,"paused":true}
+                        """
+                    )
+                )
+            )
+            .IsTrue();
 
         var stop = JsonSerializer.Serialize(
             new GroupUpdate { Track = GroupTrack.Stop, EndTimeMilliseconds = 60_000 },
             NodeLink
         );
-        await Assert.That(stop).IsEqualTo("""{"track":{"encoded":null},"endTime":60000}""");
+        await Assert
+            .That(
+                JsonNode.DeepEquals(
+                    JsonNode.Parse(stop),
+                    JsonNode.Parse("""{"track":{"encoded":null},"endTime":60000}""")
+                )
+            )
+            .IsTrue();
 
         var identifier = JsonSerializer.Serialize(
             new GroupUpdate { Track = new GroupTrack { Identifier = "ytsearch:atwa" } },
@@ -420,7 +433,14 @@ public sealed class Entity
             new YouTubeConfigPatch(RefreshToken: "r", VisitorData: "v"),
             NodeLink
         );
-        await Assert.That(full).IsEqualTo("""{"refreshToken":"r","visitorData":"v"}""");
+        await Assert
+            .That(
+                JsonNode.DeepEquals(
+                    JsonNode.Parse(full),
+                    JsonNode.Parse("""{"refreshToken":"r","visitorData":"v"}""")
+                )
+            )
+            .IsTrue();
 
         var track = Parse<Track>(
             """

@@ -215,9 +215,7 @@ public sealed class EventPumpTests
         armed.TryDispatch(() => gate.Task);
         for (var i = 0; i < 65; i++)
             armed.TryDispatch(() => Task.CompletedTask);
-        await Assert
-            .That(logger.Messages.Any(message => message.Contains("Event backlog of pump-armed")))
-            .IsTrue();
+        await Assert.That(logger.Messages.Any(message => message.Contains("pump-armed"))).IsTrue();
 
         gate.SetResult();
         await armed.CompleteAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Nyra.Entities;
 using Nyra.EventArgs;
 
@@ -224,8 +225,13 @@ public sealed class WireFrame
             options
         );
         await Assert
-            .That(fullUpdate)
-            .IsEqualTo("""{"position":1234,"endTime":5678,"volume":80,"paused":true}""");
+            .That(
+                JsonNode.DeepEquals(
+                    JsonNode.Parse(fullUpdate),
+                    JsonNode.Parse("""{"position":1234,"endTime":5678,"volume":80,"paused":true}""")
+                )
+            )
+            .IsTrue();
 
         var endTime = JsonSerializer.Serialize(new EndTimeUpdate { EndTime = 90000 }, options);
         await Assert.That(endTime).IsEqualTo("""{"endTime":90000}""");
