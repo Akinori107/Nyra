@@ -48,8 +48,7 @@ internal sealed class GuildVoiceForwarder
             if (!await send().ConfigureAwait(false))
                 return false;
 
-            _pendingVoiceForward = null;
-            Interlocked.Exchange(ref _lastForwardTick, _connection.Time.GetMilliseconds());
+            MarkForwarded();
             return true;
         }
         finally
@@ -84,22 +83,23 @@ internal sealed class GuildVoiceForwarder
 
     internal async Task DrainAsync(CancellationToken cancellationToken = default)
     {
-        var acquired = false;
         try
         {
             await _forwardLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            acquired = true;
         }
         catch (OperationCanceledException)
         {
             _sendCts.Cancel();
             throw;
         }
-        finally
-        {
-            if (acquired)
-                _forwardLock.Release();
-        }
+
+        _forwardLock.Release();
+    }
+
+    private void MarkForwarded()
+    {
+        _pendingVoiceForward = null;
+        Interlocked.Exchange(ref _lastForwardTick, _connection.Time.GetMilliseconds());
     }
 
     private async Task ForwardVoiceAsync(PlayerVoiceState voice)
@@ -115,8 +115,7 @@ internal sealed class GuildVoiceForwarder
                     timeout: VoiceSendDeadline
                 )
                 .ConfigureAwait(false);
-            _pendingVoiceForward = null;
-            Interlocked.Exchange(ref _lastForwardTick, _connection.Time.GetMilliseconds());
+            MarkForwarded();
         }
         catch (OperationCanceledException) when (_sendCts.IsCancellationRequested) { }
         catch (Exception exception)
