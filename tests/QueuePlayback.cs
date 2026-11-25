@@ -363,4 +363,55 @@ public sealed class QueuePlayback
                 .IsEqualTo("b,c,d,e");
         }
     }
+
+    [Test]
+    public async Task PlayingTheLastQueuedTrackClearsThePreviousPreloadInTheSameUpdate()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.PreloadNext = true;
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            var before = rig.Server.RestCalls.Count;
+            await rig.Queue.SkipAsync().ConfigureAwait(false);
+            var patches = rig
+                .Server.RestCalls.Skip(before)
+                .Where(call => call is { Method: "PATCH", Path: PlayerPath })
+                .ToList();
+            var play = patches.Single(call => PlayedId(call.Body) == "b");
+            using var body = JsonDocument.Parse(play.Body!);
+            await Assert.That(body.RootElement.TryGetProperty("nextTrack", out var next)).IsTrue();
+            await Assert.That(next.GetProperty("encoded").ValueKind).IsEqualTo(JsonValueKind.Null);
+            await Assert.That(patches.Count).IsEqualTo(1);
+        }
+    }
+
+    [Test]
+    public async Task AnUnusableSuccessorClearsThePreviousPreloadInThePlayUpdate()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.PreloadNext = true;
+            var invalid = JsonSerializer.Deserialize<Track>(
+                TrackJson("c").Replace("enc-c", "", StringComparison.Ordinal)
+            )!;
+            await rig
+                .Queue.EnqueueAsync([
+                    await rig.MakeAsync("a").ConfigureAwait(false),
+                    await rig.MakeAsync("b").ConfigureAwait(false),
+                    invalid,
+                ])
+                .ConfigureAwait(false);
+            var before = rig.Server.RestCalls.Count;
+            await rig.Queue.SkipAsync().ConfigureAwait(false);
+            var play = rig.Server.RestCalls.Skip(before).Single(call => PlayedId(call.Body) == "b");
+            using var body = JsonDocument.Parse(play.Body!);
+            await Assert
+                .That(body.RootElement.GetProperty("nextTrack").GetProperty("encoded").ValueKind)
+                .IsEqualTo(JsonValueKind.Null);
+            await Assert.That(rig.CurrentId).IsEqualTo("b");
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("c");
+        }
+    }
 }
