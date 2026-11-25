@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -191,5 +193,97 @@ public sealed class GenerationStormAndPlayback
             Exception? exception,
             Func<TState, Exception?, string> formatter
         ) => throw new InvalidOperationException("generation storm: the logger itself dies");
+    }
+
+    private const string TrackJson =
+        """{"encoded":"QXRsZWFzdA==","info":{"identifier":"first","length":176000,"isSeekable":true}}""";
+    private const string OpenTrackJson =
+        """{"encoded":"Yg==","info":{"identifier":"other","length":176000,"isSeekable":true}}""";
+
+    private static Track ParseTrack() => JsonSerializer.Deserialize<Track>(TrackJson)!;
+
+    private static Track ParseOpenTrack() => JsonSerializer.Deserialize<Track>(OpenTrackJson)!;
+
+    private static string TrackBodyFor(Track track) => JsonSerializer.Serialize(track);
+
+    private static string StateJson(long time, long position, bool connected) =>
+        JsonSerializer.Serialize(
+            new
+            {
+                time,
+                position,
+                connected,
+            }
+        );
+
+    private static void SetReply(Rig rig, string body) => rig.PlayerReply = body;
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task ConfirmedPlayWithoutStateUsesTheNewStartPosition(bool replay)
+    {
+        var time = new FakeTimeProvider();
+        var rig = await RigAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            time.Advance(TimeSpan.FromSeconds(1));
+            SetReply(rig, PlayerJson(TrackJson, stateJson: StateJson(100, 0, true)));
+            await rig.Connection.PlayAsync(ParseTrack()).ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(5));
+            var track = replay ? ParseTrack() : ParseOpenTrack();
+            SetReply(rig, PlayerJson(TrackBodyFor(track)));
+            await rig
+                .Connection.PlayAsync(
+                    track,
+                    new PlayOptions(StartPosition: TimeSpan.FromSeconds(2))
+                )
+                .ConfigureAwait(false);
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(2));
+            time.Advance(TimeSpan.FromSeconds(1));
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(3));
+        }
+    }
+
+    [Test]
+    public async Task PauseAndResumeWithoutPlayerStatePreserveThePosition()
+    {
+        var time = new FakeTimeProvider();
+        var rig = await RigAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            time.Advance(TimeSpan.FromSeconds(1));
+            SetReply(rig, PlayerJson(TrackJson, stateJson: StateJson(100, 0, true)));
+            await rig.Connection.PlayAsync(ParseTrack()).ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(5));
+            SetReply(rig, PlayerJson(TrackJson, paused: true));
+            await rig.Connection.PauseAsync().ConfigureAwait(false);
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(5));
+            time.Advance(TimeSpan.FromSeconds(3));
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(5));
+            SetReply(rig, PlayerJson(TrackJson));
+            await rig.Connection.ResumeAsync().ConfigureAwait(false);
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(5));
+            time.Advance(TimeSpan.FromSeconds(2));
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(7));
+        }
+    }
+
+    [Test]
+    public async Task AResponseWithoutStateDoesNotResumeDisconnectedPositionProjection()
+    {
+        var time = new FakeTimeProvider();
+        var rig = await RigAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            time.Advance(TimeSpan.FromSeconds(1));
+            SetReply(rig, PlayerJson(TrackJson, stateJson: StateJson(100, 0, false)));
+            await rig.Connection.PlayAsync(ParseTrack()).ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(5));
+            SetReply(rig, PlayerJson(TrackJson, volume: 80));
+            await rig.Connection.SetVolumeAsync(80).ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(3));
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.Zero);
+        }
     }
 }
