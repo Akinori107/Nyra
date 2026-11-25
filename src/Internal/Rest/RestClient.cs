@@ -192,6 +192,33 @@ internal sealed class RestClient
             [Uri.EscapeDataString(RequireSessionId()), .. arguments]
         );
 
+    internal async Task<IReadOnlyList<T>> GetListAsync<T>(
+        string path,
+        CancellationToken cancellationToken
+    )
+    {
+        var options = Options;
+        var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return DeserializeList<T>(json, path, options);
+    }
+
+    internal async Task<T?> GetOptionalAsync<T>(string path, CancellationToken cancellationToken)
+        where T : class
+    {
+        var options = Options;
+        try
+        {
+            var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return Deserialize<T>(json, path, options);
+        }
+        catch (RestException exception) when (IndicatesMissingResource(exception))
+        {
+            return null;
+        }
+    }
+
     internal Task<T> SendExpectingAsync<T>(
         HttpMethod method,
         string path,
