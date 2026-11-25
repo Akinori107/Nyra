@@ -363,4 +363,56 @@ public sealed class QueuePlayback
                 .IsEqualTo("b,c,d,e");
         }
     }
+
+    private static Task PushStartAsync(Rig rig, string id) =>
+        rig.Server.PushAsync(
+            $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{TrackJson(id)}}}"""
+        );
+
+    [Test]
+    public async Task AManualSkipSupersedesAPendingGaplessStart()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b", "c").ConfigureAwait(false);
+            var ended = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var started = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Queue.Connection.TrackFinished += async (_, _) =>
+            {
+                ended.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+            };
+            rig.Queue.Connection.TrackStarted += (_, _) =>
+            {
+                started.TrySetResult();
+                return Task.CompletedTask;
+            };
+            try
+            {
+                await PushEndAsync(rig, "a", "gapless").ConfigureAwait(false);
+                await ended.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                await PushStartAsync(rig, "b").ConfigureAwait(false);
+                await Eventually(() => rig.Queue.Connection.CurrentTrack?.Info.Identifier == "b")
+                    .ConfigureAwait(false);
+                await rig.Queue.SkipAsync().ConfigureAwait(false);
+                await Assert.That(rig.CurrentId).IsEqualTo("c");
+            }
+            finally
+            {
+                release.TrySetResult();
+            }
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await Assert.That(rig.CurrentId).IsEqualTo("c");
+            await Assert.That(rig.Queue.Upcoming.Count).IsEqualTo(0);
+            await Assert.That(Ids(rig.Queue.History)).IsEqualTo("a,b");
+        }
+    }
 }

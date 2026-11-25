@@ -529,6 +529,7 @@ public sealed class GuildQueue
                 return null;
 
             await _preloader.PlayAsync(play, after, cancellationToken).ConfigureAwait(false);
+            Interlocked.Exchange(ref _expectingSuccessor, 0);
             _state = after;
             notes.Advanced = started = play;
         }
