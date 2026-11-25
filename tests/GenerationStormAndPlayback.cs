@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Nyra.Entities;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -191,5 +193,118 @@ public sealed class GenerationStormAndPlayback
             Exception? exception,
             Func<TState, Exception?, string> formatter
         ) => throw new InvalidOperationException("generation storm: the logger itself dies");
+    }
+
+    private const string TrackJson =
+        """{"encoded":"fixture","info":{"identifier":"first","length":176000,"isSeekable":true,"isStream":false}}""";
+    private const string OtherTrackJson =
+        """{"encoded":"other","info":{"identifier":"other","length":176000,"isSeekable":true,"isStream":false}}""";
+
+    private static string StateJson(long stamp) =>
+        $$$"""{"time":{{{stamp}}},"position":0,"connected":true,"ping":42}""";
+
+    private static async Task PlayAsync(Rig rig)
+    {
+        rig.PlayerReply = PlayerJson(TrackJson, stateJson: StateJson(0));
+        await rig
+            .Connection.PlayAsync(JsonSerializer.Deserialize<Track>(TrackJson)!)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task StartEventAsync(Rig rig, string track)
+    {
+        var seen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task Handler(object? sender, Nyra.EventArgs.TrackStartedEventArgs args)
+        {
+            seen.TrySetResult();
+            return Task.CompletedTask;
+        }
+        rig.Connection.TrackStarted += Handler;
+        try
+        {
+            await rig
+                .Server.PushAsync(
+                    $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{track}}}"""
+                )
+                .ConfigureAwait(false);
+            await seen.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        }
+        finally
+        {
+            rig.Connection.TrackStarted -= Handler;
+        }
+    }
+
+    private static async Task EndEventAsync(Rig rig, string track, string reason)
+    {
+        var seen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task Handler(object? sender, Nyra.EventArgs.TrackFinishedEventArgs args)
+        {
+            seen.TrySetResult();
+            return Task.CompletedTask;
+        }
+        rig.Connection.TrackFinished += Handler;
+        try
+        {
+            await rig
+                .Server.PushAsync(
+                    $$"""{"op":"event","guildId":"777","type":"TrackEndEvent","track":{{track}},"reason":"{{reason}}"}"""
+                )
+                .ConfigureAwait(false);
+            await seen.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        }
+        finally
+        {
+            rig.Connection.TrackFinished -= Handler;
+        }
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task StopPreservesTheProjectedPositionRegardlessOfEventOrder(bool eventFirst)
+    {
+        var time = new FakeTimeProvider();
+        var rig = await RigAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            time.Advance(TimeSpan.FromSeconds(1));
+            await PlayAsync(rig).ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(5));
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(5));
+            if (eventFirst)
+                await EndEventAsync(rig, TrackJson, "stopped").ConfigureAwait(false);
+            rig.PlayerReply = PlayerJson(null, stateJson: StateJson(0));
+            await rig.Connection.StopAsync().ConfigureAwait(false);
+            await Assert.That(rig.Connection.CurrentTrack).IsNull();
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(5));
+            if (!eventFirst)
+                await EndEventAsync(rig, TrackJson, "stopped").ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(2));
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(5));
+            await StartEventAsync(rig, TrackJson).ConfigureAwait(false);
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.Zero);
+        }
+    }
+
+    [Test]
+    public async Task AnUnrelatedEndDoesNotPreserveTheOldAnchorOnRestart()
+    {
+        var time = new FakeTimeProvider();
+        var rig = await RigAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            time.Advance(TimeSpan.FromSeconds(1));
+            await PlayAsync(rig).ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(5));
+            await EndEventAsync(rig, TrackJson, "finished").ConfigureAwait(false);
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(5));
+            await EndEventAsync(rig, OtherTrackJson, "cleanup").ConfigureAwait(false);
+            time.Advance(TimeSpan.FromSeconds(2));
+            await StartEventAsync(rig, TrackJson).ConfigureAwait(false);
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.Zero);
+            time.Advance(TimeSpan.FromSeconds(1));
+            await Assert.That(rig.Connection.Position).IsEqualTo(TimeSpan.FromSeconds(1));
+        }
     }
 }

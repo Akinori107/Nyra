@@ -17,6 +17,7 @@ internal sealed class GuildPlayback
 
     private long _lastTrackEndTick;
     private Track? _lastEndedTrack;
+    private (Track Track, long Tick)? _lastAdmittedEnd;
 
     private long _lastSoughtTick;
 
@@ -241,6 +242,7 @@ internal sealed class GuildPlayback
                 {
                     admitted = true;
                     FreezePosition();
+                    _anchorTrack = null;
                     _connection.CurrentTrack = null;
                     _positionAdvancing = false;
                 }
@@ -256,7 +258,11 @@ internal sealed class GuildPlayback
             }
 
             if (admitted)
+            {
                 _endedSinceAnchor = true;
+                if (previous is not null)
+                    _lastAdmittedEnd = (previous, _time.GetMilliseconds());
+            }
         }
     }
 
@@ -354,12 +360,27 @@ internal sealed class GuildPlayback
 
             if (
                 player.Track is not null
-                && _lastTrackEndTick >= requestTick
-                && GuildConnection.IsSameTrack(_lastEndedTrack, player.Track)
+                && (
+                    (
+                        _lastTrackEndTick >= requestTick
+                        && GuildConnection.IsSameTrack(_lastEndedTrack, player.Track)
+                    )
+                    || (
+                        _lastAdmittedEnd is { } admitted
+                        && admitted.Tick >= requestTick
+                        && GuildConnection.IsSameTrack(admitted.Track, player.Track)
+                    )
+                )
             )
                 return;
 
             var holdsPreSeekPosition = _lastSoughtTick >= requestTick;
+
+            if (player.Track is null)
+            {
+                FreezePosition();
+                _anchorTrack = null;
+            }
 
             _connection.CurrentTrack = player.Track;
             _successorPending = false;
@@ -417,6 +438,7 @@ internal sealed class GuildPlayback
             _hasPosition = false;
             _anchorTrack = null;
             _lastEndedTrack = null;
+            _lastAdmittedEnd = null;
             _successorPending = false;
             _endedSinceAnchor = false;
             _lastTrackEndTick = 0;
