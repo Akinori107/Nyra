@@ -72,9 +72,7 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
         {
             lock (_lock)
             {
-                var now = time.GetMilliseconds();
-                while (_owedEchoes.Count > 0 && _owedEchoes.Peek().Deadline <= now)
-                    _owedEchoes.Dequeue();
+                PruneExpired(time.GetMilliseconds());
 
                 if (_owedEchoes.Count != 0)
                     return;
@@ -99,20 +97,16 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
         {
             lock (_lock)
             {
-                var kept = new List<OwedEcho>(_owedEchoes.Count);
+                var count = _owedEchoes.Count;
                 var removed = false;
-                foreach (var owed in _owedEchoes)
+                for (var i = 0; i < count; i++)
+                {
+                    var owed = _owedEchoes.Dequeue();
                     if (!removed && owed.Ticket == ticket)
                         removed = true;
                     else
-                        kept.Add(owed);
-
-                if (!removed)
-                    return;
-
-                _owedEchoes.Clear();
-                foreach (var owed in kept)
-                    _owedEchoes.Enqueue(owed);
+                        _owedEchoes.Enqueue(owed);
+                }
             }
         }
 
@@ -128,12 +122,17 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
             }
         }
 
+        private void PruneExpired(long now)
+        {
+            while (_owedEchoes.Count > 0 && _owedEchoes.Peek().Deadline <= now)
+                _owedEchoes.Dequeue();
+        }
+
         public bool TryConsumeEcho(long now)
         {
             lock (_lock)
             {
-                while (_owedEchoes.Count > 0 && _owedEchoes.Peek().Deadline <= now)
-                    _owedEchoes.Dequeue();
+                PruneExpired(now);
 
                 if (_owedEchoes.Count == 0)
                     return false;
