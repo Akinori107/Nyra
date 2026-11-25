@@ -127,14 +127,25 @@ public sealed class GuildQueue
     /// <param name="index">The position of the track in <see cref="Upcoming"/>, 0 plays next.</param>
     /// <returns>
     /// The time until the track starts, null when there is no track at the index, when
-    /// <see cref="LoopMode.Track"/> repeats the current track, so no track after it starts, or when
-    /// <see cref="Shuffle"/> is on and the index is past the next track, whose order is not known yet.
+    /// <see cref="LoopMode.Track"/> prevents that track from starting, or when <see cref="Shuffle"/> is on
+    /// and the index is past the next track, whose order is not known yet.
     /// </returns>
     public TimeSpan? TimeUntil(int index)
     {
         var state = _state;
+        var connection = Connection;
+        var playing = connection.CurrentTrack;
         if (
-            _loop == LoopMode.Track
+            (
+                _loop == LoopMode.Track
+                && (
+                    index > 0
+                    || (
+                        state.Current is { } queued
+                        && (playing is null || GuildConnection.IsSameTrack(queued, playing))
+                    )
+                )
+            )
             || index < 0
             || index >= state.Upcoming.Length
             || (Shuffle && index > 0)
@@ -142,9 +153,20 @@ public sealed class GuildQueue
             return null;
 
         var wait = TimeSpan.Zero;
-        if (state.Current is { Info.IsStream: false } current)
+        if (playing is { Info.IsStream: false } current)
         {
-            var left = current.Info.Length - (Connection.Position ?? TimeSpan.Zero);
+            var length = current.Info.Length;
+            var settings = connection.Settings;
+            if (
+                settings.EndTime is > 0 and { } endTime
+                && GuildConnection.IsSameTrack(settings.TrackOptionsFor, current)
+            )
+            {
+                var cutoff = TrackInfo.ToTimeSpan(endTime);
+                if (cutoff > TimeSpan.Zero && (length == TimeSpan.Zero || cutoff < length))
+                    length = cutoff;
+            }
+            var left = length - (connection.Position ?? TimeSpan.Zero);
             if (left > TimeSpan.Zero)
                 wait = left;
         }
