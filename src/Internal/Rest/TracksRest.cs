@@ -13,11 +13,7 @@ internal sealed class TracksRest
 
     public async Task<LoadResult> LoadAsync(string identifier, CancellationToken cancellationToken)
     {
-        var path = string.Concat(
-            Routes.LoadTracks,
-            "?identifier=",
-            Uri.EscapeDataString(identifier)
-        );
+        var path = Routes.WithQuery(Routes.LoadTracks, "identifier", identifier);
         return await _rest
             .SendExpectingAsync<LoadResult>(
                 HttpMethod.Get,
@@ -30,11 +26,7 @@ internal sealed class TracksRest
 
     public async Task<Track> DecodeAsync(string encodedTrack, CancellationToken cancellationToken)
     {
-        var path = string.Concat(
-            Routes.DecodeTrack,
-            "?encodedTrack=",
-            Uri.EscapeDataString(encodedTrack)
-        );
+        var path = Routes.WithQuery(Routes.DecodeTrack, "encodedTrack", encodedTrack);
         return await _rest
             .SendExpectingAsync<Track>(
                 HttpMethod.Get,
@@ -97,11 +89,7 @@ internal sealed class TracksRest
         CancellationToken cancellationToken
     )
     {
-        var path = string.Concat(
-            Routes.TrackStream,
-            "?encodedTrack=",
-            Uri.EscapeDataString(encodedTrack)
-        );
+        var path = Routes.WithQuery(Routes.TrackStream, "encodedTrack", encodedTrack);
         if (itag is not null)
             path = string.Concat(path, "&itag=", itag.Value.ToString(CultureInfo.InvariantCulture));
         var result = await _rest

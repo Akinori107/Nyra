@@ -19,11 +19,7 @@ internal sealed class LyricsRest
         var options = _rest.Options;
         if (_rest.Node.IsNodeLink)
         {
-            var path = string.Concat(
-                Routes.LoadLyrics,
-                "?encodedTrack=",
-                Uri.EscapeDataString(encodedTrack)
-            );
+            var path = Routes.WithQuery(Routes.LoadLyrics, "encodedTrack", encodedTrack);
             if (!string.IsNullOrWhiteSpace(language))
                 path = string.Concat(path, "&lang=", Uri.EscapeDataString(language));
             if (!string.IsNullOrWhiteSpace(source))
@@ -39,7 +35,7 @@ internal sealed class LyricsRest
                 .ConfigureAwait(false);
         }
 
-        var lavaPath = string.Concat(Routes.Lyrics, "?track=", Uri.EscapeDataString(encodedTrack));
+        var lavaPath = Routes.WithQuery(Routes.Lyrics, "track", encodedTrack);
         if (skipTrackSource)
             lavaPath = string.Concat(lavaPath, "&skipTrackSource=true");
 
@@ -59,11 +55,7 @@ internal sealed class LyricsRest
         CancellationToken cancellationToken
     )
     {
-        var path = string.Concat(
-            Routes.LoadChapters,
-            "?encodedTrack=",
-            Uri.EscapeDataString(encodedTrack)
-        );
+        var path = Routes.WithQuery(Routes.LoadChapters, "encodedTrack", encodedTrack);
         return await _rest.GetListAsync<Chapter>(path, cancellationToken).ConfigureAwait(false);
     }
 
@@ -73,11 +65,7 @@ internal sealed class LyricsRest
         CancellationToken cancellationToken
     )
     {
-        var path = string.Concat(
-            Routes.Meaning,
-            "?encodedTrack=",
-            Uri.EscapeDataString(encodedTrack)
-        );
+        var path = Routes.WithQuery(Routes.Meaning, "encodedTrack", encodedTrack);
         if (!string.IsNullOrWhiteSpace(language))
             path = string.Concat(path, "&lang=", Uri.EscapeDataString(language));
 
