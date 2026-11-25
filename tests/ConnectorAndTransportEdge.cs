@@ -1,3 +1,4 @@
+using System.Net.WebSockets;
 using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
 using static Nyra.Tests.NodeHarness;
@@ -198,10 +199,21 @@ public sealed class ConnectorAndTransportEdge
         var stack = await StartAsync().ConfigureAwait(false);
         await using (stack.ConfigureAwait(false))
         {
+            var disconnected = new TaskCompletionSource<WebSocketCloseStatus?>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            stack.Node.Disconnected += (_, args) =>
+            {
+                disconnected.TrySetResult(args.CloseStatus);
+                return Task.CompletedTask;
+            };
+
             await stack.Server.DropConnectionAsync(1000, "clean bye").ConfigureAwait(false);
             await Assert
-                .That(() => !stack.Node.IsConnected)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
+                .That(
+                    await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false)
+                )
+                .IsEqualTo(WebSocketCloseStatus.NormalClosure);
         }
     }
 
