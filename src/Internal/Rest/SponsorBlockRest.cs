@@ -31,14 +31,12 @@ internal sealed class SponsorBlockRest
     )
     {
         var path = BuildSponsorBlockPath(guildId);
-        var options = _rest.Options;
-        var body = NyraJson.SerializeToUtf8Bytes(settings, options);
         return await _rest
-            .SendExpectingAsync<SponsorBlockState>(
+            .SendJsonAsync<SponsorBlockState, SponsorBlockSettings>(
                 HttpMethod.Patch,
                 path,
                 "SponsorBlock state",
-                body,
+                settings,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -51,17 +49,12 @@ internal sealed class SponsorBlockRest
     )
     {
         var path = BuildSponsorBlockPath(guildId);
-        var options = _rest.Options;
-        var body = NyraJson.SerializeToUtf8Bytes(
-            new SponsorBlockSegmentOverride(segments),
-            options
-        );
         return await _rest
-            .SendExpectingAsync<SponsorBlockState>(
+            .SendJsonAsync<SponsorBlockState, SponsorBlockSegmentOverride>(
                 HttpMethod.Post,
                 path,
                 "SponsorBlock state",
-                body,
+                new SponsorBlockSegmentOverride(segments),
                 cancellationToken
             )
             .ConfigureAwait(false);

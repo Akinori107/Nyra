@@ -219,6 +219,21 @@ internal sealed class RestClient
         }
     }
 
+    internal Task<TResponse> SendJsonAsync<TResponse, TPayload>(
+        HttpMethod method,
+        string path,
+        string what,
+        TPayload payload,
+        CancellationToken cancellationToken
+    ) =>
+        SendExpectingAsync<TResponse>(
+            method,
+            path,
+            what,
+            NyraJson.SerializeToUtf8Bytes(payload, Options),
+            cancellationToken
+        );
+
     internal Task<T> SendExpectingAsync<T>(
         HttpMethod method,
         string path,

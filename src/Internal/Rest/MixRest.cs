@@ -16,17 +16,12 @@ internal sealed class MixRest
     )
     {
         var path = BuildMixPath(guildId);
-        var options = _rest.Options;
-        var body = NyraJson.SerializeToUtf8Bytes(
-            new MixLayerCreate(new PlayerUpdateTrack { Encoded = encodedTrack }, volume),
-            options
-        );
         return await _rest
-            .SendExpectingAsync<MixLayer>(
+            .SendJsonAsync<MixLayer, MixLayerCreate>(
                 HttpMethod.Post,
                 path,
                 "mix layer",
-                body,
+                new MixLayerCreate(new PlayerUpdateTrack { Encoded = encodedTrack }, volume),
                 cancellationToken
             )
             .ConfigureAwait(false);
