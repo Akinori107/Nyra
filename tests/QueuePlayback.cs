@@ -363,4 +363,55 @@ public sealed class QueuePlayback
                 .IsEqualTo("b,c,d,e");
         }
     }
+
+    private static string? PreloadedId(string? body)
+    {
+        if (body is null)
+            return null;
+        using var document = JsonDocument.Parse(body);
+        return
+            document.RootElement.TryGetProperty("nextTrack", out var track)
+            && track.ValueKind == JsonValueKind.Object
+            && track.TryGetProperty("encoded", out var encoded)
+            && encoded.GetString() is { } value
+            && value.StartsWith("enc-", StringComparison.Ordinal)
+            ? value[4..]
+            : null;
+    }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task PreloadingPreservesTrackUserData(bool combined)
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.PreloadNext = true;
+            using var data = JsonDocument.Parse("""{"requester":"42"}""");
+            var next = (await rig.MakeAsync("b").ConfigureAwait(false)) with
+            {
+                UserData = data.RootElement.Clone(),
+            };
+            if (combined)
+                await rig
+                    .Queue.EnqueueAsync([await rig.MakeAsync("a").ConfigureAwait(false), next])
+                    .ConfigureAwait(false);
+            else
+            {
+                await rig.EnqueueAsync("a").ConfigureAwait(false);
+                await rig.Queue.EnqueueAsync(next).ConfigureAwait(false);
+            }
+
+            var patch = rig.Server.RestCalls.Single(call => PreloadedId(call.Body) == "b");
+            using var body = JsonDocument.Parse(patch.Body!);
+            await Assert
+                .That(
+                    body.RootElement.GetProperty("nextTrack")
+                        .TryGetProperty("userData", out var userData)
+                )
+                .IsTrue();
+            await Assert.That(userData.GetProperty("requester").GetString()).IsEqualTo("42");
+        }
+    }
 }

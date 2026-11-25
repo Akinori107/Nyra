@@ -104,7 +104,11 @@ public sealed class GuildEffects
             ? new NextTrackUpdate()
             : new NextTrackUpdate
             {
-                NextTrack = new PlayerUpdateTrack { Encoded = nextTrack.Encoded },
+                NextTrack = new PlayerUpdateTrack
+                {
+                    Encoded = nextTrack.Encoded,
+                    UserData = nextTrack.ObjectUserData,
+                },
             };
         var requestTick = _node.Time.GetMilliseconds();
         var player = await _connection
