@@ -27,6 +27,8 @@ public sealed class GuildConnection
     private readonly GuildTimer _aloneTimer;
     private readonly Lock _listenersLock = new();
     private HashSet<ulong>? _listeners;
+    private readonly Lock _pauseOwnershipLock = new();
+    private long _pauseOwnershipGeneration;
     private volatile bool _pausedWhenAlone;
 
     internal sealed record RestoreSnapshot(
@@ -532,8 +534,8 @@ public sealed class GuildConnection
     /// <returns>A task that completes when the player was paused.</returns>
     public Task PauseAsync(CancellationToken cancellationToken = default)
     {
-        _pausedWhenAlone = false;
-        return _commands.SetPausedAsync(true, cancellationToken);
+        ReleasePauseOwnership();
+        return _commands.SetPausedAsync(true, cancellationToken: cancellationToken);
     }
 
     /// <summary>Resumes playback.</summary>
@@ -544,8 +546,8 @@ public sealed class GuildConnection
     /// <returns>A task that completes when the player was resumed.</returns>
     public Task ResumeAsync(CancellationToken cancellationToken = default)
     {
-        _pausedWhenAlone = false;
-        return _commands.SetPausedAsync(false, cancellationToken);
+        ReleasePauseOwnership();
+        return _commands.SetPausedAsync(false, cancellationToken: cancellationToken);
     }
 
     /// <summary>Seeks the current track to a position.</summary>
@@ -1497,10 +1499,35 @@ public sealed class GuildConnection
             SettlePauseWhenAloneAsync().ObserveFaults(Node.HandleError);
     }
 
+    private void ReleasePauseOwnership()
+    {
+        lock (_pauseOwnershipLock)
+        {
+            _pauseOwnershipGeneration++;
+            _pausedWhenAlone = false;
+        }
+    }
+
+    private bool TrySetPauseOwnership(long generation, bool owned)
+    {
+        lock (_pauseOwnershipLock)
+        {
+            if (generation != _pauseOwnershipGeneration)
+                return false;
+
+            _pausedWhenAlone = owned;
+            return true;
+        }
+    }
+
     private async Task SettlePauseWhenAloneAsync()
     {
         for (var pass = 0; pass < 4; pass++)
         {
+            long generation;
+            lock (_pauseOwnershipLock)
+                generation = _pauseOwnershipGeneration;
+
             if (_tearingDown || _restoring || !Node.IsReady || Listeners is not { } listeners)
                 return;
 
@@ -1509,8 +1536,9 @@ public sealed class GuildConnection
                 if (!Node.Options.PauseWhenAlone || CurrentTrack is null || IsPaused)
                     return;
 
-                await _commands.SetPausedAsync(true, CancellationToken.None).ConfigureAwait(false);
-                _pausedWhenAlone = true;
+                await _commands.SetPausedAsync(true, automatic: true).ConfigureAwait(false);
+                if (!TrySetPauseOwnership(generation, owned: true))
+                    return;
             }
             else
             {
@@ -1518,10 +1546,9 @@ public sealed class GuildConnection
                     return;
 
                 if (IsPaused)
-                    await _commands
-                        .SetPausedAsync(false, CancellationToken.None)
-                        .ConfigureAwait(false);
-                _pausedWhenAlone = false;
+                    await _commands.SetPausedAsync(false, automatic: true).ConfigureAwait(false);
+                if (!TrySetPauseOwnership(generation, owned: false))
+                    return;
             }
         }
     }

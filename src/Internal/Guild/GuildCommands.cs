@@ -73,7 +73,7 @@ internal sealed class GuildCommands
                 current => current is not null && GuildConnection.IsSameTrack(current.Track, track),
                 stamps,
                 requestTick,
-                cancellationToken
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -138,7 +138,7 @@ internal sealed class GuildCommands
                     && (before is null || !GuildConnection.IsSameTrack(serverTrack, before)),
                 stamps,
                 requestTick,
-                cancellationToken
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -184,7 +184,11 @@ internal sealed class GuildCommands
         await _connection.Patches.UpdateAsync(StopPayload, cancellationToken).ConfigureAwait(false);
     }
 
-    internal async Task SetPausedAsync(bool paused, CancellationToken cancellationToken = default)
+    internal async Task SetPausedAsync(
+        bool paused,
+        bool automatic = false,
+        CancellationToken cancellationToken = default
+    )
     {
         _connection.EnsureActive();
 
@@ -205,7 +209,8 @@ internal sealed class GuildCommands
                 current => current?.IsPaused == paused,
                 stamps,
                 requestTick,
-                cancellationToken
+                acceptConfirmed: automatic,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
         _connection.CaptureState(player, requestTick);
@@ -264,7 +269,8 @@ internal sealed class GuildCommands
         Func<Player?, bool> landed,
         GuildPlayback.RequestTicks stamps,
         long requestTick,
-        CancellationToken cancellationToken
+        bool acceptConfirmed = false,
+        CancellationToken cancellationToken = default
     )
     {
         try
@@ -284,7 +290,14 @@ internal sealed class GuildCommands
             )
                 _connection.Playback.RestoreRequestTicks(stamps);
             else
+            {
+                if (acceptConfirmed)
+                {
+                    _node.HandleError(exception);
+                    return player;
+                }
                 _connection.CaptureState(player, requestTick);
+            }
             throw;
         }
     }
