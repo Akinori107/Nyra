@@ -2,11 +2,9 @@ using Nyra.Entities;
 
 namespace Nyra.Internal;
 
-internal sealed class PlayersRest
+internal sealed class PlayersRest(RestClient rest)
 {
-    private readonly RestClient _rest;
-
-    internal PlayersRest(RestClient rest) => _rest = rest;
+    private readonly RestClient _rest = rest;
 
     public async Task<Player?> GetAsync(ulong guildId, CancellationToken cancellationToken) =>
         await _rest

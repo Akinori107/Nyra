@@ -5,11 +5,9 @@ using Nyra.Exceptions;
 
 namespace Nyra.Internal;
 
-internal sealed class InfoRest
+internal sealed class InfoRest(RestClient rest)
 {
-    private readonly RestClient _rest;
-
-    internal InfoRest(RestClient rest) => _rest = rest;
+    private readonly RestClient _rest = rest;
 
     public async Task<ServerInfo> GetServerInfoAsync(CancellationToken cancellationToken)
     {
