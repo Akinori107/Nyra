@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Nyra.Entities;
 
 namespace Nyra.Tests;
@@ -226,6 +227,35 @@ public sealed class QuerySurface
                 await Assert.That(updateCall.Body).Contains("\"volume\":150");
                 await Assert.That(updateCall.Body).Contains("\"paused\":true");
             }
+        }
+    }
+
+    [Test]
+    public async Task GroupPlayPreservesTrackUserData()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            const string path = "/v4/sessions/fake-session/groups/grp";
+            stack.Server.On("PATCH", path, _ => new FakeRestResponse(
+                200,
+                """{"id":"grp","guildIds":[777],"createdAt":100}"""
+            ));
+            ServeLoad(stack.Server);
+            var loaded = (TrackLoaded)
+                await stack.Node.LoadTracksAsync("fixture").ConfigureAwait(false);
+            var track = loaded.Track with
+            {
+                UserData = JsonSerializer.SerializeToElement(new { requester = "fixture" }),
+            };
+            await stack.Node.Groups.PlayTrackAsync("grp", track).ConfigureAwait(false);
+            using var body = JsonDocument.Parse(
+                stack.Server.RestCalls.Last(c => c.Method == "PATCH" && c.Path == path).Body!
+            );
+            var sent = body.RootElement.GetProperty("track");
+            await Assert.That(sent.GetProperty("encoded").GetString()).IsEqualTo(track.Encoded);
+            await Assert.That(sent.TryGetProperty("userData", out var data)).IsTrue();
+            await Assert.That(data.GetProperty("requester").GetString()).IsEqualTo("fixture");
         }
     }
 }

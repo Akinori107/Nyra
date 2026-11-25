@@ -207,7 +207,7 @@ public sealed class NodeGroups
             groupId,
             new GroupUpdate
             {
-                Track = new GroupTrack { Encoded = track.Encoded },
+                Track = new GroupTrack { Encoded = track.Encoded, UserData = track.ObjectUserData },
                 PositionMilliseconds = (long?)position?.TotalMilliseconds,
                 EndTimeMilliseconds = (long?)endTime?.TotalMilliseconds,
             },
