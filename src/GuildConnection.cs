@@ -1120,14 +1120,17 @@ public sealed class GuildConnection
                 {
                     await SendRescueJoinAsync(bridge, leaveFirst: false).ConfigureAwait(false);
                     if (
-                        await RescueSettledAsync(VoiceCloseGracePeriod, baseline)
+                        await RescueSettledAsync(VoiceCloseGracePeriod, baseline, closeTick)
                             .ConfigureAwait(false)
                     )
                         return;
                 }
 
                 await SendRescueJoinAsync(bridge, leaveFirst: true).ConfigureAwait(false);
-                if (await RescueSettledAsync(ForwardActivityWindow, baseline).ConfigureAwait(false))
+                if (
+                    await RescueSettledAsync(ForwardActivityWindow, baseline, closeTick)
+                        .ConfigureAwait(false)
+                )
                     return;
             }
 
@@ -1139,10 +1142,12 @@ public sealed class GuildConnection
         }
     }
 
-    private async Task<bool> RescueSettledAsync(TimeSpan window, long baseline)
+    private async Task<bool> RescueSettledAsync(TimeSpan window, long baseline, long closeTick)
     {
         await Task.Delay(window, Node.Time, CancellationToken.None).ConfigureAwait(false);
-        return _tearingDown || _voiceForward.LastForwardTick > baseline;
+        return _tearingDown
+            || Interlocked.Read(ref _lastVoiceConnectedTick) >= closeTick
+            || _voiceForward.LastForwardTick > baseline;
     }
 
     private async Task SendRescueJoinAsync(IDiscordBridge bridge, bool leaveFirst)
