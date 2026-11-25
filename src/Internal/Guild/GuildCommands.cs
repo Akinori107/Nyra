@@ -173,7 +173,8 @@ internal sealed class GuildCommands
                 cancellationToken
             )
             .ConfigureAwait(false);
-        _connection.RememberEndTime(player.Track, endTime);
+        if (endTime is not null || _node.IsNodeLink)
+            _connection.RememberEndTime(player.Track, endTime);
         _connection.CaptureState(player, requestTick);
     }
 
