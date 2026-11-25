@@ -679,11 +679,21 @@ public sealed class GuildConnection
     {
         var voice = CurrentVoice(ChannelId!.Value);
         Track? ended = null;
+        var settings = Settings;
         if (
             snapshot
                 is { Track: { Info.IsStream: false } track, Position: { } position, Paused: false }
-            && track.Info.Length > TimeSpan.Zero
-            && track.Info.Length - position < TimeSpan.FromSeconds(1)
+            && (
+                (
+                    track.Info.Length > TimeSpan.Zero
+                    && track.Info.Length - position < TimeSpan.FromSeconds(1)
+                )
+                || (
+                    settings.EndTime is > 0 and { } endTime
+                    && IsSameTrack(settings.TrackOptionsFor, track)
+                    && endTime - position.TotalMilliseconds < 1000
+                )
+            )
         )
         {
             ended = track;
@@ -900,14 +910,21 @@ public sealed class GuildConnection
         }
     }
 
-    private static long ResendStartMilliseconds(RestoreSnapshot snapshot, Track track)
+    private static long ResendStartMilliseconds(
+        RestoreSnapshot snapshot,
+        Track track,
+        long? endTime
+    )
     {
         if (snapshot.Position is not { } position || track.Info.IsStream)
             return 0;
 
-        var last = track.Info.Length - TimeSpan.FromMilliseconds(1);
-        var start = track.Info.Length > TimeSpan.Zero && position >= last ? last : position;
-        return (long)start.TotalMilliseconds;
+        var start = (long)position.TotalMilliseconds;
+        if (track.Info.Length > TimeSpan.Zero)
+            start = Math.Min(start, track.Info.LengthMilliseconds - 1);
+        if (endTime is > 0 and { } end)
+            start = Math.Min(start, end - 1);
+        return start;
     }
 
     private async Task ResendInOneUpdateAsync(RestoreSnapshot snapshot, PlayerVoiceState voice)
@@ -916,12 +933,15 @@ public sealed class GuildConnection
         int? volume = snapshot.Volume != 100 ? snapshot.Volume : null;
         PlayerUpdateTrack? trackUpdate = null;
         long? startMilliseconds = null;
+        var settings = Settings;
+        var sameTrack = snapshot.Track is { } saved && IsSameTrack(settings.TrackOptionsFor, saved);
+        var endTime = sameTrack ? settings.EndTime : null;
 
         if (snapshot.Track is { } track)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(track.Encoded);
 
-            startMilliseconds = ResendStartMilliseconds(snapshot, track);
+            startMilliseconds = ResendStartMilliseconds(snapshot, track, endTime);
             trackUpdate = new PlayerUpdateTrack
             {
                 Encoded = track.Encoded,
@@ -933,9 +953,6 @@ public sealed class GuildConnection
                 Playback.StampPauseRequested();
         }
 
-        var settings = Settings;
-        var sameTrack =
-            trackUpdate is not null && IsSameTrack(settings.TrackOptionsFor, snapshot.Track!);
         if (sameTrack)
             trackUpdate = trackUpdate! with { AudioTrackId = settings.AudioTrackId };
 
@@ -952,7 +969,7 @@ public sealed class GuildConnection
                             Position = startMilliseconds,
                             Volume = volume,
                             Paused = trackUpdate is not null && snapshot.Paused ? true : null,
-                            EndTime = sameTrack ? settings.EndTime : null,
+                            EndTime = endTime,
                             Filters = filters,
                             Fading = settings.Fading,
                             LoudnessNormalizer = settings.LoudnessNormalizer,
