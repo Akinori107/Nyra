@@ -271,8 +271,8 @@ internal static class FilterValidation
     private static void CheckFinite<T>(T? value, string name)
         where T : struct, IFloatingPointIeee754<T>
     {
-        if (value is { } candidate && !T.IsFinite(candidate))
-            throw new ArgumentOutOfRangeException(name, candidate, "Must be a finite number.");
+        if (FilterNumbers.NonFinite(value))
+            throw new ArgumentOutOfRangeException(name, value, "Must be a finite number.");
     }
 
     internal static void ThrowIfOutOfRange<T>(
