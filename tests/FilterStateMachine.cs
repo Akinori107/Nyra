@@ -288,4 +288,78 @@ public sealed class FilterStateMachine
                 .Throws<ArgumentOutOfRangeException>();
         }
     }
+
+    [Test]
+    public async Task InvalidationDrainsFilterUpdatesBeforeDestroyingThePlayer()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
+            var conn = await ConnectGuildAsync(bridge, node, server, echoJson: null)
+                .ConfigureAwait(false);
+            var entered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var deleting = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var releaseDelete = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            server.On("PATCH", PlayerPath, _ =>
+            {
+                entered.TrySetResult();
+                release.Task.Wait(TimeSpan.FromSeconds(10));
+                return new FakeRestResponse(200, PlayerBody(DesiredJson));
+            });
+            server.On("DELETE", PlayerPath, _ =>
+            {
+                deleting.TrySetResult();
+                releaseDelete.Task.Wait(TimeSpan.FromSeconds(10));
+                return new FakeRestResponse(204, string.Empty);
+            });
+            var applying = conn.Filters.ApplyAsync(Desired());
+            var invalidated = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            conn.GuildConnectionInvalidated += (_, _) =>
+            {
+                invalidated.TrySetResult();
+                return Task.CompletedTask;
+            };
+            try
+            {
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                await server
+                    .PushAsync(
+                        """{"op":"event","type":"WorkerFailedEvent","workerId":3,"affectedGuilds":["777"]}"""
+                    )
+                    .ConfigureAwait(false);
+                await deleting.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                await Assert
+                    .That(async () =>
+                        await applying.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false)
+                    )
+                    .Throws<OperationCanceledException>();
+            }
+            finally
+            {
+                release.TrySetResult();
+                releaseDelete.TrySetResult();
+
+                try
+                {
+                    await applying.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) { }
+            }
+            await invalidated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await Assert.That(conn.IsConnected).IsFalse();
+            await Assert.That(conn.Filters.Applied.Tremolo).IsNull();
+        }
+    }
 }

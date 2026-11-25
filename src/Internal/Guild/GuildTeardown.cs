@@ -70,6 +70,7 @@ internal sealed class GuildTeardown
         _connection.MarkTearingDown();
 
         await _connection.DrainVoiceForwardAsync().ConfigureAwait(false);
+        await _connection.DrainFiltersAsync().ConfigureAwait(false);
         await _connection.Patches.DrainAsync().ConfigureAwait(false);
 
         var lastChannelId = _connection.ChannelId;
