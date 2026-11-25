@@ -1,6 +1,15 @@
 using DSharpPlus.Entities;
+#if NYRA_DSHARPPLUS_NIGHTLY
+using ChannelKind = DSharpPlus.Entities.DiscordChannelType;
 
 namespace Nyra.DSharpPlus.Nightly;
+
+#else
+using ChannelKind = DSharpPlus.ChannelType;
+
+namespace Nyra.DSharpPlus;
+
+#endif
 
 /// <summary>Nyra entry points that need DSharpPlus channel types.</summary>
 public static class NodeExtensions
@@ -48,7 +57,7 @@ public static class NodeExtensions
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(channel);
 
-        if (channel.Type is not (DiscordChannelType.Voice or DiscordChannelType.Stage))
+        if (channel.Type is not (ChannelKind.Voice or ChannelKind.Stage))
             throw new ArgumentException(
                 "The channel must be a voice or stage channel.",
                 nameof(channel)

@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <DefineConstants>$(DefineConstants);NYRA_DSHARPPLUS_NIGHTLY</DefineConstants>
     <NoWarn>$(NoWarn);NU5104</NoWarn>
     <PackageId>Nyra.DSharpPlus.Nightly</PackageId>
     <Description>DSharpPlus Nightly adapter for Nyra, a Lavalink v4.2+ and NodeLink v3.9+ client.</Description>
@@ -7,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\NodeExtensions.cs" Link="NodeExtensions.cs" />
     <ProjectReference Include="..\..\..\Nyra.csproj" />
   </ItemGroup>
 

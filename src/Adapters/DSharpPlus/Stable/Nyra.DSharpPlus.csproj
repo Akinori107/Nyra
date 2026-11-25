@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\NodeExtensions.cs" Link="NodeExtensions.cs" />
     <ProjectReference Include="..\..\..\Nyra.csproj" />
   </ItemGroup>
 
