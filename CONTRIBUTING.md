@@ -1,8 +1,6 @@
 # Contributing to Nyra
 
-Open PRs against the `dev` branch. For a big change, open an issue first to discuss it. Keep your branch up to date by rebasing on `dev`, not by merging it.
-
-No comments in code, XML docs on public members cover what's needed.
+Open PRs against the `dev` branch. For a big change, open an issue first to discuss it. Keep your branch up to date by rebasing on `dev`, not by merging it. Skip comments in code, since names and XML docs on public members are enough.
 
 ## Commits and PR titles
 
@@ -20,7 +18,7 @@ A commit body is optional. Say why in a short paragraph, or use one bullet per c
 
 ## Tests
 
-Tests are not required, but they are appreciated. If you write some, `FakeTimeProvider` is handy for advancing time, and `FakeNodeServer` and `FakeBridge` in `FakeNode.cs` stand in for the node and the Discord side. For voice handshakes and reconnects, wait for the task or event the test needs.
+A test should fail when something breaks, not when the code changes. Reflection breaks on harmless renames and sleeps race the clock, so avoid both and wait for the task or event the test needs. `FakeTimeProvider` is handy for advancing time, and `FakeNodeServer` and `FakeBridge` in `FakeNode.cs` stand in for the node and the Discord side.
 
 ## Local checks
 
