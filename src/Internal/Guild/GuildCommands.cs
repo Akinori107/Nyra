@@ -42,7 +42,8 @@ internal sealed class GuildCommands
         if (urlStart is not null)
             positionMilliseconds = (long)urlStart.Value.TotalMilliseconds;
 
-        var refusable = options?.NoReplace == true && _connection.CurrentTrack is not null;
+        var before = _connection.CurrentTrack;
+        var refusable = options?.NoReplace == true && before is not null;
 
         var stamps = _connection.Playback.StampPlayRequested();
         var requestTick = _node.Time.GetMilliseconds();
@@ -73,6 +74,14 @@ internal sealed class GuildCommands
                 current => current is not null && GuildConnection.IsSameTrack(current.Track, track),
                 stamps,
                 requestTick,
+                _ =>
+                {
+                    if (GuildConnection.IsSameTrack(before, track))
+                        return;
+                    if (urlStart is not null)
+                        track.StartPosition = null;
+                    _connection.RememberTrackOptions(track, options);
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -138,6 +147,7 @@ internal sealed class GuildCommands
                     && (before is null || !GuildConnection.IsSameTrack(serverTrack, before)),
                 stamps,
                 requestTick,
+                confirmed => _connection.RememberTrackOptions(confirmed.Track, options),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -205,6 +215,7 @@ internal sealed class GuildCommands
                 current => current?.IsPaused == paused,
                 stamps,
                 requestTick,
+                null,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -264,6 +275,7 @@ internal sealed class GuildCommands
         Func<Player?, bool> landed,
         GuildPlayback.RequestTicks stamps,
         long requestTick,
+        Action<Player>? rememberLanding,
         CancellationToken cancellationToken
     )
     {
@@ -284,7 +296,10 @@ internal sealed class GuildCommands
             )
                 _connection.Playback.RestoreRequestTicks(stamps);
             else
+            {
+                rememberLanding?.Invoke(player);
                 _connection.CaptureState(player, requestTick);
+            }
             throw;
         }
     }
