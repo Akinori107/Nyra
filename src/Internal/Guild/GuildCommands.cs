@@ -181,7 +181,15 @@ internal sealed class GuildCommands
     {
         _connection.EnsureActive();
 
-        await _connection.Patches.UpdateAsync(StopPayload, cancellationToken).ConfigureAwait(false);
+        var requestTick = _node.Time.GetMilliseconds();
+        var player = await _connection
+            .Patches.SendLandingAsync(
+                ct => _node.Rest.Players.UpdateAsync(GuildId, StopPayload, ct),
+                current => current is { Track: null },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        _connection.CaptureState(player, requestTick);
     }
 
     internal async Task SetPausedAsync(bool paused, CancellationToken cancellationToken = default)
