@@ -41,6 +41,7 @@ internal sealed class GuildCommands
         var urlStart = positionMilliseconds is null ? track.StartPosition : null;
         if (urlStart is not null)
             positionMilliseconds = (long)urlStart.Value.TotalMilliseconds;
+        ValidateEffectiveStart(positionMilliseconds, options);
 
         var refusable = options?.NoReplace == true && _connection.CurrentTrack is not null;
 
@@ -109,6 +110,7 @@ internal sealed class GuildCommands
 
         var positionMilliseconds = (long?)options?.StartPosition?.TotalMilliseconds;
         positionMilliseconds ??= UrlStartPosition.ParseMilliseconds(identifier);
+        ValidateEffectiveStart(positionMilliseconds, options);
 
         var stamps = _connection.Playback.StampPlayRequested();
         var requestTick = _node.Time.GetMilliseconds();
@@ -316,6 +318,19 @@ internal sealed class GuildCommands
             throw new ArgumentException(
                 "PlayOptions.AudioTrackId must not be empty or whitespace.",
                 nameof(options)
+            );
+    }
+
+    private static void ValidateEffectiveStart(long? positionMilliseconds, PlayOptions? options)
+    {
+        if (
+            positionMilliseconds is { } start
+            && options?.EndTime is { } end
+            && start >= (long)end.TotalMilliseconds
+        )
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "The effective start position must be earlier than PlayOptions.EndTime."
             );
     }
 
