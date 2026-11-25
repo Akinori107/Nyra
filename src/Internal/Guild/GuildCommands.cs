@@ -25,6 +25,7 @@ internal sealed class GuildCommands
         Track track,
         PlayOptions? options = null,
         Track? nextTrack = null,
+        bool clearNextTrack = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -60,9 +61,10 @@ internal sealed class GuildCommands
                     },
                     Position = positionMilliseconds,
                     EndTime = (long?)options?.EndTime?.TotalMilliseconds,
-                    NextTrack = nextTrack is null
-                        ? null
-                        : new PlayerUpdateTrack { Encoded = nextTrack.Encoded },
+                    NextTrack =
+                        nextTrack is null && !clearNextTrack
+                            ? null
+                            : new PlayerUpdateTrack { Encoded = nextTrack?.Encoded },
                 },
                 ct,
                 options?.NoReplace ?? false

@@ -483,9 +483,9 @@ public sealed class GuildConnection
 
     internal Task PlayWithNextAsync(
         Track track,
-        Track nextTrack,
+        Track? nextTrack,
         CancellationToken cancellationToken
-    ) => _commands.PlayAsync(track, null, nextTrack, cancellationToken);
+    ) => _commands.PlayAsync(track, null, nextTrack, clearNextTrack: true, cancellationToken);
 
     /// <summary>
     /// Plays a raw identifier and lets the server load it, search queries and playlists are rejected by both

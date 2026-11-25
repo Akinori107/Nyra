@@ -25,11 +25,7 @@ internal sealed class NextTrackPreloader(GuildQueue queue)
     internal async Task PlayAsync(Track play, QueueState after, CancellationToken cancellationToken)
     {
         var connection = queue.Connection;
-        var next =
-            connection.Node.IsNodeLink && queue.PreloadNext
-                ? after.NextToPreload(queue.Policy)
-                : null;
-        if (next is null || string.IsNullOrWhiteSpace(next.Encoded))
+        if (!connection.Node.IsNodeLink)
         {
             await connection
                 .PlayAsync(play, cancellationToken: cancellationToken)
@@ -40,9 +36,21 @@ internal sealed class NextTrackPreloader(GuildQueue queue)
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await connection.PlayWithNextAsync(play, next, cancellationToken).ConfigureAwait(false);
+            var next = queue.PreloadNext ? after.NextToPreload(queue.Policy) : null;
+            if (next is not null && string.IsNullOrWhiteSpace(next.Encoded))
+                next = null;
+
+            if (next is null && _preloaded is null)
+                await connection
+                    .PlayAsync(play, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            else
+                await connection
+                    .PlayWithNextAsync(play, next, cancellationToken)
+                    .ConfigureAwait(false);
+
             _preloaded = next;
-            _playedWithNext = play;
+            _playedWithNext = next is null ? null : play;
         }
         finally
         {
