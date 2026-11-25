@@ -23,27 +23,22 @@ internal sealed class FiltersConverter(
 
         if (isNodeLink)
         {
-            var root = reader;
-            if (!reader.Read() || reader.TokenType == JsonTokenType.EndObject)
-                return ReadMembers(ref root, options);
-
-            if (reader.ValueTextEquals("filters"u8))
+            var probe = reader;
+            while (probe.Read() && probe.TokenType != JsonTokenType.EndObject)
             {
-                reader.Read();
-                if (reader.TokenType == JsonTokenType.StartObject)
+                var isEnvelope = probe.ValueTextEquals("filters"u8);
+                probe.Read();
+                if (isEnvelope && probe.TokenType == JsonTokenType.StartObject)
                 {
-                    var chain = ReadMembers(ref reader, options);
-                    while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-                        reader.Skip();
+                    var chain = ReadMembers(ref probe, options);
+                    while (probe.Read() && probe.TokenType != JsonTokenType.EndObject)
+                        probe.Skip();
+                    reader = probe;
                     return chain;
                 }
 
-                reader.Skip();
-                if (!reader.Read() || reader.TokenType == JsonTokenType.EndObject)
-                    return ReadMembers(ref root, options);
+                probe.Skip();
             }
-
-            return ReadMembers(ref reader, options, atFirstMemberName: true);
         }
 
         return ReadMembers(ref reader, options);
@@ -330,11 +325,7 @@ internal sealed class FiltersConverter(
             NyraJson.Serialize(writer, transition, options);
     }
 
-    private FilterChain ReadMembers(
-        ref Utf8JsonReader reader,
-        JsonSerializerOptions options,
-        bool atFirstMemberName = false
-    )
+    private FilterChain ReadMembers(ref Utf8JsonReader reader, JsonSerializerOptions options)
     {
         float? volume = null;
         IReadOnlyList<EqualizerBand>? equalizer = null;
@@ -359,10 +350,8 @@ internal sealed class FiltersConverter(
         TesseractFilter? tesseract = null;
         Dictionary<string, JsonElement>? pluginFilters = null;
 
-        var first = atFirstMemberName;
-        while (first || (reader.Read() && reader.TokenType != JsonTokenType.EndObject))
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
         {
-            first = false;
             var name = reader;
             reader.Read();
 

@@ -288,4 +288,40 @@ public sealed class FilterStateMachine
                 .Throws<ArgumentOutOfRangeException>();
         }
     }
+
+    [Test]
+    [Arguments("""{"junk":1,"filters":{"volume":1.5}}""", 1.5f, null)]
+    [Arguments(
+        """{"metadata":{"filters":{"timescale":{"speed":3}}},"volume":0.5,"filters":{"timescale":{"speed":1.5}},"tail":[1,2]}""",
+        null,
+        1.5
+    )]
+    [Arguments(
+        """{"metadata":{"filters":{"timescale":{"speed":3}}},"timescale":{"speed":1.25}}""",
+        null,
+        1.25
+    )]
+    [Arguments("""{"filters":null,"timescale":{"speed":1.25}}""", null, 1.25)]
+    public async Task FilterEnvelopeIsIndependentOfPropertyOrder(
+        string echo,
+        float? volume,
+        double? speed
+    )
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var conn = await ConnectGuildAsync(
+                    stack.Bridge,
+                    stack.Node,
+                    stack.Server,
+                    DivergentJson
+                )
+                .ConfigureAwait(false);
+            Echo(stack.Server, echo);
+            await conn.Filters.ApplyAsync(Desired()).ConfigureAwait(false);
+            await Assert.That(conn.Filters.Applied.Volume).IsEqualTo(volume);
+            await Assert.That(conn.Filters.Applied.Timescale?.Speed).IsEqualTo(speed);
+        }
+    }
 }
