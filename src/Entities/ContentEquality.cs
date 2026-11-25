@@ -4,6 +4,9 @@ namespace Nyra.Entities;
 
 internal static class ContentEquality
 {
+    private static readonly EqualityComparer<JsonElement> DeepJsonComparer =
+        EqualityComparer<JsonElement>.Create(JsonElement.DeepEquals);
+
     public static IReadOnlyList<T> WithoutNulls<T>(IReadOnlyList<T>? list) =>
         list is null ? [] : [.. list.Where(item => item is not null)];
 
@@ -21,7 +24,8 @@ internal static class ContentEquality
 
     public static bool DictionaryEquals<TKey, TValue>(
         IReadOnlyDictionary<TKey, TValue>? left,
-        IReadOnlyDictionary<TKey, TValue>? right
+        IReadOnlyDictionary<TKey, TValue>? right,
+        IEqualityComparer<TValue>? comparer = null
     )
         where TKey : notnull
     {
@@ -29,11 +33,9 @@ internal static class ContentEquality
             return true;
         if (left is null || right is null || left.Count != right.Count)
             return false;
+        comparer ??= EqualityComparer<TValue>.Default;
         foreach (var (key, value) in left)
-            if (
-                !right.TryGetValue(key, out var other)
-                || !EqualityComparer<TValue>.Default.Equals(value, other)
-            )
+            if (!right.TryGetValue(key, out var other) || !comparer.Equals(value, other))
                 return false;
         return true;
     }
@@ -41,17 +43,7 @@ internal static class ContentEquality
     public static bool DictionaryDeepEquals(
         IReadOnlyDictionary<string, JsonElement>? left,
         IReadOnlyDictionary<string, JsonElement>? right
-    )
-    {
-        if (ReferenceEquals(left, right))
-            return true;
-        if (left is null || right is null || left.Count != right.Count)
-            return false;
-        foreach (var (key, value) in left)
-            if (!right.TryGetValue(key, out var other) || !JsonElement.DeepEquals(value, other))
-                return false;
-        return true;
-    }
+    ) => DictionaryEquals(left, right, DeepJsonComparer);
 
     public static bool JsonElementEquals(JsonElement? left, JsonElement? right) =>
         left is null
