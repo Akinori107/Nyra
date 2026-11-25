@@ -246,15 +246,17 @@ internal sealed class GuildCommands
 
         var requestTick = _node.Time.GetMilliseconds();
         var requestTicket = GuildFilters.NextTicket();
+        var session = _node.SessionId;
         var player = await _node
             .Rest.Players.GetAsync(GuildId, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException($"The node has no player for guild {GuildId}.");
 
         await _connection
-            .Filters.CaptureServerFiltersAsync(player, requestTicket, cancellationToken)
+            .Filters.CaptureServerFiltersAsync(player, requestTicket, session, cancellationToken)
             .ConfigureAwait(false);
-        _connection.CaptureState(player, requestTick);
+        if (session == _node.SessionId && !_connection.IsTearingDown)
+            _connection.CaptureState(player, requestTick);
 
         return player;
     }
