@@ -366,14 +366,14 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
                     .WaitAsync(timeout, _time, cancellationToken)
                     .ConfigureAwait(false);
 
+                if (pending.GuildRemoved)
+                    throw new VoiceHandshakeException(
+                        $"The bot was removed from the guild during the handshake for guild {guildId}. "
+                            + "The credentials of the join are stale, re-invite the bot and connect again."
+                    );
+
                 if (ReferenceEquals(completed, movedTask))
                 {
-                    if (pending.GuildRemoved)
-                        throw new VoiceHandshakeException(
-                            $"The bot was removed from the guild during the handshake for guild {guildId}. "
-                                + "The credentials of the join are stale, re-invite the bot and connect again."
-                        );
-
                     var tail = pending.KickedAfterState
                         ? "connect again when the bot is back in a voice channel."
                         : "the rollback of the failed join also leaves the channel the bot ended up in"

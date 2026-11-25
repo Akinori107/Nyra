@@ -381,6 +381,8 @@ internal sealed class GuildRegistry
         bool completePump
     )
     {
+        connection.MarkTearingDown();
+        connection.ClearState();
         Connections.TryRemove(new KeyValuePair<ulong, GuildConnection>(guildId, connection));
         try
         {
