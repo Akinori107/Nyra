@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Nyra.Entities;
+using Nyra.Exceptions;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -104,6 +106,52 @@ public sealed class PlayPath
             await Assert
                 .That(() => Volatile.Read(ref errorVisits) == 1)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task StopReconcilesOnlyAConfirmedEmptyPlayer(bool stopped)
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var conn = stack.Node.GetConnection(777)!;
+            await conn.PlayAsync(JsonSerializer.Deserialize<Track>(TrackJson)!)
+                .ConfigureAwait(false);
+            stack.Server.On("PATCH", PlayerPath, 200, "@");
+            stack.Server.On(
+                "GET",
+                PlayerPath,
+                200,
+                stopped
+                    ? PlayerWithTrack.Replace(TrackJson, "null", StringComparison.Ordinal)
+                    : PlayerWithTrack
+            );
+            if (stopped)
+                await conn.StopAsync().ConfigureAwait(false);
+            else
+                await Assert.That(() => conn.StopAsync()).Throws<RestException>();
+            await Assert.That(conn.CurrentTrack is null).IsEqualTo(stopped);
+        }
+    }
+
+    [Test]
+    public async Task AmbiguousStopDoesNotTreatAMissingPlayerAsConfirmed()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var conn = stack.Node.GetConnection(777)!;
+            await conn.PlayAsync(JsonSerializer.Deserialize<Track>(TrackJson)!)
+                .ConfigureAwait(false);
+            stack.Server.On("PATCH", PlayerPath, 200, "@");
+            stack.Server.On("GET", PlayerPath, 404, """{"message":"Player not found"}""");
+            await Assert.That(() => conn.StopAsync()).Throws<RestException>();
+            await Assert
+                .That(conn.CurrentTrack?.Encoded)
+                .IsEqualTo(JsonSerializer.Deserialize<Track>(TrackJson)!.Encoded);
         }
     }
 }
