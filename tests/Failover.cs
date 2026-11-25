@@ -1,3 +1,9 @@
+using System.Text.Json;
+using Nyra.Entities;
+using Nyra.EventArgs;
+using Nyra.Queue;
+using static Nyra.Tests.NodeHarness;
+
 namespace Nyra.Tests;
 
 public sealed class Failover
@@ -93,6 +99,131 @@ public sealed class Failover
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(10));
 
             await Assert.That(rig.Extension.GetNode()).IsSameReferenceAs(rig.Nodes[1]);
+        }
+    }
+
+    private const string One =
+        """{"encoded":"QXRsZWFzdA==","info":{"identifier":"one","author":"a","title":"One","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
+
+    private const string Two =
+        """{"encoded":"U2Vjb25k","info":{"identifier":"two","author":"a","title":"Two","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
+
+    private const string Three =
+        """{"encoded":"VGhpcmQ=","info":{"identifier":"three","author":"a","title":"Three","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
+
+    private static readonly Dictionary<string, string> TracksByEncoded = new()
+    {
+        ["QXRsZWFzdA=="] = One,
+        ["U2Vjb25k"] = Two,
+        ["VGhpcmQ="] = Three,
+    };
+
+    private static Track Parse(string json) => JsonSerializer.Deserialize<Track>(json)!;
+
+    private static string Path(ulong guild) => $"/v4/sessions/fake-session/players/{guild}";
+
+    private static void Echo(
+        FakeNodeServer server,
+        ulong guild = 777,
+        Func<FakeRestCall, FakeRestResponse?>? intercept = null
+    )
+    {
+        string? current = null;
+        server.On("PATCH", Path(guild), call =>
+        {
+            if (intercept?.Invoke(call) is { } response)
+                return response;
+
+            using var body = JsonDocument.Parse(string.IsNullOrEmpty(call.Body) ? "{}" : call.Body);
+            if (
+                body.RootElement.TryGetProperty("track", out var track)
+                && track.ValueKind == JsonValueKind.Object
+            )
+                current = track.GetProperty("encoded").GetString();
+
+            var json = current is not null ? TracksByEncoded[current] : "null";
+            return new FakeRestResponse(
+                200,
+                $$$"""{"guildId":"{{{guild}}}","track":{{{json}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":1},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
+            );
+        });
+    }
+
+    private static Task<GuildConnectionMigratedEventArgs> Migrated(GuildConnection connection)
+    {
+        var migrated = new TaskCompletionSource<GuildConnectionMigratedEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        connection.GuildConnectionMigrated += (_, args) =>
+        {
+            migrated.TrySetResult(args);
+            return Task.CompletedTask;
+        };
+        return migrated.Task;
+    }
+
+    private static async Task KillAsync(FakeNodeServer server)
+    {
+        server.Down = true;
+        await server.DropConnectionAsync(1000, "dead").ConfigureAwait(false);
+    }
+
+    [Test]
+    [Arguments("gapless")]
+    [Arguments("crossfading")]
+    public async Task AnOldNodeTransitionDoesNotAdvanceTheMigratedQueue(string reason)
+    {
+        var rig = await RigAsync(TimeSpan.Zero, [true, true]).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var connection = await ConnectGuildAsync(rig.Bridge, rig.Nodes[0], rig.Servers[0])
+                .ConfigureAwait(false);
+            Echo(rig.Servers[0]);
+            Echo(rig.Servers[1]);
+            var entered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            connection.TrackFinished += async (_, _) =>
+            {
+                entered.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+            };
+            var queue = connection.UseQueue();
+            await queue.EnqueueAsync([Parse(One), Parse(Two), Parse(Three)]).ConfigureAwait(false);
+            var migrated = Migrated(connection);
+            try
+            {
+                await rig.Servers[0]
+                    .PushAsync(
+                        $$"""{"op":"event","guildId":"777","type":"TrackEndEvent","track":{{One}},"reason":"{{reason}}"}"""
+                    )
+                    .ConfigureAwait(false);
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                await KillAsync(rig.Servers[0]).ConfigureAwait(false);
+                await Assert
+                    .That(() => ReferenceEquals(queue.Connection.Node, rig.Nodes[1]))
+                    .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(10));
+            }
+            finally
+            {
+                release.TrySetResult();
+            }
+            var args = await migrated.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            await Assert.That(args.PlaybackResent).IsTrue();
+            await Assert.That(queue.Current?.Info.Identifier).IsEqualTo("one");
+            await Assert.That(queue.Upcoming.Count).IsEqualTo(2);
+            await Assert.That(queue.History.Count).IsEqualTo(0);
+            await rig.Servers[1]
+                .PushAsync(
+                    $$"""{"op":"event","guildId":"777","type":"TrackEndEvent","track":{{One}},"reason":"finished"}"""
+                )
+                .ConfigureAwait(false);
+            await Assert
+                .That(() => queue.Current?.Info.Identifier)
+                .WaitsFor(assert => assert.IsEqualTo("two"), TimeSpan.FromSeconds(5));
         }
     }
 }
