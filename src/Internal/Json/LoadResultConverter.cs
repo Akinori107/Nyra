@@ -26,43 +26,32 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
         var hasLoadType = false;
         var data = default(Utf8JsonReader);
         var exception = default(Utf8JsonReader);
-        var hasData = false;
 
-        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-            if (reader.ValueTextEquals("loadType"u8))
+        while (NyraJson.ReadMember(ref reader, out var member))
+        {
+            if (member.ValueTextEquals("loadType"u8))
             {
                 hasLoadType = true;
-                reader.Read();
                 if (reader.TokenType == JsonTokenType.String)
                 {
                     loadType = ReadLoadType(ref reader);
                     if (loadType == 0)
                         unknownLoadType = reader.GetString();
                 }
-                else
-                    reader.Skip();
             }
-            else if (reader.ValueTextEquals("data"u8))
-            {
-                reader.Read();
+            else if (member.ValueTextEquals("data"u8))
                 data = reader;
-                hasData = true;
-                reader.Skip();
-            }
-            else if (reader.ValueTextEquals("exception"u8))
-            {
-                reader.Read();
+            else if (member.ValueTextEquals("exception"u8))
                 exception = reader;
-                reader.Skip();
-            }
-            else
-                reader.Skip();
+
+            reader.Skip();
+        }
 
         switch (loadType)
         {
             case TypeTrack:
             {
-                if (!hasData)
+                if (data.TokenType == JsonTokenType.None)
                     throw new JsonException("Track load result is missing its 'data' member.");
                 if (data.TokenType != JsonTokenType.StartObject)
                     throw new JsonException("Track load result is missing its 'data' object.");
@@ -74,7 +63,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
 
             case TypePlaylist:
             {
-                if (!hasData || data.TokenType != JsonTokenType.StartObject)
+                if (data.TokenType != JsonTokenType.StartObject)
                     throw new JsonException("Playlist load result is missing its 'data' object.");
 
                 return ReadPlaylist(ref data, options);
@@ -82,7 +71,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
 
             case TypeSearch:
             {
-                if (!hasData)
+                if (data.TokenType == JsonTokenType.None)
                     throw new JsonException("Search load result is missing its 'data' member.");
 
                 var tracks = NyraJson.Deserialize<List<Track>>(ref data, options)
@@ -172,34 +161,26 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
         List<Track>? tracks = null;
         JsonElement? pluginInfo = null;
 
-        while (data.Read() && data.TokenType != JsonTokenType.EndObject)
+        while (NyraJson.ReadMember(ref data, out var member))
         {
-            var member = data;
-            data.Read();
-
             if (member.ValueTextEquals("info"u8) && data.TokenType == JsonTokenType.StartObject)
             {
-                var info = data;
-                while (info.Read() && info.TokenType != JsonTokenType.EndObject)
+                while (NyraJson.ReadMember(ref data, out var infoMember))
                 {
-                    var infoMember = info;
-                    info.Read();
                     if (
                         infoMember.ValueTextEquals("name"u8)
-                        && info.TokenType == JsonTokenType.String
+                        && data.TokenType == JsonTokenType.String
                     )
-                        name = info.GetString() ?? string.Empty;
+                        name = data.GetString() ?? string.Empty;
                     else if (
                         infoMember.ValueTextEquals("selectedTrack"u8)
-                        && info.TokenType == JsonTokenType.Number
-                        && info.TryGetInt32(out var selected)
+                        && data.TokenType == JsonTokenType.Number
+                        && data.TryGetInt32(out var selected)
                     )
                         selectedTrack = selected;
                     else
-                        info.Skip();
+                        data.Skip();
                 }
-
-                data.Skip();
             }
             else if (
                 member.ValueTextEquals("tracks"u8)
