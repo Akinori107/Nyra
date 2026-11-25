@@ -622,13 +622,16 @@ public sealed class GuildQueue
     private Task OnTrackFinishedAsync(object? sender, TrackFinishedEventArgs args) =>
         args.EndReason switch
         {
-            TrackEndReason.Finished => AdvanceAsync(args.Track, failed: false),
-            TrackEndReason.LoadFailed => AdvanceAsync(args.Track, failed: true),
-            TrackEndReason.Gapless or TrackEndReason.Crossfading => ServerAdvancedAsync(args.Track),
+            TrackEndReason.Finished => AdvanceAsync(args.Track, failed: false, sender),
+            TrackEndReason.LoadFailed => AdvanceAsync(args.Track, failed: true, sender),
+            TrackEndReason.Gapless or TrackEndReason.Crossfading => ServerAdvancedAsync(
+                args.Track,
+                sender
+            ),
             _ => Task.CompletedTask,
         };
 
-    private async Task AdvanceAsync(Track? ended, bool failed)
+    private async Task AdvanceAsync(Track? ended, bool failed, object? source = null)
     {
         var notes = new QueueNotes();
         Exception? failure = null;
@@ -636,7 +639,7 @@ public sealed class GuildQueue
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_detached)
+            if (_detached || (source is not null && !ReferenceEquals(Connection, source)))
                 return;
 
             var before = _state;
@@ -782,7 +785,7 @@ public sealed class GuildQueue
         };
     }
 
-    private async Task ServerAdvancedAsync(Track? ended)
+    private async Task ServerAdvancedAsync(Track? ended, object? source)
     {
         var notes = new QueueNotes();
         await _gate.WaitAsync().ConfigureAwait(false);
@@ -790,6 +793,7 @@ public sealed class GuildQueue
         {
             if (
                 _detached
+                || !ReferenceEquals(Connection, source)
                 || _state.Current is not { } current
                 || (ended is not null && !GuildConnection.IsSameTrack(current, ended))
             )
@@ -814,7 +818,10 @@ public sealed class GuildQueue
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (!_detached && Interlocked.Exchange(ref _expectingSuccessor, 0) == 1)
+            if (_detached || !ReferenceEquals(Connection, sender))
+                return;
+
+            if (Interlocked.Exchange(ref _expectingSuccessor, 0) == 1)
             {
                 var before = _state;
                 var after = before.Reconcile(args.Track);
@@ -824,13 +831,14 @@ public sealed class GuildQueue
                     notes.Advanced = after.Current;
                 }
             }
+
+            _preloader.OnTrackStarted(args.Track);
         }
         finally
         {
             _gate.Release();
         }
 
-        _preloader.OnTrackStarted(args.Track);
         await FlushAsync(notes).ConfigureAwait(false);
     }
 
@@ -858,7 +866,7 @@ public sealed class GuildQueue
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_detached)
+            if (_detached || !ReferenceEquals(Connection, sender))
                 return;
 
             if (_state.Current is null)
@@ -873,14 +881,14 @@ public sealed class GuildQueue
 
         await FlushAsync(notes).ConfigureAwait(false);
         if (resume)
-            await ResumeAfterLossAsync().ConfigureAwait(false);
+            await ResumeAfterLossAsync(sender).ConfigureAwait(false);
     }
 
-    private async Task ResumeAfterLossAsync()
+    private async Task ResumeAfterLossAsync(object? source = null)
     {
         try
         {
-            await AdvanceAsync(null, failed: false).ConfigureAwait(false);
+            await AdvanceAsync(null, failed: false, source).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
