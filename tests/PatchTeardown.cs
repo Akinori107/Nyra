@@ -103,4 +103,41 @@ public sealed class PatchTeardown
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
     }
+
+    [Test]
+    [Arguments(204)]
+    [Arguments(404)]
+    public async Task RejectedPlayerDestroyRemainsAvailableForRetry(int retryStatus)
+    {
+        var (extension, node, bridge, server) = await StartAsync().ConfigureAwait(false);
+        using (server)
+        await using (extension.ConfigureAwait(false))
+        {
+            var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
+
+            try
+            {
+                server.On("DELETE", PlayerPath, 500, """{"message":"destroy failed"}""");
+                await Assert.That(() => conn.DisconnectAsync()).Throws<RestException>();
+                await Assert.That(node.GetConnection(777)).IsSameReferenceAs(conn);
+                await Assert.That(() => conn.ResumeAsync()).Throws<InvalidOperationException>();
+
+                server.On("DELETE", PlayerPath, retryStatus, string.Empty);
+                await conn.DisconnectAsync().ConfigureAwait(false);
+                await Assert.That(node.GetConnection(777)).IsNull();
+                await Assert.That(conn.IsConnected).IsFalse();
+                await Assert
+                    .That(
+                        server.RestCalls.Count(call =>
+                            call.Method == "DELETE" && call.Path == PlayerPath
+                        )
+                    )
+                    .IsEqualTo(2);
+            }
+            finally
+            {
+                server.On("DELETE", PlayerPath, 204, string.Empty);
+            }
+        }
+    }
 }

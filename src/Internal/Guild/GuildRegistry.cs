@@ -554,10 +554,6 @@ internal sealed class GuildRegistry
         if (IsTakenOver(connection))
             return false;
 
-        Connections.TryRemove(
-            new KeyValuePair<ulong, GuildConnection>(connection.GuildId, connection)
-        );
-
         try
         {
             await _destroyLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -571,17 +567,17 @@ internal sealed class GuildRegistry
             {
                 _destroyLimiter.Release();
             }
-
-            return true;
         }
-        catch (RestException exception) when (exception.StatusCode == 404)
-        {
-            return true;
-        }
+        catch (RestException exception) when (exception.StatusCode == 404) { }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return false;
         }
+
+        Connections.TryRemove(
+            new KeyValuePair<ulong, GuildConnection>(connection.GuildId, connection)
+        );
+        return true;
     }
 
     internal async Task DisconnectGuildsAsync(CancellationToken cancellationToken = default)
