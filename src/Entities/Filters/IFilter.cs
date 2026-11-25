@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace Nyra.Entities.Filters;
 
 /// <summary>Marks an audio filter applicable to a player.</summary>
@@ -14,9 +16,7 @@ internal interface IFiniteCheck
 
 internal static class FilterNumbers
 {
-    public static bool NonFinite(float? value) =>
-        value.HasValue && !float.IsFinite(value.GetValueOrDefault());
-
-    public static bool NonFinite(double? value) =>
-        value.HasValue && !double.IsFinite(value.GetValueOrDefault());
+    public static bool NonFinite<T>(T? value)
+        where T : struct, IFloatingPointIeee754<T> =>
+        value.HasValue && !T.IsFinite(value.GetValueOrDefault());
 }
