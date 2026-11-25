@@ -267,23 +267,18 @@ internal sealed class GuildPlayback
 
         lock (PositionLock)
         {
-            if (_connection.CurrentTrack is null)
-            {
-                _connection.State = eventArgs.State;
-                return;
-            }
-
             if (eventArgs.State.TimeMilliseconds < _lastCaptureTime)
                 return;
 
             _connection.State = eventArgs.State;
+            _lastCaptureTime = eventArgs.State.TimeMilliseconds;
+            if (_connection.CurrentTrack is null)
+                return;
             Anchor(eventArgs.State.PositionMilliseconds, _connection.CurrentTrack);
             _positionAdvancing =
                 eventArgs.State.Connected
                 && !_connection.IsPaused
                 && _connection.CurrentTrack is { Info.IsStream: false };
-            if (eventArgs.State.TimeMilliseconds > _lastCaptureTime)
-                _lastCaptureTime = eventArgs.State.TimeMilliseconds;
         }
     }
 
@@ -367,9 +362,9 @@ internal sealed class GuildPlayback
             if (player.State is { } state)
             {
                 _connection.State = state;
+                _lastCaptureTime = state.TimeMilliseconds;
                 if (player.Track is not null && !holdsPreSeekPosition)
                 {
-                    _lastCaptureTime = state.TimeMilliseconds;
                     if (startMilliseconds is { } start)
                         Anchor(start, player.Track, requestTick);
                     else
