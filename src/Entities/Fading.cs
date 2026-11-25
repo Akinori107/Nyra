@@ -130,43 +130,17 @@ public sealed record FadingOptions
     public DuckingOptions? Ducking { get; init; }
 }
 
-internal sealed class FadeDurationConverter : JsonConverter<int?>
+internal sealed class FadeDurationConverter() : DurationConverter("fade")
 {
-    public override bool HandleNull => true;
-
-    public override int? Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    )
+    protected override int? Round(double value)
     {
-        return reader.TokenType switch
-        {
-            JsonTokenType.Null => null,
-            JsonTokenType.String => JsonNumberParsing.TryParseUtf8Double(ref reader, out var parsed)
-                ? Round(parsed)
-                : throw new JsonException(
-                    $"Cannot read the fade duration from '{reader.GetString()}'."
-                ),
-            JsonTokenType.Number => Round(reader.GetDouble()),
-            _ => throw new JsonException(
-                $"Cannot read the fade duration from token type '{reader.TokenType}'."
-            ),
-        };
-
-        static int? Round(double value)
-        {
-            if (!double.IsFinite(value))
-                return null;
-            var rounded = JsonNumberParsing.RoundHalfUp(value);
-            return rounded < -2_147_483_648.0 ? int.MinValue
-                : rounded > 2_147_483_647.0 ? int.MaxValue
-                : (int)rounded;
-        }
+        if (!double.IsFinite(value))
+            return null;
+        var rounded = JsonNumberParsing.RoundHalfUp(value);
+        return rounded < -2_147_483_648.0 ? int.MinValue
+            : rounded > 2_147_483_647.0 ? int.MaxValue
+            : (int)rounded;
     }
-
-    public override void Write(Utf8JsonWriter writer, int? value, JsonSerializerOptions options) =>
-        writer.WriteNumberValue(value ?? 0);
 }
 
 internal sealed class FadeCurveConverter : JsonConverter<string?>
