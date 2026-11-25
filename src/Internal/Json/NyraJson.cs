@@ -202,6 +202,19 @@ internal static class JsonNumberParsing
     private const NumberStyles DoubleStyles =
         NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent;
 
+    public static double ReadIntegralNumber(ref Utf8JsonReader reader) =>
+        reader.TokenType switch
+        {
+            JsonTokenType.Number => reader.GetDouble(),
+            JsonTokenType.String when TryParseUtf8Double(ref reader, out var parsed) => parsed,
+            JsonTokenType.String => throw new JsonException(
+                "Cannot read an integral value, the string does not parse as a number."
+            ),
+            _ => throw new JsonException(
+                $"Cannot read integral value from token type '{reader.TokenType}'."
+            ),
+        };
+
     public static double RoundHalfUp(double value)
     {
         var floor = Math.Floor(value);
@@ -246,21 +259,9 @@ internal sealed class RoundedInt64Converter : JsonConverter<long>
         Type typeToConvert,
         JsonSerializerOptions options
     ) =>
-        reader.TokenType switch
-        {
-            JsonTokenType.Number => reader.TryGetInt64(out var exact)
-                ? exact
-                : RoundToInt64(reader.GetDouble()),
-            JsonTokenType.String
-                when JsonNumberParsing.TryParseUtf8Double(ref reader, out var parsed) =>
-                RoundToInt64(parsed),
-            JsonTokenType.String => throw new JsonException(
-                "Cannot read an integral value, the string does not parse as a number."
-            ),
-            _ => throw new JsonException(
-                $"Cannot read integral value from token type '{reader.TokenType}'."
-            ),
-        };
+        reader.TokenType == JsonTokenType.Number && reader.TryGetInt64(out var exact)
+            ? exact
+            : RoundToInt64(JsonNumberParsing.ReadIntegralNumber(ref reader));
 
     public override void Write(Utf8JsonWriter writer, long value, JsonSerializerOptions options) =>
         writer.WriteNumberValue(value);
@@ -285,20 +286,7 @@ internal sealed class RoundedInt32Converter : JsonConverter<int>
         ref Utf8JsonReader reader,
         Type typeToConvert,
         JsonSerializerOptions options
-    ) =>
-        reader.TokenType switch
-        {
-            JsonTokenType.Number => RoundToInt32(reader.GetDouble()),
-            JsonTokenType.String
-                when JsonNumberParsing.TryParseUtf8Double(ref reader, out var parsed) =>
-                RoundToInt32(parsed),
-            JsonTokenType.String => throw new JsonException(
-                "Cannot read an integral value, the string does not parse as a number."
-            ),
-            _ => throw new JsonException(
-                $"Cannot read integral value from token type '{reader.TokenType}'."
-            ),
-        };
+    ) => RoundToInt32(JsonNumberParsing.ReadIntegralNumber(ref reader));
 
     public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options) =>
         writer.WriteNumberValue(value);
