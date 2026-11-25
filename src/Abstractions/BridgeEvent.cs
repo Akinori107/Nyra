@@ -31,10 +31,7 @@ public static class BridgeEvent
     )
         where TArgs : System.EventArgs
     {
-        if (handler is null)
-            return;
-
-        foreach (EventHandler<TArgs> invocation in handler.GetInvocationList())
+        foreach (var invocation in Delegate.EnumerateInvocationList(handler))
             try
             {
                 invocation(sender, args);
