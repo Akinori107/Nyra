@@ -2,9 +2,9 @@ using Nyra.Entities;
 
 namespace Nyra.Internal;
 
-internal sealed class GuildVoiceForwarder
+internal sealed class GuildVoiceForwarder(GuildConnection connection)
 {
-    private readonly GuildConnection _connection;
+    private readonly GuildConnection _connection = connection;
 
     private readonly SemaphoreSlim _forwardLock = new(1, 1);
 
@@ -13,8 +13,6 @@ internal sealed class GuildVoiceForwarder
     private readonly CancellationTokenSource _sendCts = new();
 
     internal static readonly TimeSpan VoiceSendDeadline = TimeSpan.FromSeconds(10);
-
-    internal GuildVoiceForwarder(GuildConnection connection) => _connection = connection;
 
     private long _lastForwardTick;
 

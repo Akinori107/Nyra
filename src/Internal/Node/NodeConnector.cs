@@ -2,15 +2,13 @@ using Nyra.Abstractions;
 
 namespace Nyra.Internal;
 
-internal sealed class NodeConnector
+internal sealed class NodeConnector(Node node)
 {
-    private readonly Node _node;
+    private readonly Node _node = node;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _gateLife = new();
     private TaskCompletionSource<bool>? _completion;
     private int _completionOwner;
-
-    internal NodeConnector(Node node) => _node = node;
 
     internal async Task ConnectAsync(
         IDiscordBridge client,

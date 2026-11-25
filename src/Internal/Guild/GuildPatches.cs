@@ -3,16 +3,10 @@ using Nyra.Exceptions;
 
 namespace Nyra.Internal;
 
-internal sealed class GuildPatches
+internal sealed class GuildPatches(GuildConnection connection)
 {
-    private readonly GuildConnection _connection;
-    private readonly Node _node;
-
-    internal GuildPatches(GuildConnection connection)
-    {
-        _connection = connection;
-        _node = connection.Node;
-    }
+    private readonly GuildConnection _connection = connection;
+    private readonly Node _node = connection.Node;
 
     private ulong GuildId => _connection.GuildId;
 

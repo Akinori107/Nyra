@@ -4,9 +4,9 @@ using Nyra.EventArgs;
 
 namespace Nyra.Internal;
 
-internal sealed class NodeEventHandlers
+internal sealed class NodeEventHandlers(Node node)
 {
-    private readonly Node _node;
+    private readonly Node _node = node;
 
     private ITimer? _readyWatchdog;
 
@@ -35,13 +35,7 @@ internal sealed class NodeEventHandlers
 
     private (int Epoch, Stats Stats)? _statsBufferedDuringReady;
 
-    private readonly ErrorThrottle _errors;
-
-    internal NodeEventHandlers(Node node)
-    {
-        _node = node;
-        _errors = new ErrorThrottle(node.Time);
-    }
+    private readonly ErrorThrottle _errors = new(node.Time);
 
     private static string? UsableSessionId(string? sessionId) =>
         string.IsNullOrEmpty(sessionId)
