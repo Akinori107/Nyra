@@ -24,12 +24,7 @@ internal sealed class RestClient
 
     internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(60);
 
-    private static readonly HttpClient Http = new(SharedHandler, disposeHandler: false)
-    {
-        Timeout = Timeout.InfiniteTimeSpan,
-    };
-
-    internal static readonly HttpClient StreamingHttp = new(SharedHandler, disposeHandler: false)
+    internal static readonly HttpClient Http = new(SharedHandler, disposeHandler: false)
     {
         Timeout = Timeout.InfiniteTimeSpan,
     };
