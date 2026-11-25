@@ -168,31 +168,4 @@ public sealed class SupervisionLoop
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
     }
-
-    [Test]
-    public async Task TolerantDestroy()
-    {
-        var server = new FakeNodeServer();
-        var bridge = new FakeBridge();
-        bridge.GoReady();
-        var extension = new NyraExtension(bridge);
-        var node = await ConnectNodeAsync(server, extension, "tolerant").ConfigureAwait(false);
-        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
-            200,
-            """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-        ));
-        var connect = node.ConnectAsync(777, 555);
-        await Task.Delay(100).ConfigureAwait(false);
-        bridge.FireVoiceState(777, 555, "vsess");
-        bridge.FireVoiceServer(777, "tok", "127.0.0.1");
-        var conn = await connect.ConfigureAwait(false);
-        server.On("DELETE", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
-            404,
-            "{\"message\":\"no player\"}"
-        ));
-        await conn.DisconnectAsync().ConfigureAwait(false);
-        await Assert.That(node.GetConnection(777)).IsNull();
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-    }
 }

@@ -109,15 +109,6 @@ internal sealed class RecordingList<T> : IEnumerable<T>
 
     public int FindIndex(Predicate<T> match) => Array.FindIndex(Snapshot(), match);
 
-    public int FindLastIndex(Predicate<T> match)
-    {
-        var snapshot = Snapshot();
-        for (var i = snapshot.Length - 1; i >= 0; i--)
-            if (match(snapshot[i]))
-                return i;
-        return -1;
-    }
-
     public IEnumerator<T> GetEnumerator() => Snapshot().AsEnumerable().GetEnumerator();
 
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
@@ -285,13 +276,6 @@ internal sealed class FakeNodeServer : IDisposable
             .ConfigureAwait(false);
     }
 
-    public async Task PushFrameAsync(int opcode, bool fin, string payload)
-    {
-        var stream = _stream ?? throw new InvalidOperationException("No websocket is connected.");
-        await SendFrameOnStreamAsync(stream, opcode, Encoding.UTF8.GetBytes(payload), fin)
-            .ConfigureAwait(false);
-    }
-
     public async Task DropConnectionAsync(ushort code, string reason)
     {
         var stream = _stream;
@@ -308,21 +292,6 @@ internal sealed class FakeNodeServer : IDisposable
     public void KillConnection()
     {
         _stream?.Close();
-    }
-
-    public object? CaptureWebsocket() => _stream;
-
-    public async Task PushOnCapturedAsync(object captured, string json)
-    {
-        if (captured is NetworkStream stream)
-            await SendFrameOnStreamAsync(stream, 0x1, Encoding.UTF8.GetBytes(json))
-                .ConfigureAwait(false);
-    }
-
-    public static void KillCaptured(object captured)
-    {
-        if (captured is NetworkStream stream)
-            stream.Close();
     }
 
     private async Task AcceptLoopAsync()
@@ -826,6 +795,20 @@ internal static class NodeHarness
         return await connect.ConfigureAwait(false);
     }
 
+    public static async Task WaitForJoinAsync(
+        FakeBridge bridge,
+        ulong guild = 777,
+        ulong channel = 555
+    )
+    {
+        var waited = Stopwatch.StartNew();
+        while (
+            !bridge.VoiceSends.Contains((guild, channel))
+            && waited.Elapsed < TimeSpan.FromSeconds(5)
+        )
+            await Task.Delay(1).ConfigureAwait(false);
+    }
+
     public static async Task WriteTruncatedReplyAsync(Stream stream, string status)
     {
         var head =
@@ -925,5 +908,26 @@ internal static class NodeHarness
                 await call().ConfigureAwait(false);
             })
             .Throws<RestException>();
+    }
+}
+
+internal sealed record NodeStack : IAsyncDisposable
+{
+    public required NyraExtension Extension { get; init; }
+
+    public required Node Node { get; init; }
+
+    public required FakeBridge Bridge { get; init; }
+
+    public required FakeNodeServer Server { get; init; }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await Extension.DisposeAsync().ConfigureAwait(false);
+        }
+        catch { }
+        Server.Dispose();
     }
 }

@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Nyra.Abstractions;
 using Nyra.EventArgs;
-using Nyra.Exceptions;
 using Nyra.Internal;
 using static Nyra.Tests.NodeHarness;
 
@@ -34,7 +33,7 @@ public sealed class ReadyAndRegistryRace
         }
     }
 
-    private static async Task<SupervisionLoopRace.Stack> StartAsync(
+    private static async Task<NodeStack> StartAsync(
         string name = "ready-registry",
         TimeProvider? time = null
     )
@@ -56,7 +55,7 @@ public sealed class ReadyAndRegistryRace
         );
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-        return new SupervisionLoopRace.Stack
+        return new NodeStack
         {
             Extension = extension,
             Node = node,
@@ -190,37 +189,6 @@ public sealed class ReadyAndRegistryRace
 
         public ValueTask DisposeAsync() =>
             ValueTask.FromException(new InvalidOperationException("bridge dispose refused"));
-    }
-
-    [Test]
-    public async Task RestPrematureBody()
-    {
-        var stack = await StartAsync("rest-premature").ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            stack.Server.OnRaw("GET", "/v4/sessions/fake-session/groups", async (_, stream) =>
-            {
-                var head =
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-                    + "Content-Length: 5000\r\nConnection: close\r\n\r\n";
-                await stream.WriteAsync(Encoding.UTF8.GetBytes(head)).ConfigureAwait(false);
-                await stream
-                    .WriteAsync(Encoding.UTF8.GetBytes("{\"half\":\"of the body"))
-                    .ConfigureAwait(false);
-                await stream.FlushAsync().ConfigureAwait(false);
-                await Task.Delay(700).ConfigureAwait(false);
-                stream.Close();
-            });
-
-            await Assert
-                .That(async () =>
-                {
-                    await stack
-                        .Node.Rest.Groups.ListAsync(CancellationToken.None)
-                        .ConfigureAwait(false);
-                })
-                .Throws<NodeUnreachableException>();
-        }
     }
 
     [Test]

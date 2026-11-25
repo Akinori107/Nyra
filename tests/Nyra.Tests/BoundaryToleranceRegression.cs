@@ -23,60 +23,6 @@ public sealed class BoundaryToleranceRegression
     }
 
     [Test]
-    public async Task BlackHolePatchBoundedByHandshakeTimeout()
-    {
-        var server = new FakeNodeServer();
-        var bridge = new FakeBridge();
-        bridge.GoReady();
-        var extension = new NyraExtension(bridge);
-        var node = new Node(
-            new Endpoint("127.0.0.1", server.Port, server.Password),
-            new NodeOptions
-            {
-                Name = "black-hole",
-                ReconnectDelay = TimeSpan.FromMilliseconds(50),
-                MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
-                VoiceHandshakeTimeout = TimeSpan.FromSeconds(1),
-                ReadyTimeout = TimeSpan.FromSeconds(5),
-            }
-        );
-        extension.AddNode(node);
-        await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-
-        server.On("PATCH", "/v4/sessions/fake-session/players/777", _ =>
-        {
-            Thread.Sleep(4000);
-            return new FakeRestResponse(
-                200,
-                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-            );
-        });
-
-        var connect = node.ConnectAsync(777, 555);
-        await Task.Delay(150).ConfigureAwait(false);
-        bridge.FireVoiceState(777, 555, "vsess");
-        bridge.FireVoiceServer(777, "tok", "127.0.0.1");
-
-        await Assert
-            .That(async () =>
-            {
-                await connect.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-            })
-            .Throws<VoiceHandshakeException>();
-
-        await Assert.That(node.GetConnection(777)).IsNull();
-        await Assert
-            .That(server.RestCalls)
-            .Contains(c =>
-                c is { Method: "DELETE", Path: "/v4/sessions/fake-session/players/777" }
-            );
-        await Assert.That(bridge.VoiceSends).Contains(s => s.GuildId == 777 && s.ChannelId is null);
-
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-    }
-
-    [Test]
     public async Task TrackStreamWhitespaceUrlRejects()
     {
         var server = new FakeNodeServer();

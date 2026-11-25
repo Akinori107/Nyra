@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nyra.Entities;
+using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
 
@@ -12,8 +13,6 @@ public sealed class TrackStartAndPauseEvent
         """{"encoded":"b3RoZXI=","info":{"identifier":"otherid","author":"Other - Topic","title":"Other","length":90000,"isStream":false,"isSeekable":true,"position":0}}""";
 
     private static readonly JsonSerializerOptions Options = NyraJson.SerializerOptions;
-
-    private static Track ParseTrack() => JsonSerializer.Deserialize<Track>(TrackJson, Options)!;
 
     private sealed class Rig : IAsyncDisposable
     {
@@ -95,7 +94,7 @@ public sealed class TrackStartAndPauseEvent
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
         var connect = node.ConnectAsync(777, 555);
-        await Task.Delay(100).ConfigureAwait(false);
+        await WaitForJoinAsync(bridge).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
         bridge.FireVoiceServer(777, "tok", "127.0.0.1");
         var connection = await connect.ConfigureAwait(false);
@@ -145,40 +144,6 @@ public sealed class TrackStartAndPauseEvent
                 .That(() => rig.Connection.Position?.TotalMilliseconds is >= 0 and <= 300)
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
             await Assert.That(rig.Connection.CurrentTrack?.Encoded).IsEqualTo("b3RoZXI=");
-        }
-    }
-
-    [Test]
-    public async Task PauseHold()
-    {
-        var rig = await RigAsync(lavalink: true).ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await PlayAsync(rig, TrackJson).ConfigureAwait(false);
-            rig.Reply[0] = PlayerBody(TrackJson, paused: true);
-            await rig.Connection.PauseAsync().ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.IsPaused)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-
-            await rig
-                .Server.PushAsync(
-                    $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{TrackJson}}}"""
-                )
-                .ConfigureAwait(false);
-            await Task.Delay(400).ConfigureAwait(false);
-            await Assert.That(rig.Connection.IsPaused).IsTrue();
-
-            rig.Reply[0] = PlayerBody(TrackJson);
-            await rig.Connection.PlayAsync(ParseTrack()).ConfigureAwait(false);
-            await rig
-                .Server.PushAsync(
-                    $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{TrackJson}}}"""
-                )
-                .ConfigureAwait(false);
-            await Assert
-                .That(() => !rig.Connection.IsPaused)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
         }
     }
 

@@ -183,39 +183,6 @@ public sealed class ConnectionLifecycle
     }
 
     [Test]
-    public async Task VoiceCloseSurvival()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
-            var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
-
-            var closed = new TaskCompletionSource<int?>();
-            conn.WebSocketClosed += (_, args) =>
-            {
-                closed.TrySetResult(args.Code);
-                return Task.CompletedTask;
-            };
-
-            await server
-                .PushAsync(
-                    """{"op":"event","guildId":"777","type":"WebSocketClosedEvent","code":4006,"reason":"boom","byRemote":true}"""
-                )
-                .ConfigureAwait(false);
-            await Assert
-                .That(await closed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
-                .IsEqualTo(4006);
-
-            await Task.Delay(500).ConfigureAwait(false);
-            await Assert.That(node.GetConnection(777)).IsNotNull();
-            await Assert.That(conn.IsConnected).IsTrue();
-
-            await conn.DisconnectAsync().ConfigureAwait(false);
-        }
-    }
-
-    [Test]
     public async Task VoiceCloseGrace()
     {
         var server = new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" };

@@ -7,7 +7,7 @@ namespace Nyra.Tests;
 
 public sealed class LoopAndVoiceCloseLavalink
 {
-    private static async Task<SupervisionLoopRace.Stack> StartAsync(
+    private static async Task<NodeStack> StartAsync(
         string name,
         FakeNodeServer? server = null,
         bool resuming = false,
@@ -33,7 +33,7 @@ public sealed class LoopAndVoiceCloseLavalink
         );
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-        return new SupervisionLoopRace.Stack
+        return new NodeStack
         {
             Extension = extension,
             Node = node,

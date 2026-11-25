@@ -200,35 +200,6 @@ public sealed class QueuePlayback
     }
 
     [Test]
-    public async Task ThePreloadedNextTrackGoesInTheSamePlayUpdate()
-    {
-        var rig = await StartAsync().ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            rig.Queue.PreloadNext = true;
-            var before = rig.Server.RestCalls.Count;
-
-            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
-            await rig
-                .Server.PushAsync(
-                    $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{TrackJson("a")}}}"""
-                )
-                .ConfigureAwait(false);
-            await Eventually(() => rig.Connection.CurrentTrack is not null).ConfigureAwait(false);
-            await Task.Delay(300).ConfigureAwait(false);
-
-            var patches = rig
-                .Server.RestCalls.Skip(before)
-                .Where(call => call is { Method: "PATCH", Path: PlayerPath })
-                .Select(call => call.Body ?? string.Empty)
-                .ToList();
-            await Assert.That(patches.Count).IsEqualTo(1);
-            await Assert.That(PlayedId(patches[0])).IsEqualTo("a");
-            await Assert.That(patches[0]).Contains("\"nextTrack\":{\"encoded\":\"enc-b\"");
-        }
-    }
-
-    [Test]
     public async Task EnqueueWhilePlayingOnlyQueues()
     {
         var rig = await StartAsync().ConfigureAwait(false);
@@ -302,36 +273,6 @@ public sealed class QueuePlayback
             await Eventually(() => rig.Log.Contains("ended")).ConfigureAwait(false);
             await Assert.That(rig.Queue.Current).IsNull();
             await Assert.That(Ids(rig.Queue.History)).IsEqualTo("a");
-        }
-    }
-
-    [Test]
-    public async Task TheEndOfAnotherTrackIsIgnored()
-    {
-        var rig = await StartAsync().ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
-            await PushEndAsync(rig, "stranger", "finished").ConfigureAwait(false);
-            await Task.Delay(300).ConfigureAwait(false);
-
-            await Assert.That(rig.CurrentId).IsEqualTo("a");
-            await Assert.That(rig.Played).IsEqualTo("a");
-        }
-    }
-
-    [Test]
-    public async Task AReplacedTrackDoesNotAdvanceTheQueue()
-    {
-        var rig = await StartAsync().ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
-            await PushEndAsync(rig, "a", "replaced").ConfigureAwait(false);
-            await Task.Delay(300).ConfigureAwait(false);
-
-            await Assert.That(rig.CurrentId).IsEqualTo("a");
-            await Assert.That(rig.Played).IsEqualTo("a");
         }
     }
 

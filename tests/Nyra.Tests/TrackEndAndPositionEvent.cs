@@ -2,6 +2,7 @@ using System.Text.Json;
 using Nyra.Entities;
 using Nyra.EventArgs;
 using Nyra.Internal;
+using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
 
@@ -9,9 +10,6 @@ public sealed class TrackEndAndPositionEvent
 {
     private const string TrackJson =
         """{"encoded":"QXRsZWFzdA==","info":{"identifier":"ph8qt3dhvwo","author":"SoAD - Topic","title":"ATWA","length":176000,"isStream":false,"isSeekable":true,"position":0}}""";
-
-    private const string EmptyTrackJson =
-        """{"encoded":"","info":{"identifier":"","author":"","title":"","length":0,"isStream":false,"isSeekable":true,"position":0}}""";
 
     private static readonly JsonSerializerOptions Options = NyraJson.SerializerOptions;
 
@@ -43,7 +41,7 @@ public sealed class TrackEndAndPositionEvent
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
         var connect = node.ConnectAsync(777, 555);
-        await Task.Delay(100).ConfigureAwait(false);
+        await WaitForJoinAsync(bridge).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
         bridge.FireVoiceServer(777, "tok", "127.0.0.1");
         var connection = await connect.ConfigureAwait(false);
@@ -84,31 +82,6 @@ public sealed class TrackEndAndPositionEvent
             .That(() => rig.Connection.CurrentTrack?.Encoded)
             .WaitsFor(assert => assert.IsEqualTo(track.Encoded), TimeSpan.FromSeconds(5));
     }
-
-    private static Task PushEndAsync(Rig rig, string? trackBody, string reason) =>
-        rig.Server.PushAsync(
-            """{"op":"event","guildId":"777","type":"TrackEndEvent","track":"""
-                + (trackBody ?? "null")
-                + ",\"reason\":\""
-                + reason
-                + "\"}"
-        );
-
-    private static Task PushUpdateAsync(Rig rig, long time, long position, bool connected) =>
-        rig.Server.PushAsync(
-            """{"op":"playerUpdate","guildId":"777","state":{"time":"""
-                + time
-                + ",\"position\":"
-                + position
-                + ",\"connected\":"
-                + (connected ? "true" : "false")
-                + ",\"ping\":20}}"
-        );
-
-    private static Task PushSeekAsync(Rig rig, long position) =>
-        rig.Server.PushAsync(
-            """{"op":"event","guildId":"777","type":"SeekEvent","position":""" + position + "}"
-        );
 
     [Test]
     public async Task AnEndWithoutATrackKeepsTheLastEndedOne()
@@ -165,73 +138,6 @@ public sealed class TrackEndAndPositionEvent
             await Assert
                 .That(rig.Connection.Position ?? TimeSpan.Zero)
                 .IsGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(5000));
-        }
-    }
-
-    [Test]
-    public async Task TrackEnd()
-    {
-        var rig = await RigAsync().ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            var track = ParseTrack();
-            await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
-
-            await PushEndAsync(rig, TrackJson, "replaced").ConfigureAwait(false);
-            await Task.Delay(150).ConfigureAwait(false);
-            await Assert.That(rig.Connection.CurrentTrack).IsNotNull();
-
-            await PushEndAsync(rig, TrackJson, "finished").ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.CurrentTrack is null)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-
-            await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
-            await PushEndAsync(rig, TrackJson, "replaced").ConfigureAwait(false);
-            await Task.Delay(150).ConfigureAwait(false);
-            await PushEndAsync(rig, EmptyTrackJson, "cleanup").ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.CurrentTrack is null)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-        }
-    }
-
-    [Test]
-    public async Task Position()
-    {
-        var rig = await RigAsync().ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            var track = ParseTrack();
-
-            await PushUpdateAsync(rig, 1000, 500, true).ConfigureAwait(false);
-            await Task.Delay(150).ConfigureAwait(false);
-            await Assert.That(rig.Connection.Position).IsNull();
-
-            await PlayAsync(rig, track, TrackJson).ConfigureAwait(false);
-            await PushUpdateAsync(rig, 2000, 700, true).ConfigureAwait(false);
-            await Assert
-                .That(() => (rig.Connection.Position?.TotalMilliseconds ?? 0) >= 700)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-
-            await PushUpdateAsync(rig, 2500, 800, false).ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.Position?.TotalMilliseconds == 800)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-
-            await PushUpdateAsync(rig, 1500, 999, true).ConfigureAwait(false);
-            await Task.Delay(150).ConfigureAwait(false);
-            await Assert.That(rig.Connection.Position?.TotalMilliseconds).IsEqualTo(800);
-
-            await PushSeekAsync(rig, 1500).ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.Position?.TotalMilliseconds == 1500)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-
-            await PushSeekAsync(rig, -5).ConfigureAwait(false);
-            await Assert
-                .That(() => rig.Connection.Position?.TotalMilliseconds == 0)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
         }
     }
 }

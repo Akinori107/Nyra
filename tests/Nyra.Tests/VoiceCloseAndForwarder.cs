@@ -33,7 +33,7 @@ public sealed class VoiceCloseAndForwarder
         }
     }
 
-    private static async Task<SupervisionLoopRace.Stack> StartAsync(
+    private static async Task<NodeStack> StartAsync(
         string name = "voice-close",
         TimeProvider? time = null
     )
@@ -55,7 +55,7 @@ public sealed class VoiceCloseAndForwarder
         );
         extension.AddNode(node);
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-        return new SupervisionLoopRace.Stack
+        return new NodeStack
         {
             Extension = extension,
             Node = node,

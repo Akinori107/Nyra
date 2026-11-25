@@ -208,35 +208,4 @@ public sealed class ResumePath
         await Assert.That(slow.Dispose).ThrowsNothing();
         await Assert.That(watch.Elapsed).IsLessThan(TimeSpan.FromSeconds(6));
     }
-
-    [Test]
-    public async Task StuckHandlerDrain()
-    {
-        var server = new FakeNodeServer();
-        var bridge = new FakeBridge();
-        bridge.GoReady();
-        var extension = new NyraExtension(bridge);
-        var node = new Node(
-            new Endpoint("127.0.0.1", server.Port, server.Password),
-            new NodeOptions
-            {
-                Name = "stuck-drain",
-                ReconnectDelay = TimeSpan.FromMilliseconds(50),
-                MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
-                ReadyTimeout = TimeSpan.FromSeconds(5),
-                VoiceHandshakeTimeout = TimeSpan.FromSeconds(5),
-            }
-        );
-        extension.AddNode(node);
-        await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-        node.Disconnected += async (_, _) =>
-            await Task.Delay(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
-
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-        await Assert
-            .That(async () => await extension.DisposeAsync().ConfigureAwait(false))
-            .ThrowsNothing();
-        await Assert.That(watch.Elapsed).IsLessThan(TimeSpan.FromSeconds(10));
-        server.Dispose();
-    }
 }

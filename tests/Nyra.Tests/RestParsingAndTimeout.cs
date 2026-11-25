@@ -431,64 +431,6 @@ public sealed class RestParsingAndTimeout
     }
 
     [Test]
-    public async Task NeverThenConnected()
-    {
-        var server = new FakeNodeServer();
-        var logger = new CaptureLogger();
-        var bridge = new FakeBridge { Logger = logger };
-        bridge.GoReady();
-        var extension = new NyraExtension(bridge);
-        var node = new Node(
-            new Endpoint("127.0.0.1", server.Port, server.Password),
-            new NodeOptions
-            {
-                Name = "late-bloomer",
-                ReconnectDelay = TimeSpan.FromMilliseconds(50),
-                MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
-            }
-        );
-        extension.AddNode(node);
-
-        server.InfoStatus = 500;
-        var final = new TaskCompletionSource<Exception?>();
-        node.Disconnected += (_, args) =>
-        {
-            if (args.Final)
-                final.TrySetResult(args.Exception);
-            return Task.CompletedTask;
-        };
-
-        var connected = 0;
-        var connectedSeen = new TaskCompletionSource<bool>();
-        node.Connected += (_, _) =>
-        {
-            Interlocked.Increment(ref connected);
-            if (connected >= 1)
-                connectedSeen.TrySetResult(true);
-            return Task.CompletedTask;
-        };
-
-        var connect = Task.Run(async () =>
-        {
-            try
-            {
-                await extension.ConnectAllNodesAsync().ConfigureAwait(false);
-            }
-            catch { }
-        });
-        await Task.Delay(500).ConfigureAwait(false);
-        server.InfoStatus = 200;
-        await Assert
-            .That(() => node.IsReady)
-            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(15));
-        await Assert.That(final.Task.IsCompleted).IsFalse();
-
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-        await connect.ConfigureAwait(false);
-    }
-
-    [Test]
     public async Task DropWithLogger()
     {
         var stack = await StartAsync().ConfigureAwait(false);

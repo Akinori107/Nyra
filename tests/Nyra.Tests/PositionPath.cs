@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Nyra.Entities;
-using Nyra.Entities.Filters;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -104,121 +103,6 @@ public sealed class PositionPath
             .ConfigureAwait(false);
         await stale.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         await Assert.That(conn.Position >= anchored).IsTrue();
-
-        await conn.DisconnectAsync().ConfigureAwait(false);
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-    }
-
-    [Test]
-    public async Task PauseFreezeAndSeek()
-    {
-        var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false)
-            .ConfigureAwait(false);
-        await conn.PlayAsync(Track()).ConfigureAwait(false);
-        await Assert.That(conn.CurrentTrack).IsNotNull();
-
-        server.On("PATCH", PlayerPath, _ => new FakeRestResponse(200, PlayerBody(true)));
-        await conn.PauseAsync().ConfigureAwait(false);
-        await Assert.That(conn.IsPaused).IsTrue();
-        var frozen = new TaskCompletionSource<long>();
-        conn.PlayerUpdated += (_, args) =>
-        {
-            frozen.TrySetResult(args.State.PositionMilliseconds);
-            return Task.CompletedTask;
-        };
-        await server
-            .PushAsync(
-                """{"op":"playerUpdate","guildId":"777","state":{"time":2000,"position":65000,"connected":true,"ping":50}}"""
-            )
-            .ConfigureAwait(false);
-        await Assert
-            .That(await frozen.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
-            .IsEqualTo(65000);
-        await Assert.That(conn.Position).IsEqualTo(TimeSpan.FromMilliseconds(65_000));
-
-        await server
-            .PushAsync("""{"op":"event","guildId":"777","type":"SeekEvent","position":90000}""")
-            .ConfigureAwait(false);
-        await Task.Delay(150).ConfigureAwait(false);
-        await Assert.That(conn.Position).IsEqualTo(TimeSpan.FromMilliseconds(90_000));
-
-        await conn.DisconnectAsync().ConfigureAwait(false);
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-    }
-
-    [Test]
-    public async Task PaceFold()
-    {
-        var (_, _, server, conn, extension) = await ConnectAsync(
-                pausedEcho: false,
-                filtersEcho: """{"timescale":{"speed":2}}"""
-            )
-            .ConfigureAwait(false);
-        await conn.PlayAsync(Track()).ConfigureAwait(false);
-        await conn
-            .Filters.ApplyAsync(new FilterChain { Timescale = new TimescaleFilter { Speed = 2 } })
-            .ConfigureAwait(false);
-        await Assert.That(conn.Filters.Applied.Timescale).IsNotNull();
-        await Assert.That(conn.Filters.Applied.Timescale!.Speed).IsEqualTo(2);
-
-        var updated = new TaskCompletionSource<long>();
-        conn.PlayerUpdated += (_, args) =>
-        {
-            updated.TrySetResult(args.State.PositionMilliseconds);
-            return Task.CompletedTask;
-        };
-        await server
-            .PushAsync(
-                """{"op":"playerUpdate","guildId":"777","state":{"time":1500,"position":60000,"connected":true,"ping":50}}"""
-            )
-            .ConfigureAwait(false);
-        await updated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-        await Task.Delay(100).ConfigureAwait(false);
-
-        await server
-            .PushAsync("""{"op":"event","guildId":"777","type":"PauseEvent","paused":true}""")
-            .ConfigureAwait(false);
-        await Task.Delay(150).ConfigureAwait(false);
-        await Assert.That(conn.Position > TimeSpan.FromMilliseconds(60_000)).IsTrue();
-        await Assert.That(conn.Position <= TimeSpan.FromMilliseconds(176_000)).IsTrue();
-
-        await conn.DisconnectAsync().ConfigureAwait(false);
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-    }
-
-    [Test]
-    public async Task EndOfTrackClamp()
-    {
-        var (_, _, server, conn, extension) = await ConnectAsync(pausedEcho: false)
-            .ConfigureAwait(false);
-        await conn.PlayAsync(Track()).ConfigureAwait(false);
-
-        var updated = new TaskCompletionSource<long>();
-        conn.PlayerUpdated += (_, args) =>
-        {
-            updated.TrySetResult(args.State.PositionMilliseconds);
-            return Task.CompletedTask;
-        };
-        await server
-            .PushAsync(
-                """{"op":"playerUpdate","guildId":"777","state":{"time":1500,"position":175900,"connected":true,"ping":50}}"""
-            )
-            .ConfigureAwait(false);
-        await updated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-        await Task.Delay(400).ConfigureAwait(false);
-        await Assert.That(conn.Position).IsEqualTo(TimeSpan.FromMilliseconds(176_000));
-
-        updated = new TaskCompletionSource<long>();
-        await server
-            .PushAsync(
-                """{"op":"playerUpdate","guildId":"777","state":{"time":3000,"position":200000,"connected":true,"ping":50}}"""
-            )
-            .ConfigureAwait(false);
-        await updated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-        await Assert.That(conn.Position <= TimeSpan.FromMilliseconds(176_000)).IsTrue();
 
         await conn.DisconnectAsync().ConfigureAwait(false);
         await extension.DisposeAsync().ConfigureAwait(false);

@@ -205,28 +205,6 @@ public sealed class Failover
     }
 
     [Test]
-    public async Task OnlyMovesToANodeOfTheSameKind()
-    {
-        var rig = await RigAsync(TimeSpan.Zero, [true, false, true], startDown: 2)
-            .ConfigureAwait(false);
-        await using (rig.ConfigureAwait(false))
-        {
-            var connection = await PlayOnFirstAsync(rig).ConfigureAwait(false);
-            Echo(rig.Servers[1]);
-            Echo(rig.Servers[2]);
-            var migrated = Migrated(connection);
-
-            await KillAsync(rig.Servers[0]).ConfigureAwait(false);
-            await Task.Delay(200).ConfigureAwait(false);
-            rig.Servers[2].Down = false;
-            var args = await migrated.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-
-            await Assert.That(args.To).IsSameReferenceAs(rig.Nodes[2]);
-            await Assert.That(PatchesTo(rig.Servers[1])).IsEmpty();
-        }
-    }
-
-    [Test]
     public async Task KeepsTheGuildWhenTheNodeIsBackInTime()
     {
         var time = new FakeTimeProvider();

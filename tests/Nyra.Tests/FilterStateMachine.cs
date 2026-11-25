@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
+using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
 
@@ -64,7 +65,7 @@ public sealed class FilterStateMachine
     {
         server.On("PATCH", PlayerPath, _ => new FakeRestResponse(200, PlayerBody(echoJson)));
         var connect = node.ConnectAsync(777, 555);
-        await Task.Delay(100).ConfigureAwait(false);
+        await WaitForJoinAsync(bridge).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
         bridge.FireVoiceServer(777, "tok", "127.0.0.1");
         return await connect.ConfigureAwait(false);

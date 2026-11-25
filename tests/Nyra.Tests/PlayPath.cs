@@ -34,7 +34,7 @@ public sealed class PlayPath
         await extension.ConnectAllNodesAsync().ConfigureAwait(false);
         server.On("PATCH", PlayerPath, _ => new FakeRestResponse(200, PlayerWithTrack));
         var connect = node.ConnectAsync(777, 555);
-        await Task.Delay(100).ConfigureAwait(false);
+        await WaitForJoinAsync(bridge).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
         bridge.FireVoiceServer(777, "tok", "127.0.0.1");
         await connect.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);

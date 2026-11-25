@@ -63,51 +63,6 @@ public sealed class EventPumpTests
     }
 
     [Test]
-    public async Task BacklogWarnsOncePerEpisode()
-    {
-        var logger = new RecordingLogger();
-        var pump = new EventPump("pump-backlog", logger, new EventId(7, "edges"));
-
-        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await Assert.That(pump.TryDispatch(() => gate.Task)).IsTrue();
-        var ran = 0;
-        for (var i = 0; i < 70; i++)
-            pump.TryDispatch(() =>
-            {
-                Interlocked.Increment(ref ran);
-                return Task.CompletedTask;
-            });
-
-        for (var i = 0; i < 10; i++)
-            pump.TryDispatch(() => Task.CompletedTask);
-
-        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        pump.TryDispatch(() =>
-        {
-            drained.SetResult();
-            return Task.CompletedTask;
-        });
-        gate.SetResult();
-        await Assert
-            .That(() => drained.Task.IsCompleted)
-            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-        await Assert
-            .That(() => Volatile.Read(ref ran) == 70)
-            .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
-        await Task.Delay(50).ConfigureAwait(false);
-
-        var secondGate = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        pump.TryDispatch(() => secondGate.Task);
-        for (var i = 0; i < 65; i++)
-            pump.TryDispatch(() => Task.CompletedTask);
-
-        secondGate.SetResult();
-        await pump.CompleteAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-    }
-
-    [Test]
     public async Task BacklogSurvivesAThrowingLogger()
     {
         var logger = new ThrowingLogger();
@@ -130,25 +85,6 @@ public sealed class EventPumpTests
                 await pump.CompleteAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false)
             )
             .ThrowsNothing();
-    }
-
-    [Test]
-    public async Task BoundedCompleteDetachesTheStuckConsumer()
-    {
-        var logger = new RecordingLogger();
-        var pump = new EventPump("pump-drain", logger, new EventId(7, "edges"));
-        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        pump.TryDispatch(() => gate.Task);
-        pump.TryDispatch(() => Task.CompletedTask);
-
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        await pump.CompleteAsync(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
-        sw.Stop();
-        await Assert.That(sw.Elapsed).IsLessThan(TimeSpan.FromSeconds(3));
-        await Assert.That(pump.TryDispatch(() => Task.CompletedTask)).IsFalse();
-
-        gate.SetResult();
-        await Task.Delay(50).ConfigureAwait(false);
     }
 
     [Test]

@@ -33,7 +33,7 @@ public sealed class GuildFeature
             """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
         ));
         var connect = node.ConnectAsync(777, 555);
-        await Task.Delay(100).ConfigureAwait(false);
+        await WaitForJoinAsync(bridge).ConfigureAwait(false);
         bridge.FireVoiceState(777, 555, "vsess");
         bridge.FireVoiceServer(777, "tok", "127.0.0.1");
         await connect.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);

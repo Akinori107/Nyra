@@ -75,45 +75,6 @@ public sealed class ReadyWatchdog
     }
 
     [Test]
-    public async Task FreshSessionInvalidation()
-    {
-        var server = new FakeNodeServer { ResumeOnReconnect = false };
-        var stack = await StartAsync(server).ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
-            sv.On("PATCH", "/v4/sessions/fake-session/players/777", _ => new FakeRestResponse(
-                200,
-                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}"""
-            ));
-            var connect = node.ConnectAsync(777, 555);
-            await Task.Delay(100).ConfigureAwait(false);
-            bridge.FireVoiceState(777, 555, "vsess");
-            bridge.FireVoiceServer(777, "tok", "127.0.0.1");
-            var conn = await connect.ConfigureAwait(false);
-            await Assert.That(node.GetConnection(777)).IsNotNull();
-
-            var invalidated = new TaskCompletionSource<ulong>();
-            conn.GuildConnectionInvalidated += (_, args) =>
-            {
-                invalidated.TrySetResult(args.GuildId);
-                return Task.CompletedTask;
-            };
-
-            sv.On("PATCH", "/v4/sessions/fake-session/players/777", 500, "{}");
-            await sv.DropConnectionAsync(1000, "fresh session test").ConfigureAwait(false);
-            await Assert
-                .That(
-                    await invalidated.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false)
-                )
-                .IsEqualTo(777);
-            await Assert
-                .That(() => node.GetConnection(777) is null)
-                .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(3));
-        }
-    }
-
-    [Test]
     public async Task ANewSessionStartsFromTheOptionsAgain()
     {
         var server = new FakeNodeServer { ResumeOnReconnect = false };

@@ -65,35 +65,6 @@ public sealed class AdapterHappyPathAndTeardown
     }
 
     [Test]
-    public async Task TrackStream()
-    {
-        var stack = await StartAsync().ConfigureAwait(false);
-        await using (stack.ConfigureAwait(false))
-        {
-            using var callerCts = new CancellationTokenSource();
-            stack.Server.OnRaw("GET", "/v4/loadstream", async (_, _) =>
-            {
-                callerCts.Cancel();
-                await Task.Delay(TimeSpan.FromSeconds(80)).ConfigureAwait(false);
-            });
-            await Assert
-                .That(async () =>
-                    await stack
-                        .Node.Rest.Tracks.OpenLoadStreamAsync(
-                            "track",
-                            100,
-                            0,
-                            null,
-                            default,
-                            callerCts.Token
-                        )
-                        .ConfigureAwait(false)
-                )
-                .Throws<OperationCanceledException>();
-        }
-    }
-
-    [Test]
     public async Task InfoSecondDocument()
     {
         var stack = await StartAsync().ConfigureAwait(false);

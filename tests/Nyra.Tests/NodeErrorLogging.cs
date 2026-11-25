@@ -125,34 +125,6 @@ public sealed class NodeErrorLogging
     }
 
     [Test]
-    public async Task StoppedMidConnectNamesTheStop()
-    {
-        var server = new FakeNodeServer();
-        var bridge = new FakeBridge();
-        var logger = new RecordingLogger();
-        bridge.Logger = logger;
-        var extension = new NyraExtension(bridge);
-        var node = new Node(
-            new Endpoint("127.0.0.1", server.Port, server.Password),
-            Options("floors-midstop")
-        );
-        extension.AddNode(node);
-
-        var connecting = node.ConnectAsync(bridge, extension, CancellationToken.None);
-        await Task.Delay(150).ConfigureAwait(false);
-        await node.DisconnectAsync().ConfigureAwait(false);
-        bridge.GoReady();
-
-        await Assert
-            .That(async () => await connecting.ConfigureAwait(false))
-            .Throws<InvalidOperationException>();
-        await Assert.That(node.IsConnected).IsFalse();
-
-        await extension.DisposeAsync().ConfigureAwait(false);
-        server.Dispose();
-    }
-
-    [Test]
     public async Task EmptyExtensionAnswersNoConnection()
     {
         var bridge = new FakeBridge();

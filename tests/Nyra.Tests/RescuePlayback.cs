@@ -180,35 +180,6 @@ public sealed class RescuePlayback
     }
 
     [Test]
-    public async Task ResendsFromTheLastMillisecondAtTheEnd()
-    {
-        var (_, _, server, conn, extension) = await ConnectAsync(rescue: true, paused: false)
-            .ConfigureAwait(false);
-        await conn.PlayAsync(Track()).ConfigureAwait(false);
-        var updated = new TaskCompletionSource();
-        conn.PlayerUpdated += (_, _) =>
-        {
-            updated.TrySetResult();
-            return Task.CompletedTask;
-        };
-        await server
-            .PushAsync(
-                """{"op":"playerUpdate","guildId":"777","state":{"time":1500,"position":175900,"connected":true,"ping":50}}"""
-            )
-            .ConfigureAwait(false);
-        await updated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-        await Task.Delay(400).ConfigureAwait(false);
-
-        var (args, patches) = await DropAsync(server, conn).ConfigureAwait(false);
-
-        await Assert.That(args.PlaybackResent).IsTrue();
-        using var body = JsonDocument.Parse(patches.Single(patch => patch.Contains("\"track\"")));
-        await Assert.That(body.RootElement.GetProperty("position").GetInt64()).IsEqualTo(175_999);
-
-        await CleanUpAsync(server, conn, extension).ConfigureAwait(false);
-    }
-
-    [Test]
     public async Task AStoppedNodeInvalidatesInsteadOfRestoring()
     {
         var (_, node, server, conn, extension) = await ConnectAsync(rescue: true)

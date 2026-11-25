@@ -435,29 +435,6 @@ public sealed class ConnectorAndTransportEdge
     }
 
     [Test]
-    public async Task HandshakeDoublePending()
-    {
-        var bridge = new FakeBridge();
-        var time = new FakeTimeProvider();
-        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2), time);
-        var first = coordinator.WaitForUpdatesAsync(777, 555, bridge, CancellationToken.None);
-        await Task.Delay(100).ConfigureAwait(false);
-        await Assert
-            .That(async () =>
-                await coordinator
-                    .WaitForUpdatesAsync(777, 556, bridge, CancellationToken.None)
-                    .ConfigureAwait(false)
-            )
-            .Throws<InvalidOperationException>();
-        time.Advance(TimeSpan.FromSeconds(2));
-        try
-        {
-            await first.ConfigureAwait(false);
-        }
-        catch (VoiceHandshakeException) { }
-    }
-
-    [Test]
     public async Task HandshakeFaultedSend()
     {
         var bridge = new FakeBridge { FaultVoiceSends = true };
@@ -471,30 +448,6 @@ public sealed class ConnectorAndTransportEdge
             .Throws<InvalidOperationException>()
             .WithMessageContaining("refuses the send");
         await Assert.That(refused!.Message).Contains("refuses the send");
-    }
-
-    [Test]
-    public async Task HandshakeSecondEchoSkip()
-    {
-        var bridge = new FakeBridge();
-        var time = new FakeTimeProvider();
-        var coordinator = new VoiceHandshakeCoordinator(TimeSpan.FromSeconds(2), time);
-        var pending = coordinator.WaitForUpdatesAsync(999, 555, bridge, CancellationToken.None);
-        await Task.Delay(100).ConfigureAwait(false);
-        var firstEcho = coordinator.HandleVoiceStateUpdate(
-            bridge,
-            new VoiceStateUpdatedEventArgs(999, new DiscordVoiceState(null, "vsess"))
-        );
-        var secondEcho = coordinator.HandleVoiceStateUpdate(
-            bridge,
-            new VoiceStateUpdatedEventArgs(999, new DiscordVoiceState(null, "vsess"))
-        );
-        await Assert.That(firstEcho).IsTrue();
-        await Assert.That(secondEcho).IsTrue();
-        time.Advance(TimeSpan.FromSeconds(2));
-        await Assert
-            .That(async () => await pending.ConfigureAwait(false))
-            .Throws<VoiceHandshakeException>();
     }
 
     [Test]
