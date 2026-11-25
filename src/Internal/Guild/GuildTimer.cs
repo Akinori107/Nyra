@@ -1,10 +1,11 @@
 namespace Nyra.Internal;
 
-internal sealed class GuildTimer(TimeProvider time, Action fired)
+internal sealed class GuildTimer(TimeProvider time, Action<long> fired)
 {
     private readonly Lock _lock = new();
     private ITimer? _timer;
     private long _generation;
+    private long _invalidatedThrough;
     private bool _stopped;
 
     internal void Arm(TimeSpan due)
@@ -28,7 +29,10 @@ internal sealed class GuildTimer(TimeProvider time, Action fired)
     internal void Disarm()
     {
         lock (_lock)
+        {
+            _invalidatedThrough = _generation;
             DisposeTimer();
+        }
     }
 
     internal void Stop()
@@ -38,6 +42,12 @@ internal sealed class GuildTimer(TimeProvider time, Action fired)
             _stopped = true;
             DisposeTimer();
         }
+    }
+
+    internal bool IsValid(long generation)
+    {
+        lock (_lock)
+            return !_stopped && generation > _invalidatedThrough;
     }
 
     private void DisposeTimer()
@@ -57,6 +67,6 @@ internal sealed class GuildTimer(TimeProvider time, Action fired)
             DisposeTimer();
         }
 
-        fired();
+        fired(generation);
     }
 }
