@@ -228,4 +228,39 @@ public sealed class QuerySurface
             }
         }
     }
+
+    [Test]
+    public async Task MixedWhitespaceAndFormatPaddingDoesNotTurnAUrlIntoASearch()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            ServeLoad(stack.Server);
+            const string url = "https://example.com/audio.mp3?t=15";
+            var result = await stack
+                .Node.LoadTracksAsync(" \u200b\t\ufeff " + url + " \u200b\t\ufeff ")
+                .ConfigureAwait(false);
+            var call = stack.Server.RestCalls.Last(c => c.Path == "/v4/loadtracks");
+            await Assert.That(call.Query).IsEqualTo("identifier=" + Uri.EscapeDataString(url));
+            await Assert
+                .That(((TrackLoaded)result).Track.StartPosition)
+                .IsEqualTo(TimeSpan.FromSeconds(15));
+        }
+    }
+
+    [Test]
+    public async Task MixedPaddingKeepsInteriorSearchCharacters()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            ServeLoad(stack.Server);
+            const string query = "one\u200dtwo three";
+            await stack
+                .Node.LoadTracksAsync("\u200b " + query + " \ufeff", SearchType.Raw)
+                .ConfigureAwait(false);
+            var call = stack.Server.RestCalls.Last(c => c.Path == "/v4/loadtracks");
+            await Assert.That(call.Query).IsEqualTo("identifier=" + Uri.EscapeDataString(query));
+        }
+    }
 }
