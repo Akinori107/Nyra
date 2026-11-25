@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 using Nyra.Entities;
+using Nyra.Exceptions;
 using Nyra.Queue;
 using static Nyra.Tests.NodeHarness;
 
@@ -361,6 +362,26 @@ public sealed class QueuePlayback
             await Assert
                 .That(Ids(rig.Queue.Upcoming.OrderBy(track => track.Info.Identifier)))
                 .IsEqualTo("b,c,d,e");
+        }
+    }
+
+    [Test]
+    public async Task RejectedStopPreservesTheQueue()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b", "c").ConfigureAwait(false);
+            rig.Queue.Loop = LoopMode.Queue;
+            rig.Server.On("PATCH", PlayerPath, _ => new FakeRestResponse(
+                400,
+                """{"message":"stop rejected"}"""
+            ));
+            await Assert.That(() => rig.Queue.StopAsync()).Throws<RestException>();
+            await Assert.That(rig.CurrentId).IsEqualTo("a");
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b,c");
+            await Assert.That(rig.Queue.Loop).IsEqualTo(LoopMode.Queue);
+            await Assert.That(rig.Queue.Connection.CurrentTrack?.Info.Identifier).IsEqualTo("a");
         }
     }
 }

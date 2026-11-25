@@ -501,8 +501,8 @@ public sealed class GuildQueue
         {
             EnsureAttached();
 
-            Reset(QueueState.Empty with { History = _state.History });
             await Connection.StopAsync(cancellationToken).ConfigureAwait(false);
+            Reset(QueueState.Empty with { History = _state.History });
         }
         finally
         {
