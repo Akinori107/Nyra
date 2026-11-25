@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Nyra.Entities;
 using Nyra.Entities.Filters;
 using static Nyra.Tests.NodeHarness;
@@ -286,6 +287,82 @@ public sealed class FilterStateMachine
                         .ConfigureAwait(false);
                 })
                 .Throws<ArgumentOutOfRangeException>();
+        }
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task AnAmbiguousFilterWriteCapturesTheServerChainBeforeTheNextWrite(bool nodeLink)
+    {
+        var stack = await StartAsync(
+                new FakeNodeServer { IsNodeLink = nodeLink, Semver = nodeLink ? "3.9.0" : "4.2.2" }
+            )
+            .ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
+            var conn = await ConnectGuildAsync(bridge, node, server, DivergentJson)
+                .ConfigureAwait(false);
+            await conn
+                .Filters.ApplyAsync(
+                    new FilterChain
+                    {
+                        Tremolo = new TremoloFilter { Frequency = 5, Depth = 0.5f },
+                    }
+                )
+                .ConfigureAwait(false);
+            server.On("PATCH", PlayerPath, _ => new FakeRestResponse(200, "@"));
+            server.On("GET", PlayerPath, _ => new FakeRestResponse(200, PlayerBody(DesiredJson)));
+            await Assert
+                .That(async () => await conn.Filters.ApplyAsync(Desired()).ConfigureAwait(false))
+                .Throws<Nyra.Exceptions.RestException>();
+            await Assert.That(conn.Filters.Applied.Tremolo?.Frequency).IsEqualTo(8);
+
+            Echo(server, """{"tremolo":{"frequency":8,"depth":0.5},"timescale":{"speed":1.5}}""");
+            await conn.Filters.AddAsync(new TimescaleFilter { Speed = 1.5 }).ConfigureAwait(false);
+            var patch = server.RestCalls.Last(call =>
+                call.Method == "PATCH" && call.Path == PlayerPath
+            );
+            using var json = JsonDocument.Parse(patch.Body!);
+            await Assert
+                .That(
+                    json.RootElement.GetProperty("filters")
+                        .GetProperty("tremolo")
+                        .GetProperty("frequency")
+                        .GetDouble()
+                )
+                .IsEqualTo(8.0);
+        }
+    }
+
+    [Test]
+    [Arguments(200)]
+    [Arguments(400)]
+    public async Task AnUnconfirmedFilterWriteKeepsThePreviousChain(int status)
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var (bridge, node, server) = (stack.Bridge, stack.Node, stack.Server);
+            var conn = await ConnectGuildAsync(bridge, node, server, DivergentJson)
+                .ConfigureAwait(false);
+            await conn.Filters.ApplyAsync(Desired()).ConfigureAwait(false);
+            server.On("PATCH", PlayerPath, _ => new FakeRestResponse(status, "@"));
+            server.On("GET", PlayerPath, _ => new FakeRestResponse(200, PlayerBody(null)));
+            var before = server.RestCalls.Count(call =>
+                call.Method == "GET" && call.Path == PlayerPath
+            );
+            await Assert
+                .That(async () => await conn.Filters.ApplyAsync(Desired()).ConfigureAwait(false))
+                .Throws<Nyra.Exceptions.RestException>();
+            await Assert.That(conn.Filters.Applied.Tremolo?.Frequency).IsEqualTo(5);
+            await Assert
+                .That(
+                    server.RestCalls.Count(call => call.Method == "GET" && call.Path == PlayerPath)
+                        - before
+                )
+                .IsEqualTo(status == 200 ? 1 : 0);
         }
     }
 }
