@@ -44,8 +44,7 @@ internal sealed class NodeEventHandlers
     }
 
     private static string? UsableSessionId(string? sessionId) =>
-        string.IsNullOrEmpty(sessionId)
-        || sessionId.Any(static c => c > 127 || char.IsControl(c) || char.IsWhiteSpace(c))
+        string.IsNullOrEmpty(sessionId) || sessionId.AsSpan().IndexOfAnyExceptInRange('!', '~') >= 0
             ? null
             : sessionId;
 

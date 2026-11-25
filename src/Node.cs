@@ -781,7 +781,7 @@ public sealed class Node : IAsyncDisposable, IDisposable
     }
 
     internal static string LogSafe(string? text) =>
-        text is null
-            ? string.Empty
-            : string.Concat(text.Where(static c => c <= 127 && !char.IsControl(c)));
+        text is null ? string.Empty
+        : text.AsSpan().IndexOfAnyExceptInRange(' ', '~') < 0 ? text
+        : string.Concat(text.Where(static c => c is >= ' ' and <= '~'));
 }
