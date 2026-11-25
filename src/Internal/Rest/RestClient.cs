@@ -214,6 +214,12 @@ internal sealed class RestClient
         }
     }
 
+    internal Task<T> GetExpectingAsync<T>(
+        string path,
+        string what,
+        CancellationToken cancellationToken
+    ) => SendExpectingAsync<T>(HttpMethod.Get, path, what, cancellationToken: cancellationToken);
+
     internal Task<TResponse> SendJsonAsync<TResponse, TPayload>(
         HttpMethod method,
         string path,

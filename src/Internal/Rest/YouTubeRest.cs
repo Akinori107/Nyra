@@ -15,12 +15,7 @@ internal sealed class YouTubeRest
     {
         var path = validate ? Routes.YouTubeConfig + "?validate=true" : Routes.YouTubeConfig;
         return await _rest
-            .SendExpectingAsync<YouTubeConfig>(
-                HttpMethod.Get,
-                path,
-                "YouTube config",
-                cancellationToken: cancellationToken
-            )
+            .GetExpectingAsync<YouTubeConfig>(path, "YouTube config", cancellationToken)
             .ConfigureAwait(false);
     }
 

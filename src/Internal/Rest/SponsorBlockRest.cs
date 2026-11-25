@@ -15,12 +15,7 @@ internal sealed class SponsorBlockRest
     {
         var path = BuildSponsorBlockPath(guildId);
         return await _rest
-            .SendExpectingAsync<SponsorBlockState>(
-                HttpMethod.Get,
-                path,
-                "SponsorBlock state",
-                cancellationToken: cancellationToken
-            )
+            .GetExpectingAsync<SponsorBlockState>(path, "SponsorBlock state", cancellationToken)
             .ConfigureAwait(false);
     }
 

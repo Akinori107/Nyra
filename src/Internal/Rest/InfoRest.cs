@@ -22,12 +22,7 @@ internal sealed class InfoRest
     public async Task<NodeInfo> GetNodeInfoAsync(CancellationToken cancellationToken)
     {
         return await _rest
-            .SendExpectingAsync<NodeInfo>(
-                HttpMethod.Get,
-                Routes.Info,
-                "info response",
-                cancellationToken: cancellationToken
-            )
+            .GetExpectingAsync<NodeInfo>(Routes.Info, "info response", cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -163,12 +158,7 @@ internal sealed class InfoRest
     public async Task<Stats> GetStatsAsync(CancellationToken cancellationToken)
     {
         return await _rest
-            .SendExpectingAsync<Stats>(
-                HttpMethod.Get,
-                Routes.Stats,
-                "stats report",
-                cancellationToken: cancellationToken
-            )
+            .GetExpectingAsync<Stats>(Routes.Stats, "stats report", cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -177,11 +167,10 @@ internal sealed class InfoRest
     )
     {
         return await _rest
-            .SendExpectingAsync<ConnectionStatus>(
-                HttpMethod.Get,
+            .GetExpectingAsync<ConnectionStatus>(
                 Routes.Connection,
                 "connection status report",
-                cancellationToken: cancellationToken
+                cancellationToken
             )
             .ConfigureAwait(false);
     }
