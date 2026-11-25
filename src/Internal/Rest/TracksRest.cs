@@ -5,11 +5,9 @@ using Nyra.Exceptions;
 
 namespace Nyra.Internal;
 
-internal sealed class TracksRest
+internal sealed class TracksRest(RestClient rest)
 {
-    private readonly RestClient _rest;
-
-    internal TracksRest(RestClient rest) => _rest = rest;
+    private readonly RestClient _rest = rest;
 
     public async Task<LoadResult> LoadAsync(string identifier, CancellationToken cancellationToken)
     {

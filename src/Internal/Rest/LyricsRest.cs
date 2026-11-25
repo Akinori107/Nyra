@@ -2,11 +2,9 @@ using Nyra.Entities;
 
 namespace Nyra.Internal;
 
-internal sealed class LyricsRest
+internal sealed class LyricsRest(RestClient rest)
 {
-    private readonly RestClient _rest;
-
-    internal LyricsRest(RestClient rest) => _rest = rest;
+    private readonly RestClient _rest = rest;
 
     public async Task<LyricsResult> LoadAsync(
         string encodedTrack,

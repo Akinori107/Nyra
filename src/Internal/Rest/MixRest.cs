@@ -2,11 +2,9 @@ using Nyra.Entities;
 
 namespace Nyra.Internal;
 
-internal sealed class MixRest
+internal sealed class MixRest(RestClient rest)
 {
-    private readonly RestClient _rest;
-
-    internal MixRest(RestClient rest) => _rest = rest;
+    private readonly RestClient _rest = rest;
 
     public async Task<MixLayer> CreateAsync(
         ulong guildId,

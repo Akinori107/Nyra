@@ -2,11 +2,9 @@ using Nyra.Entities;
 
 namespace Nyra.Internal;
 
-internal sealed class SponsorBlockRest
+internal sealed class SponsorBlockRest(RestClient rest)
 {
-    private readonly RestClient _rest;
-
-    internal SponsorBlockRest(RestClient rest) => _rest = rest;
+    private readonly RestClient _rest = rest;
 
     public async Task<SponsorBlockState> GetAsync(
         ulong guildId,

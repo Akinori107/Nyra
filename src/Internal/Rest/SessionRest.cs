@@ -2,11 +2,9 @@ using Nyra.Entities;
 
 namespace Nyra.Internal;
 
-internal sealed class SessionRest
+internal sealed class SessionRest(RestClient rest)
 {
-    private readonly RestClient _rest;
-
-    internal SessionRest(RestClient rest) => _rest = rest;
+    private readonly RestClient _rest = rest;
 
     public async Task<SessionConfig> UpdateAsync(
         bool resuming,

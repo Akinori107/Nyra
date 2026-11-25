@@ -2,11 +2,9 @@ using Nyra.Entities;
 
 namespace Nyra.Internal;
 
-internal sealed class GroupsRest
+internal sealed class GroupsRest(RestClient rest)
 {
-    private readonly RestClient _rest;
-
-    internal GroupsRest(RestClient rest) => _rest = rest;
+    private readonly RestClient _rest = rest;
 
     public async Task<IReadOnlyList<Group>> ListAsync(CancellationToken cancellationToken) =>
         await _rest.GetListAsync<Group>(BuildGroupsPath(), cancellationToken).ConfigureAwait(false);
