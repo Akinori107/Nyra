@@ -12,20 +12,8 @@ internal sealed class GuildTeardown
         _node = connection.Node;
     }
 
-    internal async Task DisconnectAsync(CancellationToken cancellationToken = default)
-    {
-        _connection.MarkTearingDown();
-
-        try
-        {
-            await DrainAndRemoveAsync(destroyPlayerOnly: false, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            await _connection.CompleteEventPumpAsync().ConfigureAwait(false);
-        }
-    }
+    internal Task DisconnectAsync(CancellationToken cancellationToken = default) =>
+        DisconnectCoreAsync(destroyPlayerOnly: false, cancellationToken);
 
     internal async Task AfterVoiceClosedAsync()
     {
@@ -102,13 +90,19 @@ internal sealed class GuildTeardown
         await _connection.Pump.CompleteAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
     }
 
-    internal async Task HandleVoiceDisconnectedAsync()
+    internal Task HandleVoiceDisconnectedAsync() =>
+        DisconnectCoreAsync(destroyPlayerOnly: true, CancellationToken.None);
+
+    private async Task DisconnectCoreAsync(
+        bool destroyPlayerOnly,
+        CancellationToken cancellationToken
+    )
     {
         _connection.MarkTearingDown();
 
         try
         {
-            await DrainAndRemoveAsync(destroyPlayerOnly: true).ConfigureAwait(false);
+            await DrainAndRemoveAsync(destroyPlayerOnly, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
