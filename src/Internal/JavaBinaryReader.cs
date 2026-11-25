@@ -15,46 +15,17 @@ internal ref struct JavaBinaryReader
 
     public readonly int Remaining => _buffer.Length - _position;
 
-    public byte ReadByte()
-    {
-        EnsureAvailable(1);
-        return _buffer[_position++];
-    }
+    public byte ReadByte() => ReadBytes(1)[0];
 
     public bool ReadBoolean() => ReadByte() != 0;
 
-    public ushort ReadUInt16()
-    {
-        EnsureAvailable(2);
-        var value = BinaryPrimitives.ReadUInt16BigEndian(_buffer.Slice(_position, 2));
-        _position += 2;
-        return value;
-    }
+    public ushort ReadUInt16() => BinaryPrimitives.ReadUInt16BigEndian(ReadBytes(2));
 
-    public int ReadInt32()
-    {
-        EnsureAvailable(4);
-        var value = BinaryPrimitives.ReadInt32BigEndian(_buffer.Slice(_position, 4));
-        _position += 4;
-        return value;
-    }
+    public int ReadInt32() => BinaryPrimitives.ReadInt32BigEndian(ReadBytes(4));
 
-    public long ReadInt64()
-    {
-        EnsureAvailable(8);
-        var value = BinaryPrimitives.ReadInt64BigEndian(_buffer.Slice(_position, 8));
-        _position += 8;
-        return value;
-    }
+    public long ReadInt64() => BinaryPrimitives.ReadInt64BigEndian(ReadBytes(8));
 
-    public string ReadModifiedUtf8()
-    {
-        var byteCount = ReadUInt16();
-        EnsureAvailable(byteCount);
-        var bytes = _buffer.Slice(_position, byteCount);
-        _position += byteCount;
-        return DecodeModifiedUtf8(bytes);
-    }
+    public string ReadModifiedUtf8() => DecodeModifiedUtf8(ReadBytes(ReadUInt16()));
 
     public string? ReadNullableModifiedUtf8() => ReadBoolean() ? ReadModifiedUtf8() : null;
 
@@ -78,12 +49,8 @@ internal ref struct JavaBinaryReader
             if (i + 1 >= bytes.Length)
             {
                 if (first is >= 0xC0 and <= 0xF7)
-                    throw new InvalidDataException(
-                        $"Truncated multi-byte sequence in modified UTF-8 string at byte {i} of {bytes.Length}."
-                    );
-                throw new InvalidDataException(
-                    $"Invalid byte 0x{first:X2} in modified UTF-8 string at byte {i}."
-                );
+                    throw Truncated(i, bytes.Length);
+                throw InvalidByte(first, i);
             }
 
             var second = bytes[++i];
@@ -96,31 +63,19 @@ internal ref struct JavaBinaryReader
             if ((second & 0b1100_0000) != 0b1000_0000)
             {
                 if (first is >= 0b1100_0000 and <= 0b1111_0111)
-                    throw new InvalidDataException(
-                        $"Invalid byte 0x{second:X2} in modified UTF-8 string at byte {i}."
-                    );
-                throw new InvalidDataException(
-                    $"Invalid byte 0x{first:X2} in modified UTF-8 string at byte {i - 1}."
-                );
+                    throw InvalidByte(second, i);
+                throw InvalidByte(first, i - 1);
             }
 
             if (i + 1 >= bytes.Length)
             {
                 if (first is >= 0xE0 and <= 0xF7)
-                    throw new InvalidDataException(
-                        $"Truncated multi-byte sequence in modified UTF-8 string at byte {i} of {bytes.Length}."
-                    );
-                throw new InvalidDataException(
-                    $"Invalid byte 0x{first:X2} in modified UTF-8 string at byte {i - 1}."
-                );
+                    throw Truncated(i, bytes.Length);
+                throw InvalidByte(first, i - 1);
             }
 
             var third = bytes[++i];
-            if (
-                (first & 0b1111_0000) == 0b1110_0000
-                && (second & 0b1100_0000) == 0b1000_0000
-                && (third & 0b1100_0000) == 0b1000_0000
-            )
+            if ((first & 0b1111_0000) == 0b1110_0000 && (third & 0b1100_0000) == 0b1000_0000)
             {
                 chars[length++] = (char)(
                     ((first & 0b0000_1111) << 12)
@@ -130,22 +85,14 @@ internal ref struct JavaBinaryReader
                 continue;
             }
 
-            if (
-                (first & 0b1111_1000) == 0b1111_0000
-                && (second & 0b1100_0000) == 0b1000_0000
-                && (third & 0b1100_0000) == 0b1000_0000
-            )
+            if ((first & 0b1111_1000) == 0b1111_0000 && (third & 0b1100_0000) == 0b1000_0000)
             {
                 if (i + 1 >= bytes.Length)
-                    throw new InvalidDataException(
-                        $"Truncated multi-byte sequence in modified UTF-8 string at byte {i} of {bytes.Length}."
-                    );
+                    throw Truncated(i, bytes.Length);
 
                 var fourth = bytes[++i];
                 if ((fourth & 0b1100_0000) != 0b1000_0000)
-                    throw new InvalidDataException(
-                        $"Invalid byte 0x{fourth:X2} in modified UTF-8 string at byte {i}."
-                    );
+                    throw InvalidByte(fourth, i);
 
                 var codePoint =
                     ((first & 0b0000_0111) << 18)
@@ -163,19 +110,29 @@ internal ref struct JavaBinaryReader
                 continue;
             }
 
-            throw new InvalidDataException(
-                $"Invalid byte 0x{first:X2} in modified UTF-8 string at byte {i}."
-            );
+            throw InvalidByte(first, i);
         }
 
         return new string(chars, 0, length);
     }
 
-    private readonly void EnsureAvailable(int count)
+    private static InvalidDataException InvalidByte(byte value, int offset) =>
+        new($"Invalid byte 0x{value:X2} in modified UTF-8 string at byte {offset}.");
+
+    private static InvalidDataException Truncated(int offset, int length) =>
+        new(
+            $"Truncated multi-byte sequence in modified UTF-8 string at byte {offset} of {length}."
+        );
+
+    private ReadOnlySpan<byte> ReadBytes(int count)
     {
         if (_position + count > _buffer.Length)
             throw new EndOfStreamException(
                 $"Unexpected end of the binary data at byte {_position} of {_buffer.Length}, {count} bytes were required."
             );
+
+        var bytes = _buffer.Slice(_position, count);
+        _position += count;
+        return bytes;
     }
 }
