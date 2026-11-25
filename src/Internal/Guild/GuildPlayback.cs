@@ -336,6 +336,7 @@ internal sealed class GuildPlayback
             if (_connection.IsTearingDown)
                 return;
 
+            var wasPaused = _connection.IsPaused;
             var responded = player.State?.TimeMilliseconds ?? _lastResponseTime;
             if (responded >= _lastResponseTime)
             {
@@ -350,7 +351,15 @@ internal sealed class GuildPlayback
             }
 
             if (player.State is { } ranked && ranked.TimeMilliseconds < _lastCaptureTime)
+            {
+                if (wasPaused != _connection.IsPaused)
+                    UpdateProjectionWithoutAnchor(
+                        (_connection.State?.Connected ?? true)
+                            && !_connection.IsPaused
+                            && _connection.CurrentTrack is { Info.IsStream: false }
+                    );
                 return;
+            }
 
             if (
                 player.Track is not null
@@ -359,7 +368,28 @@ internal sealed class GuildPlayback
             )
                 return;
 
-            var holdsPreSeekPosition = _lastSoughtTick >= requestTick;
+            var sameTrack =
+                player.Track is not null
+                && GuildConnection.IsSameTrack(_connection.CurrentTrack, player.Track);
+            var holdsPreSeekPosition = sameTrack && _lastSoughtTick >= requestTick;
+            var advancing =
+                (
+                    player.State?.Connected
+                    ?? (sameTrack ? _connection.State?.Connected : null)
+                    ?? true
+                )
+                && !_connection.IsPaused
+                && player.Track is { Info.IsStream: false };
+
+            if (
+                player.State is null
+                && !holdsPreSeekPosition
+                && player.Track is { } started
+                && startMilliseconds is { } knownStart
+            )
+                Anchor(knownStart, started, requestTick);
+            else if (sameTrack && (player.State is null || holdsPreSeekPosition))
+                UpdateProjectionWithoutAnchor(advancing);
 
             _connection.CurrentTrack = player.Track;
             _successorPending = false;
@@ -377,11 +407,17 @@ internal sealed class GuildPlayback
                 }
             }
 
-            _positionAdvancing =
-                (player.State?.Connected ?? true)
-                && !_connection.IsPaused
-                && player.Track is { Info.IsStream: false };
+            _positionAdvancing = advancing;
         }
+    }
+
+    private void UpdateProjectionWithoutAnchor(bool advancing)
+    {
+        if (!advancing)
+            FreezePosition();
+        else if (!_positionAdvancing)
+            _positionTick = _time.GetMilliseconds();
+        _positionAdvancing = advancing;
     }
 
     internal void OnTimescaleChangedUnderLock(TimescaleFilter? oldTimescale)
