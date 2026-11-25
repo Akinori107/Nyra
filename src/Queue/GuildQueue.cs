@@ -628,7 +628,12 @@ public sealed class GuildQueue
             _ => Task.CompletedTask,
         };
 
-    private async Task AdvanceAsync(Track? ended, bool failed)
+    private async Task AdvanceAsync(
+        Track? ended,
+        bool failed,
+        bool stuck = false,
+        object? source = null
+    )
     {
         var notes = new QueueNotes();
         Exception? failure = null;
@@ -636,12 +641,17 @@ public sealed class GuildQueue
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_detached)
+            if (_detached || (source is not null && !ReferenceEquals(Connection, source)))
                 return;
 
             var before = _state;
-            var ours = Matches(before, ended);
-            if (!ours && (Connection.CurrentTrack is not null || before.Upcoming.IsEmpty))
+            var playing = Connection.CurrentTrack;
+            var ours = stuck
+                ? before.Current is { } current
+                    && GuildConnection.IsSameTrack(ended ?? playing, current)
+                    && (playing is null || GuildConnection.IsSameTrack(current, playing))
+                : Matches(before, ended);
+            if (!ours && (stuck || playing is not null || before.Upcoming.IsEmpty))
                 return;
 
             var (after, play) = ours ? before.Advance(failed, Policy) : before.Start(Policy);
@@ -650,6 +660,9 @@ public sealed class GuildQueue
 
             if (play is null)
             {
+                if (stuck)
+                    await Connection.StopAsync().ConfigureAwait(false);
+
                 _state = after;
                 _loop = LoopMode.Off;
                 if (Autoplay && before.Current is { } last)
@@ -834,19 +847,8 @@ public sealed class GuildQueue
         await FlushAsync(notes).ConfigureAwait(false);
     }
 
-    private async Task OnTrackStuckAsync(object? sender, TrackStuckEventArgs args)
-    {
-        if (args.Track is { } stuck && !GuildConnection.IsSameTrack(_state.Current, stuck))
-            return;
-
-        if (_state.Current is { } failed)
-            await TrackFailed
-                .RaiseAsync(this, new QueueTrackFailedEventArgs(failed), _handlerError)
-                .ConfigureAwait(false);
-
-        if (await SkipAsync().ConfigureAwait(false) is null)
-            await StopAsync().ConfigureAwait(false);
-    }
+    private Task OnTrackStuckAsync(object? sender, TrackStuckEventArgs args) =>
+        AdvanceAsync(args.Track, failed: true, stuck: true, source: sender);
 
     private async Task OnRestoredAsync(object? sender, GuildConnectionRestoredEventArgs args)
     {

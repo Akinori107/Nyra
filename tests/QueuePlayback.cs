@@ -363,4 +363,33 @@ public sealed class QueuePlayback
                 .IsEqualTo("b,c,d,e");
         }
     }
+
+    [Test]
+    [Arguments(LoopMode.Queue)]
+    [Arguments(LoopMode.Track)]
+    public async Task AStuckTrackIsNotRecycledOrRemembered(LoopMode loop)
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.Loop = loop;
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            var dispatched = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Queue.Connection.TrackStuck += (_, _) =>
+            {
+                dispatched.TrySetResult();
+                return Task.CompletedTask;
+            };
+
+            await PushStuckAsync(rig, "a").ConfigureAwait(false);
+            await dispatched.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            await Assert.That(rig.CurrentId).IsEqualTo("b");
+            await Assert.That(rig.Queue.Upcoming).IsEmpty();
+            await Assert.That(rig.Queue.History).IsEmpty();
+            await Assert.That(rig.Log.Count(entry => entry == "failed:a")).IsEqualTo(1);
+        }
+    }
 }
