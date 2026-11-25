@@ -25,6 +25,11 @@ public sealed record PlayerVoiceState
     /// <summary>The voice channel the server has for the player.</summary>
     [JsonPropertyName("channelId"), JsonInclude]
     public ulong? ChannelId { get; internal set; }
+
+    /// <summary>Formats the voice state for diagnostics without exposing its token or session id.</summary>
+    /// <returns>The voice endpoint and channel id.</returns>
+    public override string ToString() =>
+        $"PlayerVoiceState {{ Endpoint = {Endpoint}, ChannelId = {ChannelId} }}";
 }
 
 /// <summary>Player state, delivered through <c>playerUpdate</c> operations and player REST responses.</summary>

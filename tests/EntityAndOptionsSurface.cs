@@ -35,4 +35,28 @@ public sealed class EntityAndOptionsSurface
 
         await Assert.That(written).DoesNotContain("duration");
     }
+
+    [Test]
+    public async Task PlayerVoiceDiagnosticsPreserveMetadataWithoutCredentials()
+    {
+        const string token = "fixture-voice-token";
+        const string session = "fixture-voice-session";
+        var player = JsonSerializer.Deserialize<Player>(
+            """{"guildId":123,"voice":{"token":"fixture-voice-token","sessionId":"fixture-voice-session","endpoint":"voice.example.com","channelId":987}}"""
+        )!;
+        var voice = player.Voice!;
+        foreach (var diagnostic in new[] { voice.ToString(), player.ToString() })
+        {
+            await Assert.That(diagnostic).DoesNotContain(token);
+            await Assert.That(diagnostic).DoesNotContain(session);
+            await Assert.That(diagnostic).Contains("voice.example.com");
+            await Assert.That(diagnostic).Contains("987");
+        }
+
+        var json = JsonSerializer.Serialize(voice);
+        var roundTrip = JsonSerializer.Deserialize<PlayerVoiceState>(json);
+        await Assert.That(roundTrip).IsEqualTo(voice);
+        await Assert.That(roundTrip?.Token).IsEqualTo(token);
+        await Assert.That(roundTrip?.SessionId).IsEqualTo(session);
+    }
 }
