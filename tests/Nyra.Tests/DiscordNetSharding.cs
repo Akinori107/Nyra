@@ -2,7 +2,7 @@ using Discord.WebSocket;
 
 namespace Nyra.Tests;
 
-public sealed class DiscordNetBridgeTests
+public sealed class DiscordNetSharding
 {
     [Test]
     public async Task ShardedLookup()

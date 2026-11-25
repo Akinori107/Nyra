@@ -2,7 +2,7 @@ using Nyra.Internal;
 
 namespace Nyra.Tests;
 
-public sealed class GuildTimerTests
+public sealed class GuildTimerEdge
 {
     private sealed class QueuedTimerProvider : TimeProvider
     {

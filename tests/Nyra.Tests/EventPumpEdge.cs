@@ -3,7 +3,7 @@ using Nyra.Internal;
 
 namespace Nyra.Tests;
 
-public sealed class EventPumpTests
+public sealed class EventPumpEdge
 {
     [Test]
     public async Task RejectsAfterComplete()

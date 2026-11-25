@@ -82,7 +82,7 @@ public sealed class Adapter
         await Assert.That(ReferenceEquals(senderSeen[0], owner)).IsTrue();
     }
 
-    private sealed class TestGatewayBridge(
+    private sealed class FakeGatewayBridge(
         Action<VoiceServerUpdatedEventArgs> onVoiceServerUpdated,
         Action<VoiceStateUpdatedEventArgs> onVoiceStateUpdated,
         Action<GuildRemovedEventArgs> onGuildRemoved,
@@ -140,7 +140,7 @@ public sealed class Adapter
     {
         var states = new Recording<VoiceStateUpdatedEventArgs>();
         var listeners = new Recording<ListenerVoiceStateUpdatedEventArgs>();
-        var bridge = new TestGatewayBridge(Ignore, states.Record, Ignore, listeners.Record);
+        var bridge = new FakeGatewayBridge(Ignore, states.Record, Ignore, listeners.Record);
 
         bridge.RaiseState(WireState(5, 77, 10, "s1", bot: false), 9);
         await Assert.That(listeners.Last?.UserId).IsEqualTo(10UL);

@@ -3,7 +3,7 @@ using Nyra.Entities;
 
 namespace Nyra.Tests;
 
-public sealed class GroupTrackTests
+public sealed class GroupTrackForms
 {
     private static string Serialize(GroupUpdate update) =>
         NyraJson.Serialize(update, NyraJson.OptionsFor(true));
