@@ -63,6 +63,33 @@ jobs:
           done <<< "$merges"
           echo '::warning title=Merge commits::Rebase on dev instead of merging it'
           exit 1
+      - name: Reject code comments
+        if: ${{ !cancelled() && github.base_ref == 'dev' }}
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --unified=0 "origin/dev...$HEAD_SHA" -- '*.cs' | python3 -c '
+          import re, sys
+
+          failed = False
+          path = None
+          line = 0
+          for raw in sys.stdin:
+              if raw.startswith("+++ "):
+                  path = raw[6:].strip()
+              elif raw.startswith("@@"):
+                  line = int(re.search(r"\+(\d+)", raw).group(1))
+              elif raw.startswith("+"):
+                  if raw[1:].lstrip().startswith("///"):
+                      line += 1
+                      continue
+                  code = re.sub(r"\"(?:[^\"\\]|\\.)*\"", "\"\"", raw[1:])
+                  if re.search(r"(?<!/)//(?!/)|/\*", code):
+                      print(f"::error file={path},line={line},title=Code comment::Remove the comment")
+                      failed = True
+                  line += 1
+          sys.exit(1 if failed else 0)
+          '
       - name: Check PR description follows the template
         if: ${{ !cancelled() && github.base_ref == 'dev' }}
         env:

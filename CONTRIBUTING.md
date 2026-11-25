@@ -2,6 +2,8 @@
 
 Open PRs against the `dev` branch. For a big change, open an issue first to discuss it. Keep your branch up to date by rebasing on `dev`, not by merging it.
 
+No comments in code, XML docs on public members cover what's needed.
+
 ## Commits and PR titles
 
 Use these prefixes.
