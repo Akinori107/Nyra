@@ -612,12 +612,9 @@ public sealed class GuildQueue
     internal QueuePolicy Policy => new(_loop, _historyLimit, Shuffle ? Random.Shared : null);
 
     private bool Matches(QueueState state, Track? ended) =>
-        state.Current is { } current
-        && (
-            ended is null
-                ? Connection.CurrentTrack is null
-                : GuildConnection.IsSameTrack(current, ended)
-        );
+        Connection.CurrentTrack is null
+        && state.Current is { } current
+        && (ended is null || GuildConnection.IsSameTrack(current, ended));
 
     private Task OnTrackFinishedAsync(object? sender, TrackFinishedEventArgs args) =>
         args.EndReason switch

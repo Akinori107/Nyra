@@ -363,4 +363,58 @@ public sealed class QueuePlayback
                 .IsEqualTo("b,c,d,e");
         }
     }
+
+    [Test]
+    public async Task ALateQueueEndDoesNotInterruptDirectPlayback()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            await rig
+                .Queue.Connection.PlayAsync(await rig.MakeAsync("direct").ConfigureAwait(false))
+                .ConfigureAwait(false);
+            var ended = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Queue.Connection.TrackFinished += (_, _) =>
+            {
+                ended.TrySetResult();
+                return Task.CompletedTask;
+            };
+            await PushEndAsync(rig, "a", "finished").ConfigureAwait(false);
+            await ended.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await Assert
+                .That(rig.Queue.Connection.CurrentTrack?.Info.Identifier)
+                .IsEqualTo("direct");
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
+            await Assert.That(rig.Played).IsEqualTo("a,direct");
+
+            await PushEndAsync(rig, "direct", "finished").ConfigureAwait(false);
+            await Eventually(() => rig.CurrentId == "b").ConfigureAwait(false);
+            await Assert.That(rig.Played).IsEqualTo("a,direct,b");
+            await Assert.That(Ids(rig.Queue.History)).IsEqualTo("a");
+        }
+    }
+
+    [Test]
+    public async Task AnEndWithoutATrackRetiresTheQueueTrackWhenPlaybackHasEnded()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig.EnqueueAsync("a").ConfigureAwait(false);
+            await PushEndAsync(rig, "a", "replaced").ConfigureAwait(false);
+            await rig
+                .Server.PushAsync(
+                    """{"op":"event","guildId":"777","type":"TrackEndEvent","track":null,"reason":"finished"}"""
+                )
+                .ConfigureAwait(false);
+            await Eventually(() => rig.Log.Contains("ended")).ConfigureAwait(false);
+            await Assert.That(rig.Queue.Connection.CurrentTrack).IsNull();
+            await Assert.That(rig.Queue.Current).IsNull();
+            await Assert.That(Ids(rig.Queue.History)).IsEqualTo("a");
+            await Assert.That(rig.Played).IsEqualTo("a");
+        }
+    }
 }
