@@ -467,18 +467,36 @@ internal sealed class GuildRegistry
             .ConfigureAwait(false);
     }
 
-    internal async Task ReconcileAfterResumeAsync()
+    internal Task ReconcileAfterResumeAsync() =>
+        ReconcileAfterResumeAsync(_node.EventHandlers.ConnectionEpoch);
+
+    internal async Task ReconcileAfterResumeAsync(int connectionEpoch)
     {
+        bool IsCurrent() => _node.IsReady && connectionEpoch == _node.EventHandlers.ConnectionEpoch;
+
         var playing = Connections
             .Values.Select(connection => (Connection: connection, Track: connection.CurrentTrack))
             .Where(entry => entry.Track is not null)
             .ToArray();
-        var players = await _node
-            .Rest.Players.ListAsync(CancellationToken.None)
-            .ConfigureAwait(false);
+        Task<IReadOnlyList<Player>> listing;
+        lock (_node.EventsLock)
+        {
+            if (!IsCurrent())
+                return;
+
+            listing = _node.Rest.Players.ListAsync(CancellationToken.None);
+        }
+
+        var players = await listing.ConfigureAwait(false);
         var byGuild = players.ToDictionary(player => player.GuildId);
-        foreach (var (connection, track) in playing)
-            connection.EndLostTrack(track!, byGuild.GetValueOrDefault(connection.GuildId));
+        lock (_node.EventsLock)
+        {
+            if (!IsCurrent())
+                return;
+
+            foreach (var (connection, track) in playing)
+                connection.EndLostTrack(track!, byGuild.GetValueOrDefault(connection.GuildId));
+        }
 
         var destroyed = 0;
         foreach (var player in players.Where(player => !Connections.ContainsKey(player.GuildId)))
@@ -487,12 +505,22 @@ internal sealed class GuildRegistry
                 .ConfigureAwait(false);
             try
             {
-                if (Connections.ContainsKey(player.GuildId))
-                    continue;
+                Task destroy;
+                lock (_node.EventsLock)
+                {
+                    if (!IsCurrent())
+                        return;
 
-                await _node
-                    .Rest.Players.DestroyAsync(player.GuildId, CancellationToken.None)
-                    .ConfigureAwait(false);
+                    if (Connections.ContainsKey(player.GuildId))
+                        continue;
+
+                    destroy = _node.Rest.Players.DestroyAsync(
+                        player.GuildId,
+                        CancellationToken.None
+                    );
+                }
+
+                await destroy.ConfigureAwait(false);
                 destroyed++;
             }
             catch (RestException exception) when (exception.StatusCode == 404) { }
