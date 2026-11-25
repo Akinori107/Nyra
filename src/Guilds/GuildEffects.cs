@@ -37,8 +37,7 @@ public sealed class GuildEffects
         _connection.EnsureActive();
 
         var payload = new PlayerUpdatePayload { Fading = options ?? new FadingOptions() };
-        await _connection.Patches.UpdateAsync(payload, cancellationToken).ConfigureAwait(false);
-        _connection.RememberEffects(payload);
+        await UpdateAndRememberAsync(payload, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Turns loudness normalization on or off.</summary>
@@ -125,7 +124,55 @@ public sealed class GuildEffects
         NodeGuards.RequireNodeLink(_node, feature);
         _connection.EnsureActive();
 
-        await _connection.Patches.UpdateAsync(payload, cancellationToken).ConfigureAwait(false);
-        _connection.RememberEffects(payload);
+        await UpdateAndRememberAsync(payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UpdateAndRememberAsync(
+        PlayerUpdatePayload payload,
+        CancellationToken cancellationToken
+    )
+    {
+        var session = _node.SessionId;
+        var requestTick = _node.Time.GetMilliseconds();
+        try
+        {
+            var player = await _connection
+                .Patches.SendAsync(
+                    ct => _node.Rest.Players.UpdateAsync(GuildId, payload, ct),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            if (session == _node.SessionId)
+            {
+                _connection.CaptureState(player, requestTick);
+                if (!_connection.IsTearingDown)
+                    _connection.RememberEffects(payload);
+            }
+        }
+        catch (Exception exception) when (GuildPatches.MayHaveLanded(exception))
+        {
+            if (
+                payload.Ducking is null
+                && session == _node.SessionId
+                && !_connection.IsTearingDown
+                && await _connection
+                    .Patches.FetchLandedAsync(current => current is not null, cancellationToken)
+                    .ConfigureAwait(false)
+                    is { } actual
+                && session == _node.SessionId
+                && !_connection.IsTearingDown
+            )
+                _connection.RememberEffects(
+                    new PlayerUpdatePayload
+                    {
+                        Fading = payload.Fading is not null ? actual.Fading : null,
+                        Crossfade = payload.Crossfade is not null ? actual.Crossfade : null,
+                        LoudnessNormalizer = payload.LoudnessNormalizer is not null
+                            ? actual.LoudnessNormalizer
+                            : null,
+                    }
+                );
+            throw;
+        }
     }
 }
