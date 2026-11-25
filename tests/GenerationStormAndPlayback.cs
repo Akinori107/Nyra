@@ -192,4 +192,57 @@ public sealed class GenerationStormAndPlayback
             Func<TState, Exception?, string> formatter
         ) => throw new InvalidOperationException("generation storm: the logger itself dies");
     }
+
+    [Test]
+    [Arguments(long.MaxValue, 176_000L, 0L)]
+    [Arguments(long.MinValue, 176_000L, 0L)]
+    [Arguments(922_337_203_685_467L, 0L, 922_337_203_685_467L)]
+    [Arguments(922_337_203_685_467L, long.MaxValue, 922_337_203_685_467L)]
+    public async Task PositionProjectionStaysWithinTimeSpan(long raw, long length, long initial)
+    {
+        var time = new FakeTimeProvider();
+        var rig = await RigAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var track =
+                $$$"""{"encoded":"fixture","info":{"identifier":"fixture","length":{{{length}}},"isSeekable":true,"isStream":false}}""";
+            var started = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Connection.TrackStarted += (_, _) =>
+            {
+                started.TrySetResult();
+                return Task.CompletedTask;
+            };
+            await rig
+                .Server.PushAsync(
+                    $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{track}}}"""
+                )
+                .ConfigureAwait(false);
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            var updated = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Connection.PlayerUpdated += (_, _) =>
+            {
+                updated.TrySetResult();
+                return Task.CompletedTask;
+            };
+            await rig
+                .Server.PushAsync(
+                    $$$"""{"op":"playerUpdate","guildId":"777","state":{"time":1000,"position":{{{raw}}},"connected":true,"ping":42}}"""
+                )
+                .ConfigureAwait(false);
+            await updated.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await Assert
+                .That(rig.Connection.Position)
+                .IsEqualTo(TimeSpan.FromMilliseconds(initial));
+            time.Advance(TimeSpan.FromSeconds(1));
+            var expected = Math.Min(initial + 1000, 922_337_203_685_477L);
+            await Assert
+                .That(rig.Connection.Position)
+                .IsEqualTo(TimeSpan.FromMilliseconds(expected));
+            await Assert.That(rig.Connection.State?.PositionMilliseconds).IsEqualTo(raw);
+        }
+    }
 }
