@@ -128,17 +128,21 @@ internal sealed class GuildPlayback
     private long ProjectedPosition(TimescaleFilter? timescale)
     {
         var length = _connection.CurrentTrack?.Info.LengthMilliseconds ?? 0;
-        var headroom =
-            length > 0 ? length - _positionMilliseconds : TrackInfo.MaxTimeSpanMilliseconds;
-        var position =
-            _positionMilliseconds + PaceDelta(_positionTick, PaceFactor(timescale), headroom);
-
-        return length > 0 && position > length ? length : position;
+        var ceiling =
+            length > 0
+                ? Math.Min(length, TrackInfo.MaxTimeSpanMilliseconds)
+                : TrackInfo.MaxTimeSpanMilliseconds;
+        var position = Math.Min(_positionMilliseconds, ceiling);
+        return position + PaceDelta(_positionTick, PaceFactor(timescale), ceiling - position);
     }
 
     private void Anchor(long positionMilliseconds, Track? track, long? tick = null)
     {
-        _positionMilliseconds = positionMilliseconds;
+        _positionMilliseconds = positionMilliseconds
+            is >= 0
+                and <= TrackInfo.MaxTimeSpanMilliseconds
+            ? positionMilliseconds
+            : 0;
         _positionTick = tick ?? _time.GetMilliseconds();
         _hasPosition = true;
         _anchorTrack = track;
@@ -153,10 +157,8 @@ internal sealed class GuildPlayback
 
     private long PaceDelta(long fromTick, double pace, long ceiling)
     {
-        const double maxLong = 9.2233720368547747E18;
-        var delta = (_time.GetMilliseconds() - fromTick) * pace;
-        var capped = Math.Min(delta, ceiling);
-        return capped >= maxLong ? long.MaxValue - 1 : (long)Math.Round(capped);
+        var delta = Math.Max(0, _time.GetMilliseconds() - fromTick) * pace;
+        return (long)Math.Round(Math.Min(delta, ceiling));
     }
 
     internal void OnTrackStart(TrackStartedEventArgs eventArgs)
