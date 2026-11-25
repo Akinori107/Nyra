@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using Nyra.Entities;
 using Nyra.Queue;
 using static Nyra.Tests.NodeHarness;
@@ -92,7 +93,7 @@ public sealed class QueuePlayback
         );
     }
 
-    private static async Task<Rig> StartAsync()
+    private static async Task<Rig> StartAsync(TimeProvider? time = null)
     {
         var server = new FakeNodeServer();
         var bridge = new FakeBridge();
@@ -103,6 +104,7 @@ public sealed class QueuePlayback
             new NodeOptions
             {
                 Name = "queue",
+                TimeProvider = time ?? TimeProvider.System,
                 VoiceHandshakeTimeout = TimeSpan.FromSeconds(5),
                 ReadyTimeout = TimeSpan.FromSeconds(5),
             }
@@ -361,6 +363,90 @@ public sealed class QueuePlayback
             await Assert
                 .That(Ids(rig.Queue.Upcoming.OrderBy(track => track.Info.Identifier)))
                 .IsEqualTo("b,c,d,e");
+        }
+    }
+
+    [Test]
+    public async Task TimeUntilIncludesATrackPlayedDirectlyOnTheConnection()
+    {
+        var time = new FakeTimeProvider();
+        var rig = await StartAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig
+                .Queue.Connection.PlayAsync(await rig.MakeAsync("a").ConfigureAwait(false))
+                .ConfigureAwait(false);
+            await rig.EnqueueAsync("b", "c").ConfigureAwait(false);
+            await Assert.That(rig.Queue.Current).IsNull();
+            await Assert.That(rig.Queue.Connection.CurrentTrack?.Info.Identifier).IsEqualTo("a");
+            await Assert.That(rig.Queue.TimeUntil(0)).IsEqualTo(TimeSpan.FromSeconds(100));
+            await Assert.That(rig.Queue.TimeUntil(1)).IsEqualTo(TimeSpan.FromSeconds(200));
+        }
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task TrackLoopOnlyRepeatsQueueOwnedPlayback(bool replaced)
+    {
+        var rig = await StartAsync(time: new FakeTimeProvider()).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            if (replaced)
+                await rig.EnqueueAsync("previous", "a", "b").ConfigureAwait(false);
+            await rig
+                .Queue.Connection.PlayAsync(await rig.MakeAsync("direct").ConfigureAwait(false))
+                .ConfigureAwait(false);
+            if (!replaced)
+                await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            rig.Queue.Loop = LoopMode.Track;
+            await Assert.That(rig.CurrentId).IsEqualTo(replaced ? "previous" : null);
+            await Assert.That(rig.Queue.TimeUntil(0)).IsEqualTo(TimeSpan.FromSeconds(100));
+            await Assert.That(rig.Queue.TimeUntil(1)).IsNull();
+            await PushEndAsync(rig, "direct", "finished").ConfigureAwait(false);
+            await Eventually(() => rig.CurrentId == "a").ConfigureAwait(false);
+            await Assert.That(rig.Queue.TimeUntil(0)).IsNull();
+        }
+    }
+
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task TimeUntilRespectsTheCurrentTrackEndTime(bool direct)
+    {
+        var time = new FakeTimeProvider();
+        var rig = await StartAsync(time: time).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            if (direct)
+            {
+                await rig
+                    .Queue.Connection.PlayAsync(
+                        await rig.MakeAsync("a").ConfigureAwait(false),
+                        new PlayOptions(EndTime: TimeSpan.FromSeconds(20))
+                    )
+                    .ConfigureAwait(false);
+                await rig.EnqueueAsync("b", "c").ConfigureAwait(false);
+            }
+            else
+            {
+                await rig.EnqueueAsync("a", "b", "c").ConfigureAwait(false);
+                await rig
+                    .Queue.Connection.SetEndTimeAsync(TimeSpan.FromSeconds(20))
+                    .ConfigureAwait(false);
+            }
+            time.Advance(TimeSpan.FromSeconds(5));
+            await Assert.That(rig.Queue.TimeUntil(0)).IsEqualTo(TimeSpan.FromSeconds(15));
+            await Assert.That(rig.Queue.TimeUntil(1)).IsEqualTo(TimeSpan.FromSeconds(115));
+            time.Advance(TimeSpan.FromSeconds(20));
+            await Assert.That(rig.Queue.TimeUntil(0)).IsEqualTo(TimeSpan.Zero);
+            await rig
+                .Queue.Connection.PlayAsync(
+                    await rig.MakeAsync("z").ConfigureAwait(false),
+                    new PlayOptions(EndTime: TimeSpan.FromSeconds(200))
+                )
+                .ConfigureAwait(false);
+            await Assert.That(rig.Queue.TimeUntil(0)).IsEqualTo(TimeSpan.FromSeconds(100));
         }
     }
 }

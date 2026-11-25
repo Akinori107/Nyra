@@ -25,7 +25,7 @@ The next track is picked ahead, so `Upcoming[0]` is always what plays next and w
 
 - `RemoveAllAsync(track => ...)` removes every upcoming track that matches.
 - `TotalDuration` is the length of the upcoming tracks, streams not counted.
-- `TimeUntil(index)` is the time left on the current track plus the tracks before `index`.
+- `TimeUntil(index)` is the remaining media duration of the player's current track (bounded by its configured end time, if any) plus the tracks before `index`.
 - `MaxLength` caps the upcoming tracks, an enqueue past it throws and adds nothing.
 - `HistoryLimit` is how many played tracks `PreviousAsync` can go back to.
 
