@@ -198,7 +198,8 @@ public sealed class GuildQueue
     /// <remarks>
     /// Turn it on for gapless playback, or for a crossfade once <see cref="GuildEffects.SetCrossfadeAsync"/>
     /// enabled it. It has no effect on a Lavalink node, the choice is made per connection. A failed preload
-    /// only costs that transition its overlap, the next track then starts as usual.
+    /// only costs that transition its overlap, the next track then starts as usual. Tracks with a start offset
+    /// are played normally instead of preloaded, because preloading starts from the beginning.
     /// <para>
     /// Changing the first upcoming track while a crossfade is already being prepared makes NodeLink buffer
     /// again, so avoid reordering the queue in the last seconds of a track.
