@@ -12,24 +12,17 @@ internal static class UrlStartPosition
             return null;
         query = query[(cut + 1)..];
 
-        while (!query.IsEmpty)
+        var parameters = query.SplitAny("&#");
+        while (parameters.MoveNext())
         {
-            var end = query.IndexOfAny('&', '#');
-            var parameter = end >= 0 ? query[..end] : query;
-            if (
-                parameter.StartsWith("t=", StringComparison.Ordinal)
-                && ParseValue(parameter[2..]) is { } tMilliseconds
-            )
-                return tMilliseconds;
-            if (
-                parameter.StartsWith("start=", StringComparison.Ordinal)
-                && ParseValue(parameter[6..]) is { } startMilliseconds
-            )
-                return startMilliseconds;
+            var parameter = query[parameters.Current];
+            var value =
+                parameter.StartsWith("t=", StringComparison.Ordinal) ? parameter[2..]
+                : parameter.StartsWith("start=", StringComparison.Ordinal) ? parameter[6..]
+                : default;
 
-            if (end < 0)
-                break;
-            query = query[(end + 1)..];
+            if (ParseValue(value) is { } milliseconds)
+                return milliseconds;
         }
 
         return null;
@@ -88,10 +81,10 @@ internal static class UrlStartPosition
 
         long seconds = 0;
         var remaining = colonCount + 1;
-        while (remaining > 0)
+        var segments = value.Split(':');
+        while (segments.MoveNext())
         {
-            var cut = value.IndexOf(':');
-            var segment = cut >= 0 ? value[..cut] : value;
+            var segment = value[segments.Current];
             if (
                 segment.IsEmpty
                 || segment.Length > (remaining == 3 ? 3 : 2)
@@ -105,9 +98,6 @@ internal static class UrlStartPosition
                 return null;
             seconds = (seconds * 60) + part;
             remaining--;
-            if (cut < 0)
-                break;
-            value = value[(cut + 1)..];
         }
 
         return seconds > 0 && seconds <= TimeSpan.MaxValue.TotalSeconds ? seconds * 1000 : null;
@@ -118,9 +108,9 @@ internal static class UrlStartPosition
         out ReadOnlySpan<char> rest
     )
     {
-        var length = 0;
-        while (length < value.Length && char.IsAsciiDigit(value[length]))
-            length++;
+        var length = value.IndexOfAnyExceptInRange('0', '9');
+        if (length < 0)
+            length = value.Length;
 
         rest = value[length..];
         return value[..length];
