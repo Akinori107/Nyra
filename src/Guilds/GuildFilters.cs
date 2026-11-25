@@ -450,25 +450,53 @@ public sealed class GuildFilters
         lock (_connection.PlaybackPositionLock)
             oldTimescale = Applied.Timescale;
 
-        var player = await _node
-            .Rest.Players.UpdateAsync(
-                GuildId,
-                new PlayerUpdatePayload { Filters = desired },
-                cancellationToken
+        var session = _node.SessionId;
+        Player player;
+        try
+        {
+            player = await _node
+                .Rest.Players.UpdateAsync(
+                    GuildId,
+                    new PlayerUpdatePayload { Filters = desired },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (GuildPatches.MayHaveLanded(exception))
+        {
+            if (
+                session == _node.SessionId
+                && !_connection.IsTearingDown
+                && await _connection
+                    .Patches.FetchLandedAsync(
+                        current => current?.Filters is not null,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+                    is { Filters: { } actual }
+                && session == _node.SessionId
+                && !_connection.IsTearingDown
             )
-            .ConfigureAwait(false);
+                Land(actual, oldTimescale);
+            throw;
+        }
 
         Land(player, desired, oldTimescale);
     }
 
-    private void Land(Player player, FilterChain desired, TimescaleFilter? oldTimescale)
+    private void Land(Player player, FilterChain desired, TimescaleFilter? oldTimescale) =>
+        Land(
+            _node.IsNodeLink && player.Filters is { } effective
+                ? effective
+                : StripConfigDisabledFilters(desired),
+            oldTimescale
+        );
+
+    private void Land(FilterChain effective, TimescaleFilter? oldTimescale)
     {
         lock (_connection.PlaybackPositionLock)
         {
-            Applied =
-                _node.IsNodeLink && player.Filters is { } effective
-                    ? effective
-                    : StripConfigDisabledFilters(desired);
+            Applied = effective;
 
             ReanchorIfPaceChanged(oldTimescale);
         }
