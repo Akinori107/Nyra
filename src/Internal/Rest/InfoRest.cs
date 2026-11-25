@@ -45,7 +45,7 @@ internal sealed class InfoRest
             if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
                 throw new JsonException("The info response's root is not a single JSON object.");
 
-            while (ReadMember(ref reader, out var member))
+            while (NyraJson.ReadMember(ref reader, out var member))
             {
                 if (member.ValueTextEquals("isNodelink"u8))
                 {
@@ -62,7 +62,7 @@ internal sealed class InfoRest
                         continue;
                     }
 
-                    while (ReadMember(ref reader, out var versionMember))
+                    while (NyraJson.ReadMember(ref reader, out var versionMember))
                         if (
                             versionMember.ValueTextEquals("semver"u8)
                             && reader.TokenType == JsonTokenType.String
@@ -105,7 +105,7 @@ internal sealed class InfoRest
                             continue;
                         }
 
-                        while (ReadMember(ref reader, out var pluginMember))
+                        while (NyraJson.ReadMember(ref reader, out var pluginMember))
                             if (
                                 pluginMember.ValueTextEquals("name"u8)
                                 && reader.TokenType == JsonTokenType.String
@@ -142,22 +142,6 @@ internal sealed class InfoRest
                 exception
             );
         }
-    }
-
-    private static bool ReadMember(ref Utf8JsonReader reader, out Utf8JsonReader member)
-    {
-        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-        {
-            if (reader.TokenType != JsonTokenType.PropertyName)
-                continue;
-
-            member = reader;
-            reader.Read();
-            return true;
-        }
-
-        member = default;
-        return false;
     }
 
     public async Task<Stats> GetStatsAsync(CancellationToken cancellationToken)

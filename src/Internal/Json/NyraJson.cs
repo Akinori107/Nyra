@@ -50,6 +50,22 @@ internal static class NyraJson
         JsonSerializerOptions options
     ) => JsonSerializer.Deserialize(ref reader, TypeInfoOf<TValue>(options));
 
+    internal static bool ReadMember(ref Utf8JsonReader reader, out Utf8JsonReader member)
+    {
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+
+            member = reader;
+            reader.Read();
+            return true;
+        }
+
+        member = default;
+        return false;
+    }
+
 #if NET11_0_OR_GREATER
     private static JsonTypeInfo<TValue> TypeInfoOf<TValue>(JsonSerializerOptions options) =>
         options.GetTypeInfo<TValue>();
