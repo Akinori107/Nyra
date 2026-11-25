@@ -87,13 +87,23 @@ public sealed class ConnectionLifecycle
         await using (stack.ConfigureAwait(false))
         {
             var (bridge, node, sv) = (stack.Bridge, stack.Node, stack.Server);
-            await ConnectGuildAsync(bridge, node, sv).ConfigureAwait(false);
+            var conn = await ConnectGuildAsync(bridge, node, sv).ConfigureAwait(false);
             await Assert.That(node.IsNodeLink).IsFalse();
+            time.Advance(TimeSpan.FromSeconds(1));
+            var closed = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            conn.WebSocketClosed += (_, _) =>
+            {
+                closed.TrySetResult();
+                return Task.CompletedTask;
+            };
 
             await sv.PushAsync(
                     """{"op":"event","guildId":"777","type":"WebSocketClosedEvent","code":4006,"reason":"boom","byRemote":true}"""
                 )
                 .ConfigureAwait(false);
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
             var tornDown = await AdvanceUntilAsync(
                     time,
