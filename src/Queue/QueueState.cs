@@ -126,8 +126,7 @@ internal sealed record QueueState(
         if (from == to)
             return (this, true);
 
-        var track = Upcoming[from];
-        var after = this with { Upcoming = Upcoming.RemoveAt(from).Insert(to, track) };
+        var after = this with { Upcoming = MoveUpcoming(from, to) };
         return (from == 0 ? after.Pick(policy) : after, true);
     }
 
@@ -147,7 +146,7 @@ internal sealed record QueueState(
 
         return this with
         {
-            Upcoming = items.ToImmutable(),
+            Upcoming = items.MoveToImmutable(),
         };
     }
 
@@ -170,8 +169,17 @@ internal sealed record QueueState(
 
         return this with
         {
-            Upcoming = Upcoming.RemoveAt(picked).Insert(0, Upcoming[picked]),
+            Upcoming = MoveUpcoming(picked, 0),
         };
+    }
+
+    private ImmutableArray<Track> MoveUpcoming(int from, int to)
+    {
+        var items = Upcoming.ToBuilder();
+        var track = items[from];
+        items.RemoveAt(from);
+        items.Insert(to, track);
+        return items.MoveToImmutable();
     }
 
     internal QueueState Retire(bool failed, QueuePolicy policy)
