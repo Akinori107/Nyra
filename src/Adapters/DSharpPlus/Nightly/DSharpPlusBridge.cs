@@ -132,6 +132,7 @@ public sealed class DSharpPlusBridge
         if (
             Volatile.Read(ref _client) is not { } client
             || !client.Guilds.TryGetValue(guildId, out var guild)
+            || !guild.Channels.ContainsKey(channelId)
         )
             return null;
 
