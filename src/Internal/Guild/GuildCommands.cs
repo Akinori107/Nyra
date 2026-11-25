@@ -62,7 +62,11 @@ internal sealed class GuildCommands
                     EndTime = (long?)options?.EndTime?.TotalMilliseconds,
                     NextTrack = nextTrack is null
                         ? null
-                        : new PlayerUpdateTrack { Encoded = nextTrack.Encoded },
+                        : new PlayerUpdateTrack
+                        {
+                            Encoded = nextTrack.Encoded,
+                            UserData = nextTrack.ObjectUserData,
+                        },
                 },
                 ct,
                 options?.NoReplace ?? false
