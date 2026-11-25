@@ -191,27 +191,43 @@ public sealed class NyraExtension : IAsyncDisposable, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        try
+        using (var readyDeadline = new TimeoutLink(_time, GatewayReadyTimeout, cancellationToken))
         {
-            await Client
-                .WaitForReadyAsync(cancellationToken)
-                .WaitAsync(GatewayReadyTimeout, _time, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (TimeoutException exception)
-        {
-            throw new TimeoutException(
-                $"The Discord gateway did not become ready within {GatewayReadyTimeout}, ConnectAllNodesAsync gave up waiting.",
-                exception
-            );
-        }
-        catch (OperationCanceledException)
-            when (_disposed && !cancellationToken.IsCancellationRequested)
-        {
-            throw new ObjectDisposedException(
-                nameof(NyraExtension),
-                "The extension was disposed while connecting, the bridge's dispose failed the pending ready wait."
-            );
+            Task<ClientInformation>? ready = null;
+            try
+            {
+                ready = Client.WaitForReadyAsync(readyDeadline.Token);
+                await ready.WaitAsync(readyDeadline.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+                when (_disposed && !cancellationToken.IsCancellationRequested)
+            {
+                ready?.ObserveFaults();
+                throw new ObjectDisposedException(
+                    nameof(NyraExtension),
+                    "The extension was disposed while connecting, the bridge's dispose failed the pending ready wait."
+                );
+            }
+            catch (Exception exception)
+                when (exception is TimeoutException
+                    || (
+                        exception is OperationCanceledException
+                        && readyDeadline.IsCancellationRequested
+                        && !cancellationToken.IsCancellationRequested
+                    )
+                )
+            {
+                ready?.ObserveFaults();
+                throw new TimeoutException(
+                    $"The Discord gateway did not become ready within {GatewayReadyTimeout}, ConnectAllNodesAsync gave up waiting.",
+                    exception
+                );
+            }
+            catch (OperationCanceledException)
+            {
+                ready?.ObserveFaults();
+                throw;
+            }
         }
 
         _events.Logger = Client.Logger;
