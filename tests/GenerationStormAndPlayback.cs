@@ -1,5 +1,8 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Nyra.Entities;
+using Nyra.Exceptions;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -191,5 +194,69 @@ public sealed class GenerationStormAndPlayback
             Exception? exception,
             Func<TState, Exception?, string> formatter
         ) => throw new InvalidOperationException("generation storm: the logger itself dies");
+    }
+
+    private const string TrackJson =
+        """{"encoded":"fixture","info":{"identifier":"first","length":176000,"isSeekable":true,"isStream":false}}""";
+
+    private static string StateJson(long stamp) =>
+        $$$"""{"time":{{{stamp}}},"position":0,"connected":true,"ping":42}""";
+
+    private static async Task PlayAsync(Rig rig)
+    {
+        rig.PlayerReply = PlayerJson(TrackJson, stateJson: StateJson(0));
+        await rig
+            .Connection.PlayAsync(JsonSerializer.Deserialize<Track>(TrackJson)!)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task StartEventAsync(Rig rig, string track)
+    {
+        var seen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task Handler(object? sender, Nyra.EventArgs.TrackStartedEventArgs args)
+        {
+            seen.TrySetResult();
+            return Task.CompletedTask;
+        }
+        rig.Connection.TrackStarted += Handler;
+        try
+        {
+            await rig
+                .Server.PushAsync(
+                    $$"""{"op":"event","guildId":"777","type":"TrackStartEvent","track":{{track}}}"""
+                )
+                .ConfigureAwait(false);
+            await seen.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        }
+        finally
+        {
+            rig.Connection.TrackStarted -= Handler;
+        }
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task RejectedPauseOrResumePreservesEarlierSuccessfulRequest(bool resume)
+    {
+        var rig = await RigAsync(lavalink: true).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await PlayAsync(rig).ConfigureAwait(false);
+            rig.PlayerReply = PlayerJson(TrackJson, paused: true);
+            await rig.Connection.PauseAsync().ConfigureAwait(false);
+            if (resume)
+            {
+                rig.PlayerReply = PlayerJson(TrackJson);
+                await rig.Connection.ResumeAsync().ConfigureAwait(false);
+            }
+            rig.Server.On("PATCH", PlayerPath, 400, """{"message":"rejected"}""");
+            if (resume)
+                await Assert.That(() => rig.Connection.ResumeAsync()).Throws<RestException>();
+            else
+                await Assert.That(() => rig.Connection.PauseAsync()).Throws<RestException>();
+            await StartEventAsync(rig, TrackJson).ConfigureAwait(false);
+            await Assert.That(rig.Connection.IsPaused).IsEqualTo(!resume);
+        }
     }
 }
