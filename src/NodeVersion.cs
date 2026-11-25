@@ -39,32 +39,24 @@ public readonly struct NodeVersion(int major, int minor, int patch)
     {
         version = default;
         text = text.Trim();
-        if (text.Length > 0 && (text[0] == 'v' || text[0] == 'V'))
+        if (!text.IsEmpty && text[0] is 'v' or 'V')
             text = text[1..];
-        if (text.Length == 0 || !char.IsAsciiDigit(text[0]))
+
+        if (!TryReadNumber(ref text, out var major) || text.IsEmpty || text[0] != '.')
             return false;
-        var index = 0;
-        if (!TryReadNumber(text, ref index, out var major))
-            return false;
-        var minor = 0;
-        var patch = 0;
-        var sawDot = false;
-        if (ConsumeDot(text, ref index))
-        {
-            sawDot = true;
-            if (!TryReadNumber(text, ref index, out minor))
-                return false;
-        }
-        if (ConsumeDot(text, ref index))
-        {
-            sawDot = true;
-            if (!TryReadNumber(text, ref index, out patch))
-                return false;
-        }
-        if (!sawDot)
+        text = text[1..];
+        if (!TryReadNumber(ref text, out var minor))
             return false;
 
-        if (index < text.Length && text[index] is not ('-' or '+'))
+        var patch = 0;
+        if (!text.IsEmpty && text[0] == '.')
+        {
+            text = text[1..];
+            if (!TryReadNumber(ref text, out patch))
+                return false;
+        }
+
+        if (!text.IsEmpty && text[0] is not ('-' or '+'))
             return false;
         version = new NodeVersion(major, minor, patch);
         return true;
@@ -143,31 +135,14 @@ public readonly struct NodeVersion(int major, int minor, int patch)
     public static bool operator >=(NodeVersion left, NodeVersion right) =>
         left.CompareTo(right) >= 0;
 
-    private static bool ConsumeDot(ReadOnlySpan<char> text, ref int index)
+    private static bool TryReadNumber(ref ReadOnlySpan<char> text, out int value)
     {
-        if (index >= text.Length || text[index] != '.')
+        var end = text.IndexOfAnyExceptInRange('0', '9');
+        if (end < 0)
+            end = text.Length;
+        if (!int.TryParse(text[..end], NumberStyles.None, CultureInfo.InvariantCulture, out value))
             return false;
-        index++;
-        return true;
-    }
-
-    private static bool TryReadNumber(ReadOnlySpan<char> text, ref int index, out int value)
-    {
-        value = 0;
-        var end = index;
-        while (end < text.Length && char.IsAsciiDigit(text[end]))
-            end++;
-        if (
-            end == index
-            || !int.TryParse(
-                text[index..end],
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out value
-            )
-        )
-            return false;
-        index = end;
+        text = text[end..];
         return true;
     }
 }
