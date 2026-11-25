@@ -106,4 +106,105 @@ public sealed class PlayPath
                 .WaitsFor(assert => assert.IsTrue(), TimeSpan.FromSeconds(5));
         }
     }
+
+    [Test]
+    public async Task LinkStartMustPrecedeEndTime()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var conn = stack.Node.GetConnection(777)!;
+            stack.Server.On(
+                "GET",
+                "/v4/loadtracks",
+                200,
+                $$"""{"loadType":"track","data":{{TrackJson}}}"""
+            );
+            var loaded = (TrackLoaded)
+                await stack
+                    .Node.LoadTracksAsync("https://example.com/audio.mp3?t=15")
+                    .ConfigureAwait(false);
+            var track = loaded.Track;
+            var patchesBefore = stack.Server.RestCalls.Count(call =>
+                call.Method == "PATCH" && call.Path == PlayerPath
+            );
+
+            foreach (var end in new[] { 10, 15 })
+                await Assert
+                    .That(() => conn.PlayAsync(track, new(EndTime: TimeSpan.FromSeconds(end))))
+                    .Throws<ArgumentOutOfRangeException>();
+
+            await Assert
+                .That(
+                    stack.Server.RestCalls.Count(call =>
+                        call.Method == "PATCH" && call.Path == PlayerPath
+                    )
+                )
+                .IsEqualTo(patchesBefore);
+            await Assert.That(track.StartPosition).IsEqualTo(TimeSpan.FromSeconds(15));
+            await conn.PlayAsync(
+                    track,
+                    new(StartPosition: TimeSpan.FromSeconds(2), EndTime: TimeSpan.FromSeconds(10))
+                )
+                .ConfigureAwait(false);
+            await Assert
+                .That(
+                    stack
+                        .Server.RestCalls.Last(call =>
+                            call.Method == "PATCH" && call.Path == PlayerPath
+                        )
+                        .Body
+                )
+                .Contains("\"position\":2000");
+        }
+    }
+
+    [Test]
+    public async Task IdentifierLinkStartMustPrecedeEndTime()
+    {
+        var stack = await StartAsync(new FakeNodeServer { IsNodeLink = false, Semver = "4.2.0" })
+            .ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var conn = stack.Node.GetConnection(777)!;
+            const string identifier = "https://example.com/audio.mp3?t=15";
+            var patchesBefore = stack.Server.RestCalls.Count(call =>
+                call.Method == "PATCH" && call.Path == PlayerPath
+            );
+
+            foreach (var end in new[] { 10, 15 })
+                await Assert
+                    .That(async () =>
+                    {
+                        await conn.PlayIdentifierAsync(
+                                identifier,
+                                new(EndTime: TimeSpan.FromSeconds(end))
+                            )
+                            .ConfigureAwait(false);
+                    })
+                    .Throws<ArgumentOutOfRangeException>();
+
+            await Assert
+                .That(
+                    stack.Server.RestCalls.Count(call =>
+                        call.Method == "PATCH" && call.Path == PlayerPath
+                    )
+                )
+                .IsEqualTo(patchesBefore);
+            await conn.PlayIdentifierAsync(
+                    identifier,
+                    new(StartPosition: TimeSpan.FromSeconds(2), EndTime: TimeSpan.FromSeconds(10))
+                )
+                .ConfigureAwait(false);
+            await Assert
+                .That(
+                    stack
+                        .Server.RestCalls.Last(call =>
+                            call.Method == "PATCH" && call.Path == PlayerPath
+                        )
+                        .Body
+                )
+                .Contains("\"position\":2000");
+        }
+    }
 }
