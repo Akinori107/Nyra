@@ -55,28 +55,17 @@ internal sealed class TracksRest
         var json = await _rest
             .SendAsync(HttpMethod.Post, Routes.DecodeTracks, body, cancellationToken)
             .ConfigureAwait(false);
-        return RestClient.DeserializeList<Track>(json, Routes.DecodeTracks, options);
+        return RequireTrackCount(
+            RestClient.DeserializeList<Track>(json, Routes.DecodeTracks, options),
+            encodedTracks.Count,
+            Routes.DecodeTracks
+        );
     }
 
     public async Task<string> EncodeAsync(
         TrackEncodeRequest info,
         CancellationToken cancellationToken
-    )
-    {
-        var options = _rest.Options;
-        var body = NyraJson.SerializeToUtf8Bytes(new[] { info }, options);
-        var json = await _rest
-            .SendAsync(HttpMethod.Post, Routes.EncodedTracks, body, cancellationToken)
-            .ConfigureAwait(false);
-        var encoded = RestClient.DeserializeList<string>(json, Routes.EncodedTracks, options);
-        return encoded is { Count: > 0 }
-            ? encoded[0]
-            : throw new RestException(
-                (int)HttpStatusCode.OK,
-                Routes.EncodedTracks,
-                "The server returned no encoded track."
-            );
-    }
+    ) => (await EncodeManyAsync([info], cancellationToken).ConfigureAwait(false))[0];
 
     public async Task<IReadOnlyList<string>> EncodeManyAsync(
         IReadOnlyList<TrackEncodeRequest> infos,
@@ -88,8 +77,25 @@ internal sealed class TracksRest
         var json = await _rest
             .SendAsync(HttpMethod.Post, Routes.EncodedTracks, body, cancellationToken)
             .ConfigureAwait(false);
-        return RestClient.DeserializeList<string>(json, Routes.EncodedTracks, options);
+        return RequireTrackCount(
+            RestClient.DeserializeList<string>(json, Routes.EncodedTracks, options),
+            infos.Count,
+            Routes.EncodedTracks
+        );
     }
+
+    private static IReadOnlyList<T> RequireTrackCount<T>(
+        IReadOnlyList<T> tracks,
+        int expected,
+        string path
+    ) =>
+        tracks.Count == expected
+            ? tracks
+            : throw new RestException(
+                (int)HttpStatusCode.OK,
+                path,
+                $"The server returned {tracks.Count} tracks for {expected} requested tracks."
+            );
 
     public async Task<TrackStreamUrl> GetStreamUrlAsync(
         string encodedTrack,

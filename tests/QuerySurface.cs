@@ -228,4 +228,66 @@ public sealed class QuerySurface
             }
         }
     }
+
+    [Test]
+    [Arguments(0)]
+    [Arguments(1)]
+    [Arguments(3)]
+    public async Task ADecodeBatchWithMismatchedCardinalityIsRejected(int count)
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            stack.Server.On("POST", "/v4/decodetracks", _ => new FakeRestResponse(
+                200,
+                "[" + string.Join(",", Enumerable.Repeat(TrackJson, count)) + "]"
+            ));
+            await Assert
+                .That(async () =>
+                    await stack.Node.Tracks.DecodeManyAsync(["one", "two"]).ConfigureAwait(false)
+                )
+                .Throws<Nyra.Exceptions.RestException>();
+        }
+    }
+
+    [Test]
+    [Arguments(0)]
+    [Arguments(1)]
+    [Arguments(3)]
+    public async Task AnEncodeBatchWithMismatchedCardinalityIsRejected(int count)
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            stack.Server.On("POST", "/v4/encodedtracks", _ => new FakeRestResponse(
+                200,
+                "[" + string.Join(",", Enumerable.Repeat("\"QXRsZWFzdA==\"", count)) + "]"
+            ));
+            await Assert
+                .That(async () =>
+                    await stack
+                        .Node.Tracks.EncodeManyAsync([new TrackInfo(), new TrackInfo()])
+                        .ConfigureAwait(false)
+                )
+                .Throws<Nyra.Exceptions.RestException>();
+        }
+    }
+
+    [Test]
+    public async Task AResponseWithMultipleEncodedTracksIsRejectedForASingleEncode()
+    {
+        var stack = await StartAsync().ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            stack.Server.On("POST", "/v4/encodedtracks", _ => new FakeRestResponse(
+                200,
+                "[\"QXRsZWFzdA==\",\"Yg==\"]"
+            ));
+            await Assert
+                .That(async () =>
+                    await stack.Node.Tracks.EncodeAsync(new TrackInfo()).ConfigureAwait(false)
+                )
+                .Throws<Nyra.Exceptions.RestException>();
+        }
+    }
 }
