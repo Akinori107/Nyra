@@ -29,14 +29,12 @@ internal sealed class YouTubeRest
         CancellationToken cancellationToken
     )
     {
-        var options = _rest.Options;
-        var body = NyraJson.SerializeToUtf8Bytes(payload, options);
         return await _rest
-            .SendExpectingAsync<YouTubeConfigUpdate>(
+            .SendJsonAsync<YouTubeConfigUpdate, YouTubeConfigPatch>(
                 HttpMethod.Patch,
                 Routes.YouTubeConfig,
                 "update response",
-                body,
+                payload,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -47,14 +45,12 @@ internal sealed class YouTubeRest
         CancellationToken cancellationToken
     )
     {
-        var options = _rest.Options;
-        var body = NyraJson.SerializeToUtf8Bytes(new YouTubeTokenRefresh(refreshToken), options);
         return await _rest
-            .SendExpectingAsync<YouTubeToken>(
+            .SendJsonAsync<YouTubeToken, YouTubeTokenRefresh>(
                 HttpMethod.Post,
                 Routes.YouTubeOAuth,
                 "token response",
-                body,
+                new YouTubeTokenRefresh(refreshToken),
                 cancellationToken
             )
             .ConfigureAwait(false);

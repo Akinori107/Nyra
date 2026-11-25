@@ -15,17 +15,12 @@ internal sealed class SessionRest
     )
     {
         var path = BuildSessionPath();
-        var options = _rest.Options;
-        var body = NyraJson.SerializeToUtf8Bytes(
-            new SessionConfig { Resuming = resuming, Timeout = timeoutSeconds },
-            options
-        );
         return await _rest
-            .SendExpectingAsync<SessionConfig>(
+            .SendJsonAsync<SessionConfig, SessionConfig>(
                 HttpMethod.Patch,
                 path,
                 "session response",
-                body,
+                new SessionConfig { Resuming = resuming, Timeout = timeoutSeconds },
                 cancellationToken
             )
             .ConfigureAwait(false);

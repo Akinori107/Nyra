@@ -18,17 +18,12 @@ internal sealed class GroupsRest
     )
     {
         var path = BuildGroupsPath();
-        var options = _rest.Options;
-        var body = NyraJson.SerializeToUtf8Bytes(
-            new GroupCreatePayload(groupId, guildIds),
-            options
-        );
         return await _rest
-            .SendExpectingAsync<Group>(
+            .SendJsonAsync<Group, GroupCreatePayload>(
                 HttpMethod.Post,
                 path,
                 "group response",
-                body,
+                new GroupCreatePayload(groupId, guildIds),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -46,14 +41,12 @@ internal sealed class GroupsRest
     )
     {
         var path = BuildGroupPath(groupId);
-        var options = _rest.Options;
-        var body = NyraJson.SerializeToUtf8Bytes(update, options);
         return await _rest
-            .SendExpectingAsync<GroupUpdateResult>(
+            .SendJsonAsync<GroupUpdateResult, GroupUpdate>(
                 HttpMethod.Patch,
                 path,
                 "group response",
-                body,
+                update,
                 cancellationToken
             )
             .ConfigureAwait(false);
