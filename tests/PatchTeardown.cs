@@ -103,4 +103,90 @@ public sealed class PatchTeardown
         await extension.DisposeAsync().ConfigureAwait(false);
         server.Dispose();
     }
+
+    [Test]
+    [Arguments(false, false)]
+    [Arguments(false, true)]
+    [Arguments(true, false)]
+    [Arguments(true, true)]
+    public async Task OldSessionPlayerPatchDoesNotCaptureState(bool nodeLink, bool seek)
+    {
+        var fixture = new FakeNodeServer
+        {
+            IsNodeLink = nodeLink,
+            Semver = nodeLink ? "3.9.0" : "4.2.2",
+        };
+        var (extension, node, bridge, server) = await StartAsync(fixture).ConfigureAwait(false);
+        using (server)
+        await using (extension.ConfigureAwait(false))
+        {
+            var conn = await ConnectGuildAsync(bridge, node, server).ConfigureAwait(false);
+            const string body =
+                """{"guildId":"777","track":null,"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42},"voice":{"token":"tok","endpoint":"127.0.0.1","sessionId":"vsess"}}""";
+            var entered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var ready = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            node.Ready += (_, _) =>
+            {
+                ready.TrySetResult();
+                return Task.CompletedTask;
+            };
+            var secondEntered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var secondRelease = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var requests = 0;
+            server.On("PATCH", PlayerPath, _ =>
+            {
+                if (Interlocked.Increment(ref requests) == 1)
+                {
+                    entered.TrySetResult();
+                    release.Task.WaitAsync(TimeSpan.FromSeconds(15)).GetAwaiter().GetResult();
+                    return new FakeRestResponse(
+                        200,
+                        body.Replace("100", "25", StringComparison.Ordinal)
+                    );
+                }
+                secondEntered.TrySetResult();
+                secondRelease.Task.WaitAsync(TimeSpan.FromSeconds(15)).GetAwaiter().GetResult();
+                return new FakeRestResponse(200, body);
+            });
+            server.On("PATCH", "/v4/sessions/new-session/players/777", 200, body);
+            var pending = seek ? conn.SeekAsync(TimeSpan.FromSeconds(15)) : conn.SetVolumeAsync(25);
+            Task? second = null;
+            try
+            {
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                second = conn.SetVolumeAsync(100);
+                await secondEntered.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                server.SessionId = "new-session";
+                server.ResumeOnReconnect = false;
+                await server.DropConnectionAsync(1012, "restart").ConfigureAwait(false);
+                await Assert
+                    .That(() => node.SessionId)
+                    .WaitsFor(assert => assert.IsEqualTo("new-session"), TimeSpan.FromSeconds(5));
+                release.TrySetResult();
+                await pending.ConfigureAwait(false);
+                await Assert.That(conn.Volume).IsEqualTo(100);
+            }
+            finally
+            {
+                release.TrySetResult();
+                secondRelease.TrySetResult();
+                if (second is not null)
+                    await second.ConfigureAwait(false);
+                await pending.ConfigureAwait(false);
+            }
+            await ready.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await Assert.That(node.GetConnection(777)).IsSameReferenceAs(conn);
+        }
+    }
 }

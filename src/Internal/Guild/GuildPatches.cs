@@ -95,13 +95,15 @@ internal sealed class GuildPatches
         CancellationToken cancellationToken
     )
     {
+        var session = _node.SessionId;
         var requestTick = _node.Time.GetMilliseconds();
         var player = await SendAsync(
                 ct => _node.Rest.Players.UpdateAsync(GuildId, payload, ct),
                 cancellationToken
             )
             .ConfigureAwait(false);
-        _connection.CaptureState(player, requestTick);
+        if (session == _node.SessionId)
+            _connection.CaptureState(player, requestTick);
     }
 
     internal static bool MayHaveLanded(Exception exception) =>
