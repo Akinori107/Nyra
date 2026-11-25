@@ -36,52 +36,52 @@ internal sealed class NodeQueries
             return result;
         }
 
-        var identifier = searchType switch
+        var prefix = searchType switch
         {
-            SearchType.Auto or SearchType.YouTube => $"ytsearch:{query}",
-            SearchType.YouTubeMusic => $"ytmsearch:{query}",
-            SearchType.SoundCloud => $"scsearch:{query}",
-            SearchType.Raw => query,
-            SearchType.Spotify => $"spsearch:{query}",
-            SearchType.SpotifyRecommendations => $"sprec:{query}",
-            SearchType.Monochrome => $"monochrome:{query}",
-            SearchType.Gaana => $"gnsearch:{query}",
-            SearchType.Bandcamp => $"bcsearch:{query}",
-            SearchType.IHeartRadio => $"ihsearch:{query}",
-            SearchType.YouTubeRecommendations => $"ytrec:{query}",
-            SearchType.QobuzRecommendations => $"qbrec:{query}",
-            SearchType.LetrasRecommendations => $"lmrec:{query}",
-            SearchType.EternalBox => $"eternalbox:{query}",
-            SearchType.JioSaavn => $"jssearch:{query}",
-            SearchType.JioSaavnRecommendations => $"jsrec:{query}",
-            SearchType.Qobuz => $"qbsearch:{query}",
-            SearchType.Tidal => $"tdsearch:{query}",
-            SearchType.TidalRecommendations => $"tdrec:{query}",
-            SearchType.Letras => $"lmsearch:{query}",
-            SearchType.Audius => $"ausearch:{query}",
-            SearchType.VkMusic => $"vksearch:{query}",
-            SearchType.VkMusicRecommendations => $"vkrec:{query}",
-            SearchType.AmazonMusic => $"amazonmusic:{query}",
-            SearchType.Bluesky => $"bksearch:{query}",
-            SearchType.AppleMusic => $"amsearch:{query}",
-            SearchType.NetEase => $"ntsearch:{query}",
-            SearchType.YandexMusic => $"ymsearch:{query}",
-            SearchType.YandexMusicRecommendations => $"ymrec:{query}",
-            SearchType.Bilibili => $"bilisearch:{query}",
-            SearchType.LastFm => $"lfsearch:{query}",
-            SearchType.GoogleDrive => $"gdsearch:{query}",
-            SearchType.Shazam => $"shsearch:{query}",
-            SearchType.Deezer => $"dzsearch:{query}",
-            SearchType.DeezerRecommendations => $"dzrec:{query}",
-            SearchType.Anghami => $"agsearch:{query}",
-            SearchType.Audiomack => $"admsearch:{query}",
-            SearchType.Pandora => $"pdsearch:{query}",
-            SearchType.NicoVideo => $"ncsearch:{query}",
-            SearchType.SongLink => $"slsearch:{query}",
-            SearchType.Flowery => $"ftts:{query}",
-            SearchType.GoogleTts => $"gtts:{query}",
-            SearchType.PiperTts => $"pipertts:{query}",
-            SearchType.LazyPyTts => $"lazypytts:{query}",
+            SearchType.Auto or SearchType.YouTube => "ytsearch:",
+            SearchType.YouTubeMusic => "ytmsearch:",
+            SearchType.SoundCloud => "scsearch:",
+            SearchType.Spotify => RequireLavaSrc("spsearch:"),
+            SearchType.SpotifyRecommendations => RequireLavaSrc("sprec:"),
+            SearchType.Monochrome => RequireNodeLink("monochrome:"),
+            SearchType.Gaana => RequireNodeLink("gnsearch:"),
+            SearchType.Bandcamp => RequireNodeLink("bcsearch:"),
+            SearchType.IHeartRadio => RequireNodeLink("ihsearch:"),
+            SearchType.YouTubeRecommendations => RequireNodeLink("ytrec:"),
+            SearchType.QobuzRecommendations => RequireLavaSrc("qbrec:"),
+            SearchType.LetrasRecommendations => RequireNodeLink("lmrec:"),
+            SearchType.EternalBox => RequireNodeLink("eternalbox:"),
+            SearchType.JioSaavn => RequireLavaSrc("jssearch:"),
+            SearchType.JioSaavnRecommendations => RequireLavaSrc("jsrec:"),
+            SearchType.Qobuz => RequireLavaSrc("qbsearch:"),
+            SearchType.Tidal => RequireLavaSrc("tdsearch:"),
+            SearchType.TidalRecommendations => RequireLavaSrc("tdrec:"),
+            SearchType.Letras => RequireNodeLink("lmsearch:"),
+            SearchType.Audius => RequireNodeLink("ausearch:"),
+            SearchType.VkMusic => RequireLavaSrc("vksearch:"),
+            SearchType.VkMusicRecommendations => RequireLavaSrc("vkrec:"),
+            SearchType.AmazonMusic => RequireNodeLink("amazonmusic:"),
+            SearchType.Bluesky => RequireNodeLink("bksearch:"),
+            SearchType.AppleMusic => RequireLavaSrc("amsearch:"),
+            SearchType.NetEase => RequireNodeLink("ntsearch:"),
+            SearchType.YandexMusic => RequireLavaSrc("ymsearch:"),
+            SearchType.YandexMusicRecommendations => RequireLavaSrc("ymrec:"),
+            SearchType.Bilibili => RequireNodeLink("bilisearch:"),
+            SearchType.LastFm => RequireNodeLink("lfsearch:"),
+            SearchType.GoogleDrive => RequireNodeLink("gdsearch:"),
+            SearchType.Shazam => RequireNodeLink("shsearch:"),
+            SearchType.Deezer => RequireLavaSrc("dzsearch:"),
+            SearchType.DeezerRecommendations => RequireLavaSrc("dzrec:"),
+            SearchType.Anghami => RequireNodeLink("agsearch:"),
+            SearchType.Audiomack => RequireNodeLink("admsearch:"),
+            SearchType.Pandora => RequireNodeLink("pdsearch:"),
+            SearchType.NicoVideo => RequireNodeLink("ncsearch:"),
+            SearchType.SongLink => RequireNodeLink("slsearch:"),
+            SearchType.Flowery => RequireNodeLink("ftts:"),
+            SearchType.GoogleTts => RequireNodeLink("gtts:"),
+            SearchType.PiperTts => RequireNodeLink("pipertts:"),
+            SearchType.LazyPyTts => RequireNodeLink("lazypytts:"),
+            SearchType.Raw => string.Empty,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(searchType),
                 searchType,
@@ -89,7 +89,7 @@ internal sealed class NodeQueries
             ),
         };
 
-        RequireNodeLinkSearchSource(searchType);
+        var identifier = prefix + query;
 
         return await _node
             .Rest.Tracks.LoadAsync(identifier, cancellationToken)
@@ -108,64 +108,16 @@ internal sealed class NodeQueries
         return start == 0 && end == query.Length ? query : query[start..end];
     }
 
-    private void RequireNodeLinkSearchSource(SearchType searchType)
+    private string RequireLavaSrc(string prefix)
     {
-        if (
-            searchType
-            is SearchType.Spotify
-                or SearchType.SpotifyRecommendations
-                or SearchType.AppleMusic
-                or SearchType.Deezer
-                or SearchType.DeezerRecommendations
-                or SearchType.YandexMusic
-                or SearchType.YandexMusicRecommendations
-                or SearchType.VkMusic
-                or SearchType.VkMusicRecommendations
-                or SearchType.Tidal
-                or SearchType.TidalRecommendations
-                or SearchType.Qobuz
-                or SearchType.QobuzRecommendations
-                or SearchType.JioSaavn
-                or SearchType.JioSaavnRecommendations
-        )
-        {
-            NodeGuards.RequireNodeLinkOrPlugin(
-                _node,
-                NodeGuards.LavaSrcPlugin,
-                "this search source"
-            );
-            return;
-        }
+        NodeGuards.RequireNodeLinkOrPlugin(_node, NodeGuards.LavaSrcPlugin, "this search source");
+        return prefix;
+    }
 
-        if (
-            searchType
-            is SearchType.Bandcamp
-                or SearchType.Monochrome
-                or SearchType.YouTubeRecommendations
-                or SearchType.LetrasRecommendations
-                or SearchType.EternalBox
-                or SearchType.Gaana
-                or SearchType.IHeartRadio
-                or SearchType.Letras
-                or SearchType.Audius
-                or SearchType.AmazonMusic
-                or SearchType.Bluesky
-                or SearchType.NetEase
-                or SearchType.Bilibili
-                or SearchType.LastFm
-                or SearchType.GoogleDrive
-                or SearchType.Shazam
-                or SearchType.Anghami
-                or SearchType.Audiomack
-                or SearchType.Pandora
-                or SearchType.NicoVideo
-                or SearchType.SongLink
-                or SearchType.Flowery
-                or SearchType.GoogleTts
-                or SearchType.PiperTts
-                or SearchType.LazyPyTts
-        )
-            NodeGuards.RequireNodeLink(_node, "this search source");
+    private string RequireNodeLink(string prefix)
+    {
+        NodeGuards.RequireNodeLink(_node, "this search source");
+        return prefix;
     }
 
     internal async Task<IReadOnlyList<Player>> ListPlayersAsync(
