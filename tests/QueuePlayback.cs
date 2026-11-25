@@ -363,4 +363,59 @@ public sealed class QueuePlayback
                 .IsEqualTo("b,c,d,e");
         }
     }
+
+    private static string? PreloadedId(string? body)
+    {
+        if (body is null)
+            return null;
+        using var document = JsonDocument.Parse(body);
+        return
+            document.RootElement.TryGetProperty("nextTrack", out var track)
+            && track.ValueKind == JsonValueKind.Object
+            && track.TryGetProperty("encoded", out var encoded)
+            && encoded.GetString() is { } value
+            && value.StartsWith("enc-", StringComparison.Ordinal)
+            ? value[4..]
+            : null;
+    }
+
+    [Test]
+    public async Task MovingAnUnusableTrackToTheHeadClearsThePreviousPreload()
+    {
+        var rig = await StartAsync().ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.PreloadNext = true;
+            var invalid = JsonSerializer.Deserialize<Track>(
+                TrackJson("c").Replace("enc-c", "", StringComparison.Ordinal)
+            )!;
+            await rig
+                .Queue.EnqueueAsync([
+                    await rig.MakeAsync("a").ConfigureAwait(false),
+                    await rig.MakeAsync("b").ConfigureAwait(false),
+                    invalid,
+                ])
+                .ConfigureAwait(false);
+            await Assert
+                .That(rig.Server.RestCalls.Any(call => PreloadedId(call.Body) == "b"))
+                .IsTrue();
+            var before = rig.Server.RestCalls.Count;
+            await rig.Queue.MoveAsync(1, 0).ConfigureAwait(false);
+            var patches = rig
+                .Server.RestCalls.Skip(before)
+                .Where(call => call is { Method: "PATCH", Path: PlayerPath })
+                .ToList();
+            await Assert.That(patches.Count).IsEqualTo(1);
+            using var body = JsonDocument.Parse(patches[0].Body!);
+            await Assert
+                .That(body.RootElement.GetProperty("nextTrack").ValueKind)
+                .IsEqualTo(JsonValueKind.Null);
+            await Assert.That(rig.CurrentId).IsEqualTo("a");
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("c,b");
+            await rig.Queue.RemoveAsync(0).ConfigureAwait(false);
+            await Assert
+                .That(PreloadedId(rig.Server.RestCalls.Last(call => call.Method == "PATCH").Body))
+                .IsEqualTo("b");
+        }
+    }
 }

@@ -60,6 +60,9 @@ internal sealed class NextTrackPreloader(GuildQueue queue)
         try
         {
             var target = queue.PreloadNext ? queue.State.NextToPreload(queue.Policy) : null;
+            if (target is not null && string.IsNullOrWhiteSpace(target.Encoded))
+                target = null;
+
             if (ReferenceEquals(_preloaded, target))
                 return;
 
