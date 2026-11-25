@@ -1,3 +1,5 @@
+using Nyra.Abstractions;
+using Nyra.Exceptions;
 using static Nyra.Tests.NodeHarness;
 
 namespace Nyra.Tests;
@@ -36,6 +38,130 @@ public sealed class VoiceHandshakeEdge
         };
     }
 
+    private sealed class HeldJoinBridge : FakeBridge, IGuildRemovalSource
+    {
+        public event EventHandler<GuildRemovedEventArgs>? GuildRemoved;
+
+        public void FireGuildRemoved(ulong guildId) =>
+            GuildRemoved?.Invoke(this, new GuildRemovedEventArgs(guildId));
+
+        public TaskCompletionSource JoinSent { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource JoinMayFinish { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async Task SendVoiceUpdateAsync(
+            ulong guildId,
+            ulong? channelId,
+            bool selfDeaf = false,
+            bool selfMute = false,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await base.SendVoiceUpdateAsync(
+                    guildId,
+                    channelId,
+                    selfDeaf,
+                    selfMute,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            if (channelId is not null)
+            {
+                JoinSent.TrySetResult();
+                await JoinMayFinish.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    [Test]
+    public async Task GuildRemovalAfterBothVoiceUpdatesPreventsPlayerRegistration()
+    {
+        var bridge = new HeldJoinBridge();
+        var stack = await StartAsync(bridge: bridge).ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            AcceptPlayerPatch(stack.Server);
+            var join = stack.Node.ConnectAsync(777, 555);
+            try
+            {
+                await bridge.JoinSent.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                bridge.FireVoiceState(777, 555, "vsess");
+                bridge.FireVoiceServer(777, "tok", "127.0.0.1");
+                bridge.FireGuildRemoved(777);
+            }
+            finally
+            {
+                bridge.JoinMayFinish.TrySetResult();
+            }
+
+            await Assert
+                .That(async () =>
+                {
+                    await join.ConfigureAwait(false);
+                })
+                .Throws<VoiceHandshakeException>();
+            await Assert.That(stack.Node.GetConnection(777)).IsNull();
+            await Assert
+                .That(
+                    stack.Server.RestCalls.Any(call =>
+                        call.Method == "PATCH" && call.Path == PlayerPath
+                    )
+                )
+                .IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task FailedRegistrationInvalidatesAConnectionAlreadyReadByTheApp()
+    {
+        var bridge = new HeldJoinBridge();
+        var stack = await StartAsync(bridge: bridge).ConfigureAwait(false);
+        await using (stack.ConfigureAwait(false))
+        {
+            var registering = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var reject = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            stack.Server.On("PATCH", PlayerPath, _ =>
+            {
+                registering.TrySetResult();
+                reject.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+                return new FakeRestResponse(400, """{"message":"registration rejected"}""");
+            });
+
+            var join = stack.Node.ConnectAsync(777, 555);
+            GuildConnection? published;
+            try
+            {
+                await bridge.JoinSent.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                bridge.FireVoiceState(777, 555, "vsess");
+                bridge.FireVoiceServer(777, "tok", "127.0.0.1");
+                bridge.JoinMayFinish.TrySetResult();
+                await registering.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                published = stack.Node.GetConnection(777);
+            }
+            finally
+            {
+                bridge.JoinMayFinish.TrySetResult();
+                reject.TrySetResult();
+            }
+
+            await Assert
+                .That(async () =>
+                {
+                    await join.ConfigureAwait(false);
+                })
+                .Throws<RestException>();
+            await Assert.That(published).IsNotNull();
+            await Assert.That(published!.IsConnected).IsFalse();
+            await Assert.That(() => published.PauseAsync()).Throws<InvalidOperationException>();
+            await Assert.That(stack.Node.GetConnection(777)).IsNull();
+        }
+    }
+
     [Test]
     public async Task BlankServerUpdate()
     {
@@ -46,7 +172,7 @@ public sealed class VoiceHandshakeEdge
             AcceptPlayerPatch(server);
 
             var connect = node.ConnectAsync(777, 555);
-            await Task.Delay(100).ConfigureAwait(false);
+            await WaitForJoinAsync(bridge).ConfigureAwait(false);
             bridge.FireVoiceState(777, 555, "vsess");
             bridge.FireVoiceServer(777, string.Empty, string.Empty);
             bridge.FireVoiceServer(777, "tok", string.Empty);
