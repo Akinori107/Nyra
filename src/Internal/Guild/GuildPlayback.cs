@@ -56,17 +56,18 @@ internal sealed class GuildPlayback
         RequestKind Kind,
         long Stamped,
         long Previous,
-        long Sequence
+        long Sequence,
+        long PreviousSequence
     );
 
     internal RequestTicks StampPlayRequested() =>
-        Stamp(RequestKind.Play, ref _lastPlayRequestTick, out _lastPlayRequestSequence);
+        Stamp(RequestKind.Play, ref _lastPlayRequestTick, ref _lastPlayRequestSequence);
 
     internal RequestTicks StampPauseRequested() =>
-        Stamp(RequestKind.Pause, ref _lastPauseRequestTick, out _lastPauseRequestSequence);
+        Stamp(RequestKind.Pause, ref _lastPauseRequestTick, ref _lastPauseRequestSequence);
 
     internal RequestTicks StampResumeRequested() =>
-        Stamp(RequestKind.Resume, ref _lastResumeRequestTick, out _lastResumeRequestSequence);
+        Stamp(RequestKind.Resume, ref _lastResumeRequestTick, ref _lastResumeRequestSequence);
 
     internal void RestoreRequestTicks(RequestTicks stamped)
     {
@@ -89,16 +90,22 @@ internal sealed class GuildPlayback
             if (ownerSequence == stamped.Sequence)
             {
                 tick = stamped.Previous;
-                ownerSequence = 0;
+                ownerSequence = stamped.PreviousSequence;
             }
         }
     }
 
-    private RequestTicks Stamp(RequestKind kind, ref long tick, out long ownerSequence)
+    private RequestTicks Stamp(RequestKind kind, ref long tick, ref long ownerSequence)
     {
         lock (PositionLock)
         {
-            var stamp = new RequestTicks(kind, _time.GetMilliseconds(), tick, ++_requestSequence);
+            var stamp = new RequestTicks(
+                kind,
+                _time.GetMilliseconds(),
+                tick,
+                ++_requestSequence,
+                ownerSequence
+            );
             tick = stamp.Stamped;
             ownerSequence = stamp.Sequence;
             return stamp;
