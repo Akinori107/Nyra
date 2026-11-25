@@ -850,9 +850,6 @@ public sealed class GuildQueue
 
     private async Task OnRestoredAsync(object? sender, GuildConnectionRestoredEventArgs args)
     {
-        if (args.PlaybackResent)
-            return;
-
         var notes = new QueueNotes();
         var resume = false;
         await _gate.WaitAsync().ConfigureAwait(false);
@@ -861,7 +858,12 @@ public sealed class GuildQueue
             if (_detached)
                 return;
 
-            if (_state.Current is null)
+            if (args.PlaybackResent)
+            {
+                Interlocked.Exchange(ref _expectingSuccessor, 0);
+                _preloader.Forget();
+            }
+            else if (_state.Current is null)
                 resume = !_state.Upcoming.IsEmpty;
             else
                 Reset(QueueState.Empty);

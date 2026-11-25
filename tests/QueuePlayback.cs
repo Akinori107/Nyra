@@ -92,9 +92,9 @@ public sealed class QueuePlayback
         );
     }
 
-    private static async Task<Rig> StartAsync()
+    private static async Task<Rig> StartAsync(bool resume = true, bool rescue = false)
     {
-        var server = new FakeNodeServer();
+        var server = new FakeNodeServer { ResumeOnReconnect = resume };
         var bridge = new FakeBridge();
         bridge.GoReady();
         var extension = new NyraExtension(bridge);
@@ -103,6 +103,10 @@ public sealed class QueuePlayback
             new NodeOptions
             {
                 Name = "queue",
+                RescuePlayback = rescue,
+                Resuming = true,
+                ReconnectDelay = TimeSpan.FromMilliseconds(50),
+                MaxReconnectDelay = TimeSpan.FromMilliseconds(200),
                 VoiceHandshakeTimeout = TimeSpan.FromSeconds(5),
                 ReadyTimeout = TimeSpan.FromSeconds(5),
             }
@@ -361,6 +365,107 @@ public sealed class QueuePlayback
             await Assert
                 .That(Ids(rig.Queue.Upcoming.OrderBy(track => track.Info.Identifier)))
                 .IsEqualTo("b,c,d,e");
+        }
+    }
+
+    private static string? PreloadedId(string? body)
+    {
+        if (body is null)
+            return null;
+        using var document = JsonDocument.Parse(body);
+        return
+            document.RootElement.TryGetProperty("nextTrack", out var track)
+            && track.ValueKind == JsonValueKind.Object
+            && track.TryGetProperty("encoded", out var encoded)
+            && encoded.GetString() is { } value
+            && value.StartsWith("enc-", StringComparison.Ordinal)
+            ? value[4..]
+            : null;
+    }
+
+    [Test]
+    public async Task ARescuedQueuePreloadsAgainInTheNewSession()
+    {
+        var rig = await StartAsync(resume: false, rescue: true).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            rig.Queue.PreloadNext = true;
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            int PreloadCount() => rig.Server.RestCalls.Count(call => PreloadedId(call.Body) == "b");
+            await Assert.That(PreloadCount()).IsEqualTo(1);
+            var restored = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Queue.Connection.GuildConnectionRestored += (_, e) =>
+            {
+                restored.TrySetResult(e.PlaybackResent);
+                return Task.CompletedTask;
+            };
+            await rig.Server.DropConnectionAsync(1012, "restart").ConfigureAwait(false);
+            await Assert
+                .That(await restored.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
+                .IsTrue();
+            await Assert.That(PreloadCount()).IsEqualTo(2);
+            await Assert.That(rig.CurrentId).IsEqualTo("a");
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
+        }
+    }
+
+    [Test]
+    public async Task PendingQueueStartsWhenDirectPlaybackIsNotRescued()
+    {
+        var rig = await StartAsync(resume: false).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            await rig
+                .Queue.Connection.PlayAsync(await rig.MakeAsync("direct").ConfigureAwait(false))
+                .ConfigureAwait(false);
+            await rig.EnqueueAsync("a", "b").ConfigureAwait(false);
+            await Assert.That(rig.CurrentId).IsNull();
+            var restored = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Queue.Connection.GuildConnectionRestored += (_, e) =>
+            {
+                restored.TrySetResult(e.PlaybackResent);
+                return Task.CompletedTask;
+            };
+            rig.Server.On("PATCH", PlayerPath, call => new FakeRestResponse(
+                200,
+                $$$"""{"guildId":"777","track":{{{(PlayedId(call.Body) is { } id ? TrackJson(id) : "null")}}},"volume":100,"paused":false,"state":{"time":0,"position":0,"connected":true,"ping":42}}"""
+            ));
+            await rig.Server.DropConnectionAsync(1012, "restart").ConfigureAwait(false);
+            await Assert
+                .That(await restored.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
+                .IsFalse();
+            await Assert.That(rig.CurrentId).IsEqualTo("a");
+            await Assert.That(Ids(rig.Queue.Upcoming)).IsEqualTo("b");
+            await Assert.That(rig.Queue.History.Count).IsEqualTo(0);
+            await Assert.That(rig.Played).IsEqualTo("direct,a");
+        }
+    }
+
+    [Test]
+    public async Task RestoringAnEmptyQueueDoesNotStartPlayback()
+    {
+        var rig = await StartAsync(resume: false).ConfigureAwait(false);
+        await using (rig.ConfigureAwait(false))
+        {
+            var restored = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            rig.Queue.Connection.GuildConnectionRestored += (_, e) =>
+            {
+                restored.TrySetResult(e.PlaybackResent);
+                return Task.CompletedTask;
+            };
+            await rig.Server.DropConnectionAsync(1012, "restart").ConfigureAwait(false);
+            await Assert
+                .That(await restored.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
+                .IsFalse();
+            await Assert.That(rig.CurrentId).IsNull();
+            await Assert.That(rig.Queue.Upcoming.Count).IsEqualTo(0);
+            await Assert.That(rig.Played).IsEmpty();
         }
     }
 }
