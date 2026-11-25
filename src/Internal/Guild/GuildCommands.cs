@@ -142,10 +142,16 @@ internal sealed class GuildCommands
             )
             .ConfigureAwait(false);
 
-        var landed = options?.NoReplace != true && player.Track is not null;
+        var landed =
+            player.Track is not null
+            && (options?.NoReplace != true || !GuildConnection.IsSameTrack(before, player.Track));
         if (landed)
             _connection.RememberTrackOptions(player.Track, options);
-        _connection.CaptureState(player, requestTick, landed ? positionMilliseconds ?? 0 : null);
+        _connection.CaptureState(
+            player,
+            requestTick,
+            landed && options?.NoReplace != true ? positionMilliseconds ?? 0 : null
+        );
         return player.Track
             ?? throw new InvalidOperationException(
                 "The server did not resolve the identifier into a track."
