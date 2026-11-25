@@ -5,15 +5,13 @@ using Nyra.Exceptions;
 
 namespace Nyra.Internal;
 
-internal sealed class GuildRegistry
+internal sealed class GuildRegistry(Node node)
 {
     private const int MaxConcurrentDestroys = 8;
 
-    private readonly Node _node;
+    private readonly Node _node = node;
 
     private readonly SemaphoreSlim _destroyLimiter = new(MaxConcurrentDestroys);
-
-    internal GuildRegistry(Node node) => _node = node;
 
     internal ConcurrentDictionary<ulong, GuildConnection> Connections { get; } = new();
 

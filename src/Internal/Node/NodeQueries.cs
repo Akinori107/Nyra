@@ -3,11 +3,9 @@ using Nyra.Entities;
 
 namespace Nyra.Internal;
 
-internal sealed class NodeQueries
+internal sealed class NodeQueries(Node node)
 {
-    private readonly Node _node;
-
-    internal NodeQueries(Node node) => _node = node;
+    private readonly Node _node = node;
 
     internal async Task<LoadResult> LoadTracksAsync(
         string query,

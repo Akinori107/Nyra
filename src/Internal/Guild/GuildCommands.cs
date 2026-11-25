@@ -3,21 +3,15 @@ using Nyra.Entities;
 
 namespace Nyra.Internal;
 
-internal sealed class GuildCommands
+internal sealed class GuildCommands(GuildConnection connection)
 {
     private static readonly PlayerUpdatePayload StopPayload = new()
     {
         Track = new PlayerUpdateTrack { Encoded = null },
     };
 
-    private readonly GuildConnection _connection;
-    private readonly Node _node;
-
-    internal GuildCommands(GuildConnection connection)
-    {
-        _connection = connection;
-        _node = connection.Node;
-    }
+    private readonly GuildConnection _connection = connection;
+    private readonly Node _node = connection.Node;
 
     private ulong GuildId => _connection.GuildId;
 

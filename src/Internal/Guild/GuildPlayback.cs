@@ -4,9 +4,9 @@ using Nyra.EventArgs;
 
 namespace Nyra.Internal;
 
-internal sealed class GuildPlayback
+internal sealed class GuildPlayback(GuildConnection connection, TimeProvider time)
 {
-    private readonly GuildConnection _connection;
+    private readonly GuildConnection _connection = connection;
 
     private long _positionMilliseconds;
     private long _positionTick;
@@ -37,13 +37,7 @@ internal sealed class GuildPlayback
     private long _lastResumeRequestSequence;
     private Track? _anchorTrack;
 
-    private readonly TimeProvider _time;
-
-    internal GuildPlayback(GuildConnection connection, TimeProvider time)
-    {
-        _connection = connection;
-        _time = time;
-    }
+    private readonly TimeProvider _time = time;
 
     internal enum RequestKind
     {
