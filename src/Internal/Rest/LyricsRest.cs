@@ -30,12 +30,7 @@ internal sealed class LyricsRest
                 path = string.Concat(path, "&source=", Uri.EscapeDataString(source));
 
             return await _rest
-                .SendExpectingAsync<LyricsResult>(
-                    HttpMethod.Get,
-                    path,
-                    "lyrics result",
-                    cancellationToken: cancellationToken
-                )
+                .GetExpectingAsync<LyricsResult>(path, "lyrics result", cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -82,12 +77,7 @@ internal sealed class LyricsRest
             path = string.Concat(path, "&lang=", Uri.EscapeDataString(language));
 
         return await _rest
-            .SendExpectingAsync<MeaningResult>(
-                HttpMethod.Get,
-                path,
-                "meaning result",
-                cancellationToken: cancellationToken
-            )
+            .GetExpectingAsync<MeaningResult>(path, "meaning result", cancellationToken)
             .ConfigureAwait(false);
     }
 

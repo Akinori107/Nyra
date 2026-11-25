@@ -19,12 +19,7 @@ internal sealed class TracksRest
             Uri.EscapeDataString(identifier)
         );
         return await _rest
-            .SendExpectingAsync<LoadResult>(
-                HttpMethod.Get,
-                path,
-                "load result",
-                cancellationToken: cancellationToken
-            )
+            .GetExpectingAsync<LoadResult>(path, "load result", cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -36,12 +31,7 @@ internal sealed class TracksRest
             Uri.EscapeDataString(encodedTrack)
         );
         return await _rest
-            .SendExpectingAsync<Track>(
-                HttpMethod.Get,
-                path,
-                "track",
-                cancellationToken: cancellationToken
-            )
+            .GetExpectingAsync<Track>(path, "track", cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -105,12 +95,7 @@ internal sealed class TracksRest
         if (itag is not null)
             path = string.Concat(path, "&itag=", itag.Value.ToString(CultureInfo.InvariantCulture));
         var result = await _rest
-            .SendExpectingAsync<TrackStreamUrl>(
-                HttpMethod.Get,
-                path,
-                "track stream response",
-                cancellationToken: cancellationToken
-            )
+            .GetExpectingAsync<TrackStreamUrl>(path, "track stream response", cancellationToken)
             .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(result.Url))
             throw new RestException(
