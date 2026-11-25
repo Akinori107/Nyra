@@ -20,7 +20,7 @@ internal sealed record QueueState(
     internal Track? Head => Upcoming.IsEmpty ? null : Upcoming[0];
 
     internal Track? NextToPreload(QueuePolicy policy) =>
-        policy.Loop == LoopMode.Track ? null : Head;
+        policy.Loop == LoopMode.Track || Head?.StartPosition > TimeSpan.Zero ? null : Head;
 
     internal QueueState Enqueue(IReadOnlyList<Track> tracks, bool next, QueuePolicy policy)
     {
