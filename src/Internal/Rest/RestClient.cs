@@ -11,36 +11,31 @@ internal sealed class RestClient
 {
     internal const int MaxBodyBytes = 64 * 1024 * 1024;
 
+    internal const int MaxConnectionsPerNode = 256;
+
     private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromHours(1);
 
     private static readonly SocketsHttpHandler SharedHandler = new()
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         ConnectTimeout = TimeSpan.FromSeconds(10),
+        MaxConnectionsPerServer = MaxConnectionsPerNode,
     };
 
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(60);
+    internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(60);
 
-    private static readonly HttpClient Http = new(SharedHandler, disposeHandler: false)
+    internal static readonly HttpClient Http = new(SharedHandler, disposeHandler: false)
     {
         Timeout = Timeout.InfiniteTimeSpan,
     };
-
-    internal static readonly HttpClient StreamingHttp = new(SharedHandler, disposeHandler: false)
-    {
-        Timeout = Timeout.InfiniteTimeSpan,
-    };
-
-    private readonly Node _node;
-
-    private readonly Uri _baseUri;
-
     private static readonly MediaTypeHeaderValue JsonContentType = new("application/json");
+
+    private readonly SemaphoreSlim _slots = new(MaxConnectionsPerNode, MaxConnectionsPerNode);
 
     public RestClient(Node node)
     {
-        _node = node;
-        _baseUri = node.Endpoint.ToRestUri();
+        Node = node;
+        BaseUri = node.Endpoint.ToRestUri();
         Info = new InfoRest(this);
         Players = new PlayersRest(this);
         Tracks = new TracksRest(this);
@@ -52,9 +47,9 @@ internal sealed class RestClient
         YouTube = new YouTubeRest(this);
     }
 
-    internal Node Node => _node;
+    internal Node Node { get; }
 
-    internal Uri BaseUri => _baseUri;
+    internal Uri BaseUri { get; }
 
     internal InfoRest Info { get; }
 
@@ -85,7 +80,7 @@ internal sealed class RestClient
     {
         get
         {
-            var info = _node.ServerInfo;
+            var info = Node.ServerInfo;
             var isNodeLink = info?.IsNodeLink ?? false;
             if (isNodeLink || info?.EnabledFilters is not { } filters)
                 return NyraJson.OptionsFor(isNodeLink);
@@ -106,8 +101,7 @@ internal sealed class RestClient
         || (cached.Count == current.Count && cached.SetEquals(current));
 
     internal static bool IndicatesMissingResource(RestException exception) =>
-        exception.StatusCode == 404
-        && !exception.BodyUnreadable
+        exception is { StatusCode: 404, BodyUnreadable: false }
         && !IndicatesMissingSession(exception);
 
     internal static bool IndicatesMissingSession(RestException exception)
@@ -130,7 +124,7 @@ internal sealed class RestClient
         return body.Contains("session", StringComparison.OrdinalIgnoreCase);
     }
 
-    internal T? Deserialize<T>(byte[] json, string path, JsonSerializerOptions options)
+    internal static T? Deserialize<T>(byte[] json, string path, JsonSerializerOptions options)
     {
         try
         {
@@ -148,7 +142,7 @@ internal sealed class RestClient
         }
     }
 
-    internal T DeserializeOrThrow<T>(
+    internal static T DeserializeOrThrow<T>(
         byte[] json,
         string path,
         string what,
@@ -161,7 +155,7 @@ internal sealed class RestClient
             $"The server returned an empty {what}."
         );
 
-    internal IReadOnlyList<T> DeserializeList<T>(
+    internal static IReadOnlyList<T> DeserializeList<T>(
         byte[] json,
         string path,
         JsonSerializerOptions options
@@ -180,10 +174,10 @@ internal sealed class RestClient
     }
 
     private string RequireSessionId() =>
-        _node.SessionId is { Length: > 0 } sessionId
+        Node.SessionId is { Length: > 0 } sessionId
             ? sessionId
             : throw new InvalidOperationException(
-                $"Node '{_node.Name}' has no usable session id: the node is not ready yet, or the ready's id was dropped as header-hostile."
+                $"Node '{Node.Name}' has no usable session id: the node is not ready yet, or the ready's id was dropped as header-hostile."
             );
 
     internal string SessionPath(string route, params object[] arguments) =>
@@ -193,16 +187,74 @@ internal sealed class RestClient
             [Uri.EscapeDataString(RequireSessionId()), .. arguments]
         );
 
-    internal async Task<T> SendExpectingAsync<T>(
+    internal async Task<IReadOnlyList<T>> GetListAsync<T>(
+        string path,
+        CancellationToken cancellationToken
+    )
+    {
+        var options = Options;
+        var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return DeserializeList<T>(json, path, options);
+    }
+
+    internal async Task<T?> GetOptionalAsync<T>(string path, CancellationToken cancellationToken)
+        where T : class
+    {
+        var options = Options;
+        try
+        {
+            var json = await SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return Deserialize<T>(json, path, options);
+        }
+        catch (RestException exception) when (IndicatesMissingResource(exception))
+        {
+            return null;
+        }
+    }
+
+    internal Task<TResponse> SendJsonAsync<TResponse, TPayload>(
+        HttpMethod method,
+        string path,
+        string what,
+        TPayload payload,
+        CancellationToken cancellationToken
+    ) =>
+        SendExpectingAsync<TResponse>(
+            method,
+            path,
+            what,
+            NyraJson.SerializeToUtf8Bytes(payload, Options),
+            cancellationToken
+        );
+
+    internal Task<T> SendExpectingAsync<T>(
         HttpMethod method,
         string path,
         string what,
         byte[]? jsonBody = null,
         CancellationToken cancellationToken = default
+    ) => SendExpectingAsync<T>(method, path, what, jsonBody, RequestTimeout, cancellationToken);
+
+    internal async Task<T> SendExpectingAsync<T>(
+        HttpMethod method,
+        string path,
+        string what,
+        byte[]? jsonBody,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
     )
     {
         var options = Options;
-        var json = await SendAsync(method, path, jsonBody, cancellationToken).ConfigureAwait(false);
+        var (_, json) = await SendWithStatusAsync(
+                method,
+                path,
+                jsonBody,
+                timeout,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
         return DeserializeOrThrow<T>(json, path, what, options);
     }
 
@@ -217,18 +269,26 @@ internal sealed class RestClient
                 .ConfigureAwait(false)
         ).Body;
 
-    internal async Task<(int Status, byte[] Body)> SendWithStatusAsync(
+    internal Task<(int Status, byte[] Body)> SendWithStatusAsync(
         HttpMethod method,
         string path,
         byte[]? jsonBody = null,
         CancellationToken cancellationToken = default
+    ) => SendWithStatusAsync(method, path, jsonBody, RequestTimeout, cancellationToken);
+
+    private async Task<(int Status, byte[] Body)> SendWithStatusAsync(
+        HttpMethod method,
+        string path,
+        byte[]? jsonBody,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
     )
     {
         try
         {
-            var reply = await SendCoreAsync(method, path, jsonBody, cancellationToken)
+            var reply = await SendCoreAsync(method, path, jsonBody, timeout, cancellationToken)
                 .ConfigureAwait(false);
-            _node.NoteRestSuccess();
+            Node.NoteRestSuccess();
             return reply;
         }
         catch (Exception exception)
@@ -238,7 +298,7 @@ internal sealed class RestClient
                         or RestException { StatusCode: 429 or >= 500 }
             )
         {
-            _node.NoteRestFailure();
+            Node.NoteRestFailure();
             throw;
         }
     }
@@ -247,6 +307,7 @@ internal sealed class RestClient
         HttpMethod method,
         string path,
         byte[]? jsonBody,
+        TimeSpan timeout,
         CancellationToken cancellationToken
     )
     {
@@ -258,26 +319,23 @@ internal sealed class RestClient
                 Headers = { ContentType = JsonContentType },
             };
 
+        await _slots.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            HttpResponseMessage reply;
-            using (var headerCts = new TimeoutLink(_node.Time, RequestTimeout, cancellationToken))
-                reply = await Http.SendAsync(
-                        request,
-                        HttpCompletionOption.ResponseHeadersRead,
-                        headerCts.Token
-                    )
-                    .ConfigureAwait(false);
-            using var response = reply;
-
-            using var bodyCts = new TimeoutLink(_node.Time, RequestTimeout, cancellationToken);
+            using var deadline = new TimeoutLink(Node.Time, timeout, cancellationToken);
+            using var response = await Http.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    deadline.Token
+                )
+                .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
-                var retryAfter = ReadRetryAfter(response);
+                var retryAfter = ReadRetryAfter(response, Node.Time);
                 var (body, bodyUnreadable) = await ReadErrorBodyAsync(
                         response.Content,
-                        bodyCts.Token
+                        deadline.Token
                     )
                     .ConfigureAwait(false);
                 throw new RestException((int)response.StatusCode, path, body, retryAfter)
@@ -287,7 +345,7 @@ internal sealed class RestClient
             }
 
             var statusCode = (int)response.StatusCode;
-            var bytes = await ReadBoundedAsync(response.Content, MaxBodyBytes, bodyCts.Token)
+            var bytes = await ReadBoundedAsync(response.Content, MaxBodyBytes, deadline.Token)
                 .ConfigureAwait(false);
             return bytes is null
                 ? throw new RestException(
@@ -300,7 +358,7 @@ internal sealed class RestClient
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new TimeoutException(
-                $"The node '{_node.Name}' at {_node.Endpoint} did not answer the request in time, the client's own bound fired and the caller's token is intact."
+                $"The node '{Node.Name}' at {Node.Endpoint} did not answer the request in time, the client's own bound fired and the caller's token is intact."
             );
         }
         catch (OperationCanceledException exception)
@@ -308,21 +366,21 @@ internal sealed class RestClient
         {
             throw new OperationCanceledException(exception.Message, exception, cancellationToken);
         }
-        catch (HttpRequestException exception)
+        catch (Exception exception) when (exception is HttpRequestException or IOException)
         {
-            throw new NodeUnreachableException(
-                $"The node '{_node.Name}' at {_node.Endpoint} is not reachable: {exception.Message}",
-                exception
-            );
+            throw Unreachable(exception);
         }
-        catch (IOException exception)
+        finally
         {
-            throw new NodeUnreachableException(
-                $"The node '{_node.Name}' at {_node.Endpoint} is not reachable: {exception.Message}",
-                exception
-            );
+            _slots.Release();
         }
     }
+
+    internal NodeUnreachableException Unreachable(Exception exception) =>
+        new(
+            $"The node '{Node.Name}' at {Node.Endpoint} is not reachable: {exception.Message}",
+            exception
+        );
 
     internal static async Task<(string Body, bool Unreadable)> ReadErrorBodyAsync(
         HttpContent content,
@@ -384,14 +442,14 @@ internal sealed class RestClient
 
     internal HttpRequestMessage CreateRequest(HttpMethod method, string path, string accept)
     {
-        var request = new HttpRequestMessage(method, new Uri(_baseUri, path));
-        request.Headers.TryAddWithoutValidation("Authorization", _node.Endpoint.Password);
+        var request = new HttpRequestMessage(method, new Uri(BaseUri, path));
+        request.Headers.TryAddWithoutValidation("Authorization", Node.Endpoint.Password);
         request.Headers.TryAddWithoutValidation("User-Agent", ClientHeaders.UserAgent);
         request.Headers.TryAddWithoutValidation("Accept", accept);
         return request;
     }
 
-    internal static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+    internal static TimeSpan? ReadRetryAfter(HttpResponseMessage response, TimeProvider time)
     {
         var value = response.Headers.RetryAfter;
         if (value is null)
@@ -400,7 +458,7 @@ internal sealed class RestClient
             return delta < MaxRetryAfter ? delta : MaxRetryAfter;
         if (value.Date is { } date)
         {
-            var span = date - DateTimeOffset.UtcNow;
+            var span = date - time.GetUtcNow();
             return span > TimeSpan.Zero ? (span < MaxRetryAfter ? span : MaxRetryAfter) : null;
         }
         return null;

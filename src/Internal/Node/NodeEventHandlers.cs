@@ -8,9 +8,22 @@ internal sealed class NodeEventHandlers
 {
     private readonly Node _node;
 
-    private Timer? _readyWatchdog;
+    private ITimer? _readyWatchdog;
+
+    private ITimer? _failoverTimer;
+
+    private volatile bool _droppedNodeLink;
 
     private int _connectionEpoch;
+
+    internal int ConnectionEpoch
+    {
+        get
+        {
+            lock (_node.EventsLock)
+                return _connectionEpoch;
+        }
+    }
 
     private int _readyAbortClaimedEpoch = -1;
 
@@ -31,8 +44,7 @@ internal sealed class NodeEventHandlers
     }
 
     private static string? UsableSessionId(string? sessionId) =>
-        sessionId is null
-        || sessionId.Length == 0
+        string.IsNullOrEmpty(sessionId)
         || sessionId.Any(static c => c > 127 || char.IsControl(c) || char.IsWhiteSpace(c))
             ? null
             : sessionId;
@@ -42,7 +54,7 @@ internal sealed class NodeEventHandlers
         int epoch;
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown)
                 return -1;
 
             if (!_node.Connection.IsCurrentGeneration(generation))
@@ -62,13 +74,13 @@ internal sealed class NodeEventHandlers
     {
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown)
                 return;
 
             if (!_node.Connection.IsCurrentGeneration(generation))
                 return;
 
-            var timer = new Timer(
+            var timer = _node.Time.CreateTimer(
                 static state =>
                 {
                     var (events, token) = ((NodeEventHandlers, int))state!;
@@ -89,7 +101,7 @@ internal sealed class NodeEventHandlers
         TaskCompletionSource<bool>? completion;
         lock (_node.EventsLock)
         {
-            if (epoch != _connectionEpoch || _node.Stopped || _node.Disposed || _node.IsReady)
+            if (epoch != _connectionEpoch || _node.IsShutDown || _node.IsReady)
                 return;
 
             _readyAbortClaimedEpoch = epoch;
@@ -118,7 +130,7 @@ internal sealed class NodeEventHandlers
         try
         {
             lock (_node.EventsLock)
-                if (epoch != _connectionEpoch || _node.Stopped || _node.Disposed || _node.IsReady)
+                if (epoch != _connectionEpoch || _node.IsShutDown || _node.IsReady)
                     return;
 
             try
@@ -147,12 +159,18 @@ internal sealed class NodeEventHandlers
                 ? _node.SessionId
                 : null;
 
+        var effectiveResumed =
+            (eventArgs.Resumed ?? false)
+            && presentedSessionId is not null
+            && eventArgs.SessionId == presentedSessionId;
+
         string? usableSessionId;
         bool discordTracked;
+        int attempts;
 
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown)
                 return;
 
             if (connectionEpoch != _connectionEpoch)
@@ -163,28 +181,23 @@ internal sealed class NodeEventHandlers
 
             usableSessionId = UsableSessionId(eventArgs.SessionId);
             _node.SessionId = usableSessionId;
+            _node.LastReadyResumed = effectiveResumed;
+            if (!effectiveResumed)
+                _node.ResetSessionSettings();
+
             _node.IsReady = true;
-            _node.Connection.NoteReady();
+            DisarmFailover();
+            attempts = _node.Connection.NoteReady();
             _readyEpilogueRunning = true;
             discordTracked = !_stoppedSinceReady;
             _stoppedSinceReady = false;
         }
 
-        var effectiveResumed =
-            (eventArgs.Resumed ?? false)
-            && presentedSessionId is not null
-            && eventArgs.SessionId == presentedSessionId;
-
-        if (!effectiveResumed)
-            _node.ResetSessionSettings();
-
         if (!effectiveResumed && !_node.Connections.IsEmpty)
-            await GuardAllAsync(
-                    _node.Connections.Values.ToArray(),
-                    connection =>
-                        discordTracked
-                            ? connection.Teardown.HandleSessionLostAsync()
-                            : connection.Teardown.HandleSessionInvalidatedAsync()
+            await GuardAllAsync([.. _node.Connections.Values], connection =>
+                    discordTracked
+                        ? connection.Teardown.HandleSessionLostAsync()
+                        : connection.Teardown.HandleSessionInvalidatedAsync()
                 )
                 .ConfigureAwait(false);
 
@@ -194,6 +207,7 @@ internal sealed class NodeEventHandlers
                 {
                     connection.DiscardRestoreSnapshot();
                     await connection.ResendPendingVoiceAsync().ConfigureAwait(false);
+                    connection.ReapplyListeners();
                 }
                 catch (Exception exception)
                 {
@@ -212,14 +226,15 @@ internal sealed class NodeEventHandlers
                     Resumed = effectiveResumed,
                     ServerClaimedResume = eventArgs.Resumed,
                     SessionId = usableSessionId ?? string.Empty,
+                    Attempts = attempts,
                 }
             );
         }
         finally
         {
-            Stats? bufferedStats;
             lock (_node.EventsLock)
             {
+                Stats? bufferedStats = null;
                 if (connectionEpoch == _connectionEpoch)
                 {
                     _readyEpilogueRunning = false;
@@ -230,8 +245,6 @@ internal sealed class NodeEventHandlers
                             : null;
                     _statsBufferedDuringReady = null;
                 }
-                else
-                    bufferedStats = null;
 
                 if (bufferedStats is { } lateStats && !_node.Stopped && !_node.Disposed)
                     _node.RaiseStatsUpdated(new NodeStatsEventArgs(lateStats));
@@ -247,8 +260,11 @@ internal sealed class NodeEventHandlers
             _node.TakeConnectCompletion()?.TrySetResult(true);
         }
 
+        if (_node.Stats is null)
+            _ = FetchFirstStatsAsync();
+
         if (effectiveResumed)
-            _ = _node.GuardAsync(_node.Registry.DestroyOrphanPlayersAsync(CancellationToken.None));
+            _ = _node.GuardAsync(_node.Registry.ReconcileAfterResumeAsync());
 
         if (!_node.ResumingEnabled || effectiveResumed)
             return;
@@ -290,10 +306,19 @@ internal sealed class NodeEventHandlers
         }
     }
 
+    private async Task FetchFirstStatsAsync()
+    {
+        try
+        {
+            var stats = await _node.GetStatsAsync().ConfigureAwait(false);
+            HandleStats(stats, onlyIfFirst: true);
+        }
+        catch (Exception) { }
+    }
+
     private Task InvalidateAsync(GuildConnection[] invalidated) =>
-        GuardAllAsync(
-            invalidated,
-            connection => connection.Teardown.HandleSessionInvalidatedAsync()
+        GuardAllAsync(invalidated, connection =>
+            connection.Teardown.HandleSessionInvalidatedAsync()
         );
 
     private Task GuardAllAsync(GuildConnection[] connections, Func<GuildConnection, Task> handle) =>
@@ -301,11 +326,11 @@ internal sealed class NodeEventHandlers
             Array.ConvertAll(connections, connection => _node.GuardAsync(handle(connection)))
         );
 
-    internal void HandleStats(Stats stats)
+    internal void HandleStats(Stats stats, bool onlyIfFirst = false)
     {
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown || (onlyIfFirst && _node.Stats is not null))
                 return;
 
             _node.Stats = stats;
@@ -323,10 +348,7 @@ internal sealed class NodeEventHandlers
 
     internal GuildConnection[] SnapshotWorkerFailed(WorkerFailedEventArgs eventArgs)
     {
-        if (_node.Stopped || _node.Disposed)
-            return [];
-
-        if (eventArgs.AffectedGuilds is not { Count: > 0 } guilds)
+        if (_node.IsShutDown || eventArgs.AffectedGuilds is not { Count: > 0 } guilds)
             return [];
 
         var guildSet = guilds.ToHashSet();
@@ -347,7 +369,7 @@ internal sealed class NodeEventHandlers
         WorkerFailedEventArgs eventArgs
     )
     {
-        if (_node.Stopped || _node.Disposed)
+        if (_node.IsShutDown)
             return;
 
         if (eventArgs.AffectedGuilds is { Count: > 0 })
@@ -360,7 +382,7 @@ internal sealed class NodeEventHandlers
     {
         lock (_node.EventsLock)
         {
-            if (_node.Stopped || _node.Disposed)
+            if (_node.IsShutDown)
                 return;
             _node.ConnectionStatus = status;
             _node.RaiseConnectionStatusUpdated(new NodeConnectionStatusEventArgs(status));
@@ -375,7 +397,6 @@ internal sealed class NodeEventHandlers
         int ownerGeneration
     )
     {
-        TaskCompletionSource<bool>? completion;
         lock (_node.EventsLock)
         {
             if (_node.Connection.LatestGeneration != ownerGeneration)
@@ -391,11 +412,13 @@ internal sealed class NodeEventHandlers
 
             _readyEpilogueRunning = false;
 
-            completion = _node.TakeConnectCompletion(ownerGeneration);
+            var completion = _node.TakeConnectCompletion(ownerGeneration);
 
             _node.IsReady = false;
 
             DisarmReadyWatchdog();
+            if (_node.ServerInfo is { } info)
+                _droppedNodeLink = info.IsNodeLink;
             _node.InvalidateServerInfo();
 
             completion?.TrySetResult(false);
@@ -405,9 +428,63 @@ internal sealed class NodeEventHandlers
             );
         }
 
-        if (_node.Options.RescuePlayback)
+        var failover = _node.Options.FailoverAfter != Timeout.InfiniteTimeSpan;
+        if (_node.Options.RescuePlayback || failover)
             foreach (var connection in _node.Connections.Values)
                 connection.CaptureForRestore();
+
+        if (failover)
+            ArmFailover(_node.Options.FailoverAfter);
+    }
+
+    private void ArmFailover(TimeSpan delay)
+    {
+        lock (_node.EventsLock)
+        {
+            if (
+                _node.IsShutDown
+                || _node.Stopped
+                || _node.IsReady
+                || _node.Extension is null
+                || _failoverTimer is not null
+            )
+                return;
+
+            _failoverTimer = _node.Time.CreateTimer(
+                static state => ((NodeEventHandlers)state!).FailoverFired(),
+                this,
+                delay,
+                Timeout.InfiniteTimeSpan
+            );
+        }
+    }
+
+    private void DisarmFailover() => Interlocked.Exchange(ref _failoverTimer, null)?.Dispose();
+
+    private void FailoverFired()
+    {
+        lock (_node.EventsLock)
+        {
+            if (_failoverTimer is null)
+                return;
+
+            DisarmFailover();
+            if (_node.IsShutDown || _node.Stopped || _node.IsReady)
+                return;
+        }
+
+        _ = _node.GuardAsync(FailoverAsync());
+    }
+
+    private async Task FailoverAsync()
+    {
+        await _node.Registry.FailoverAsync(_droppedNodeLink).ConfigureAwait(false);
+        if (!_node.Connections.IsEmpty)
+            ArmFailover(
+                _node.Options.FailoverAfter > _node.Options.ReconnectDelay
+                    ? _node.Options.FailoverAfter
+                    : _node.Options.ReconnectDelay
+            );
     }
 
     internal void HandleError(Exception exception)
@@ -428,17 +505,6 @@ internal sealed class NodeEventHandlers
             }
             catch { }
 
-        try
-        {
-            _node.Logger?.LogError(
-                LogEvents.Node,
-                exception,
-                "An error occurred on node {NodeName}.",
-                _node.Name
-            );
-        }
-        catch { }
-
         _node.RaiseError(new NodeErrorEventArgs(exception, _node));
     }
 
@@ -449,6 +515,7 @@ internal sealed class NodeEventHandlers
             _connectionEpoch++;
             _stoppedSinceReady = true;
             DisarmReadyWatchdog();
+            DisarmFailover();
         }
     }
 }

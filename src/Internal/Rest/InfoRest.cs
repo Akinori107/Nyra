@@ -45,55 +45,35 @@ internal sealed class InfoRest
             if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
                 throw new JsonException("The info response's root is not a single JSON object.");
 
-            while (reader.Read())
+            while (ReadMember(ref reader, out var member))
             {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    break;
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (reader.ValueTextEquals("isNodelink"u8))
+                if (member.ValueTextEquals("isNodelink"u8))
                 {
-                    reader.Read();
                     if (reader.TokenType is JsonTokenType.True or JsonTokenType.False)
                         isNodeLink = reader.TokenType is JsonTokenType.True;
                     else
                         reader.Skip();
                 }
-                else if (reader.ValueTextEquals("version"u8))
+                else if (member.ValueTextEquals("version"u8))
                 {
-                    reader.Read();
                     if (reader.TokenType != JsonTokenType.StartObject)
                     {
                         reader.Skip();
                         continue;
                     }
 
-                    while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-                    {
-                        if (reader.TokenType != JsonTokenType.PropertyName)
-                            continue;
-
-                        if (reader.ValueTextEquals("semver"u8))
-                        {
-                            reader.Read();
-                            if (reader.TokenType is JsonTokenType.String)
-                                semver ??= reader.GetString();
-                            else
-                                reader.Skip();
-                        }
+                    while (ReadMember(ref reader, out var versionMember))
+                        if (
+                            versionMember.ValueTextEquals("semver"u8)
+                            && reader.TokenType == JsonTokenType.String
+                        )
+                            semver ??= reader.GetString();
                         else
-                        {
-                            reader.Read();
                             reader.Skip();
-                        }
-                    }
                 }
-                else if (reader.ValueTextEquals("filters"u8))
+                else if (member.ValueTextEquals("filters"u8))
                 {
                     filtersMemberSeen = true;
-                    reader.Read();
                     if (reader.TokenType != JsonTokenType.StartArray)
                     {
                         reader.Skip();
@@ -102,16 +82,15 @@ internal sealed class InfoRest
 
                     while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
                         if (
-                            reader.TokenType is JsonTokenType.String
+                            reader.TokenType == JsonTokenType.String
                             && reader.GetString() is { } filter
                         )
                             filters.Add(filter);
                         else
                             reader.Skip();
                 }
-                else if (reader.ValueTextEquals("plugins"u8))
+                else if (member.ValueTextEquals("plugins"u8))
                 {
-                    reader.Read();
                     if (reader.TokenType != JsonTokenType.StartArray)
                     {
                         reader.Skip();
@@ -126,27 +105,19 @@ internal sealed class InfoRest
                             continue;
                         }
 
-                        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-                        {
-                            var member = reader;
-                            reader.Read();
-
+                        while (ReadMember(ref reader, out var pluginMember))
                             if (
-                                member.ValueTextEquals("name"u8)
-                                && reader.TokenType is JsonTokenType.String
+                                pluginMember.ValueTextEquals("name"u8)
+                                && reader.TokenType == JsonTokenType.String
                                 && reader.GetString() is { } name
                             )
                                 plugins.Add(name);
                             else
                                 reader.Skip();
-                        }
                     }
                 }
                 else
-                {
-                    reader.Read();
                     reader.Skip();
-                }
             }
 
             if (reader.Read())
@@ -171,6 +142,22 @@ internal sealed class InfoRest
                 exception
             );
         }
+    }
+
+    private static bool ReadMember(ref Utf8JsonReader reader, out Utf8JsonReader member)
+    {
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                continue;
+
+            member = reader;
+            reader.Read();
+            return true;
+        }
+
+        member = default;
+        return false;
     }
 
     public async Task<Stats> GetStatsAsync(CancellationToken cancellationToken)
@@ -220,7 +207,7 @@ internal sealed class InfoRest
                     : "The server returned an empty route planner status."
             );
 
-        return _rest.DeserializeOrThrow<RoutePlannerStatus>(
+        return RestClient.DeserializeOrThrow<RoutePlannerStatus>(
             json,
             Routes.RoutePlannerStatus,
             "route planner status",

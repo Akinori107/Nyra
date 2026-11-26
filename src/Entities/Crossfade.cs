@@ -9,21 +9,15 @@ public enum CrossfadeCurve
     Linear,
 
     /// <summary>Exponential curve.</summary>
-    /// <remarks>
-    /// NodeLink only honors the linear, sine and sinusoidal curves, the server replaces any other curve with
-    /// sinusoidal or rejects the payload with 400.
-    /// </remarks>
+    /// <remarks>NodeLink does not support it and uses sinusoidal or rejects it.</remarks>
     Exponential,
 
     /// <summary>Logarithmic curve.</summary>
-    /// <remarks>
-    /// NodeLink only honors the linear, sine and sinusoidal curves, the server replaces any other curve with
-    /// sinusoidal or rejects the payload with 400.
-    /// </remarks>
+    /// <remarks>NodeLink does not support it and uses sinusoidal or rejects it.</remarks>
     Logarithmic,
 
     /// <summary>S-curve.</summary>
-    /// <remarks>Not honored by NodeLink, see <see cref="Exponential"/>.</remarks>
+    /// <remarks>NodeLink does not support it and uses sinusoidal or rejects it.</remarks>
     SCurve,
 
     /// <summary>Fades along a sine curve.</summary>
@@ -33,9 +27,7 @@ public enum CrossfadeCurve
     Sinusoidal,
 
     /// <summary>A curve the library does not know, reported by a newer server.</summary>
-    /// <remarks>
-    /// Sent back, the server replaces it with sinusoidal or rejects it with 400.
-    /// </remarks>
+    /// <remarks>Sent back as is, the server uses sinusoidal or rejects it.</remarks>
     Unknown,
 }
 
@@ -47,24 +39,15 @@ public enum CrossfadeMode
     /// </summary>
     Preload,
 
-    /// <summary>
-    /// Accepted and echoed, but the node never arms a crossfade when either track is a live stream and always
-    /// buffers the overlap, it only lowers the buffer retention default.
-    /// </summary>
-    /// <remarks>Do not rely on it for live-stream crossfades.</remarks>
+    /// <summary>Meant for live streams, but live streams never crossfade, it only lowers the buffer kept.</summary>
     Stream,
 
     /// <summary>Lets the node pick the preparation strategy.</summary>
-    /// <remarks>
-    /// Not accepted by NodeLink's config gate or PATCH validation, an unmodified server silently
-    /// applies the <see cref="Preload"/> profile, do not expect a behavior different from it.
-    /// </remarks>
+    /// <remarks>NodeLink runs it as <see cref="Preload"/>.</remarks>
     Smart,
 
     /// <summary>A mode the library does not know, reported by a newer server.</summary>
-    /// <remarks>
-    /// Sent back, the server replaces it with preload or rejects it with 400.
-    /// </remarks>
+    /// <remarks>Sent back as is, the server uses preload or rejects it.</remarks>
     Unknown,
 }
 
@@ -72,13 +55,8 @@ public enum CrossfadeMode
 /// Per-player crossfade configuration, applied with <see cref="GuildEffects.SetCrossfadeAsync"/>.
 /// </summary>
 /// <remarks>
-/// Null members fall back to the server defaults (5 s sinusoidal preload, 250 ms minimum buffer), except that
-/// a null Enabled leaves the crossfade off, so set it explicitly. NodeLink only.
-/// <para>
-/// The null-duration default is the 5 s only on a node whose runtime crossfade holds a duration. A node
-/// configured through its own config file echoes that partial configuration, where an enabled crossfade with a
-/// null duration is left disabled at runtime.
-/// </para>
+/// NodeLink only. Null members use the server defaults, except <see cref="Enabled"/>, which leaves the
+/// crossfade off, so set it.
 /// </remarks>
 public sealed record CrossfadeOptions
 {
@@ -88,8 +66,7 @@ public sealed record CrossfadeOptions
     public bool? Enabled { get; init; }
 
     /// <summary>
-    /// Crossfade duration in milliseconds, the server clamps it to 0-30000, 0 leaves the crossfade disabled at
-    /// runtime even when enabled.
+    /// Crossfade duration in milliseconds, 0-30000. 0 keeps the crossfade off even when enabled.
     /// </summary>
     [JsonPropertyName("duration")]
     [JsonConverter(typeof(RoundedInt32Converter))]
@@ -104,17 +81,14 @@ public sealed record CrossfadeOptions
     public CrossfadeMode? Mode { get; init; }
 
     /// <summary>
-    /// Minimum PCM the server buffers from the next track before a crossfade may start, in milliseconds,
-    /// 20-30000, the activation threshold saturates at 2 s, so this mainly sets the stream-mode retention
-    /// floor.
+    /// Minimum audio buffered from the next track before a crossfade can start, in milliseconds, 20-30000.
     /// </summary>
     [JsonPropertyName("minBufferMs")]
     [JsonConverter(typeof(RoundedInt32Converter))]
     public int? MinimumBufferMilliseconds { get; init; }
 
     /// <summary>
-    /// Extra crossfade PCM buffer, in milliseconds, 0-30000, the server already retains twice the duration
-    /// plus 4 s (capped at 16 s), so lower values are no-ops.
+    /// Extra crossfade buffer, in milliseconds, 0-30000.
     /// </summary>
     [JsonPropertyName("bufferMs")]
     [JsonConverter(typeof(RoundedInt32Converter))]

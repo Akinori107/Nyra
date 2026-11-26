@@ -1,5 +1,4 @@
 using Nyra.Entities;
-using Nyra.Exceptions;
 
 namespace Nyra.Internal;
 
@@ -9,28 +8,17 @@ internal sealed class PlayersRest
 
     internal PlayersRest(RestClient rest) => _rest = rest;
 
-    public async Task<Player?> GetAsync(ulong guildId, CancellationToken cancellationToken)
-    {
-        var path = BuildPlayerPath(guildId);
-        var options = _rest.Options;
-        try
-        {
-            var json = await _rest
-                .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-            return _rest.Deserialize<Player>(json, path, options);
-        }
-        catch (RestException exception) when (RestClient.IndicatesMissingResource(exception))
-        {
-            return null;
-        }
-    }
+    public async Task<Player?> GetAsync(ulong guildId, CancellationToken cancellationToken) =>
+        await _rest
+            .GetOptionalAsync<Player>(BuildPlayerPath(guildId), cancellationToken)
+            .ConfigureAwait(false);
 
     public async Task<Player> UpdateAsync<TPayload>(
         ulong guildId,
         TPayload payload,
         CancellationToken cancellationToken,
-        bool noReplace = false
+        bool noReplace = false,
+        TimeSpan? timeout = null
     )
     {
         var body = NyraJson.SerializeToUtf8Bytes(payload, _rest.Options);
@@ -40,6 +28,7 @@ internal sealed class PlayersRest
                 BuildPlayerPath(guildId) + (noReplace ? "?noReplace=true" : string.Empty),
                 "player response",
                 body,
+                timeout ?? RestClient.RequestTimeout,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -52,15 +41,10 @@ internal sealed class PlayersRest
             cancellationToken: cancellationToken
         );
 
-    public async Task<IReadOnlyList<Player>> ListAsync(CancellationToken cancellationToken)
-    {
-        var path = BuildPlayersPath();
-        var options = _rest.Options;
-        var json = await _rest
-            .SendAsync(HttpMethod.Get, path, cancellationToken: cancellationToken)
+    public async Task<IReadOnlyList<Player>> ListAsync(CancellationToken cancellationToken) =>
+        await _rest
+            .GetListAsync<Player>(BuildPlayersPath(), cancellationToken)
             .ConfigureAwait(false);
-        return _rest.DeserializeList<Player>(json, path, options);
-    }
 
     private string BuildPlayersPath() => _rest.SessionPath(Routes.Players);
 

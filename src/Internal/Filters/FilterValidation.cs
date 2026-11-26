@@ -171,11 +171,10 @@ internal static class FilterValidation
                 ThrowIfOutOfRange(phaser.MinFrequency, 0.0f, null, "phaser minFrequency");
                 ThrowIfOutOfRange(phaser.MaxFrequency, 0.0f, null, "phaser maxFrequency");
                 if (
-                    phaser.MinFrequency is { } minFrequency
-                    && phaser.MaxFrequency is { } maxFrequency
+                    phaser is { MinFrequency: { } minFrequency, MaxFrequency: { } maxFrequency }
                     && minFrequency > maxFrequency
                 )
-                    throw new ArgumentOutOfRangeException(
+                    ThrowOutOfRange(
                         "phaser maxFrequency",
                         maxFrequency,
                         "Must be at or above minFrequency."
@@ -202,12 +201,6 @@ internal static class FilterValidation
                 break;
             case TesseractFilter tesseract:
                 ThrowIfOutOfRange(tesseract.RotationHz, 0.0, null, "tesseract rotationHz");
-                if (tesseract.RotationHz is { } hz && hz > 0.0 && hz <= 0.001)
-                    throw new ArgumentOutOfRangeException(
-                        "tesseract rotationHz",
-                        hz,
-                        "NodeLink leaves anything at or below 0.001 off, use 0.0 to disable or a larger value."
-                    );
                 break;
             case RotationFilter rotation:
                 CheckFinite(rotation.RotationHz, "rotation rotationHz");
@@ -271,6 +264,9 @@ internal static class FilterValidation
                 "A member is not a finite number."
             );
     }
+
+    private static void ThrowOutOfRange(string name, object? actualValue, string message) =>
+        throw new ArgumentOutOfRangeException(name, actualValue, message);
 
     private static void CheckFinite<T>(T? value, string name)
         where T : struct, IFloatingPointIeee754<T>

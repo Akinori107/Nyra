@@ -10,8 +10,7 @@ public sealed record Chapter
 {
     /// <summary>The title of the chapter.</summary>
     /// <remarks>
-    /// Absorbs a null title the server sends, the getter never hands out null, a re-serialized chapter always
-    /// carries the title as a string.
+    /// A null title reads as an empty string.
     /// </remarks>
     [JsonPropertyName("title"), JsonInclude]
     public string Title
@@ -21,17 +20,12 @@ public sealed record Chapter
     } = string.Empty;
 
     /// <summary>Chapter start, in milliseconds.</summary>
-    /// <remarks>
-    /// No rounding converter, the server reports whole milliseconds here, a fractional start never reaches the
-    /// wire.
-    /// </remarks>
     [JsonPropertyName("startTime"), JsonInclude]
     public long StartTime { get; internal set; }
 
     /// <summary>Chapter length, in milliseconds, derived from the next chapter's start.</summary>
     /// <remarks>
-    /// A zero or negative value is the server reporting two boundaries at the same instant (zero) or out of
-    /// order (negative), not a length. A stream track reports the stream marker here, also not a length.
+    /// Zero or negative when the server sent bad boundaries, and the stream marker on a stream.
     /// </remarks>
     [JsonPropertyName("duration"), JsonInclude]
     [JsonConverter(typeof(RoundedInt64Converter))]
@@ -39,8 +33,7 @@ public sealed record Chapter
 
     /// <summary>Chapter end, in milliseconds.</summary>
     /// <remarks>
-    /// Redundant by construction (the start of the next chapter, or the track's own end for the last one), the
-    /// server also sends it explicitly, so it is bound for completeness, treat null as unknown.
+    /// Null when unknown.
     /// </remarks>
     [JsonPropertyName("endTime"), JsonInclude]
     [JsonConverter(typeof(RoundedInt64Converter))]

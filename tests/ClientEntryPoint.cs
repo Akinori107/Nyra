@@ -1,0 +1,271 @@
+using Discord.WebSocket;
+using DSharpPlus;
+using Microsoft.Extensions.Logging;
+using NetCord;
+using NetCord.Gateway;
+using Nyra.DiscordNet;
+using Nyra.DSharpPlus;
+using Nyra.NetCord;
+using DnetSharded = Discord.WebSocket.DiscordShardedClient;
+
+namespace Nyra.Tests;
+
+public sealed class ClientEntryPoint
+{
+    [Test]
+    public async Task DiscordNetEntryPoints()
+    {
+        using (var client = new DiscordSocketClient())
+        {
+            var first = client.UseNyra();
+            await Assert.That(first).IsNotNull();
+            await Assert.That(ReferenceEquals(client.UseNyra(), first)).IsTrue();
+            await Assert.That(ReferenceEquals(client.GetNyra(), first)).IsTrue();
+
+            first.Dispose();
+            await Assert.That(client.GetNyra()).IsNull();
+            var second = client.UseNyra();
+            await Assert.That(second).IsNotNull();
+            await Assert.That(ReferenceEquals(second, first)).IsFalse();
+
+            using (var other = new DiscordSocketClient())
+            {
+                var otherExtension = other.UseNyra();
+                await Assert.That(otherExtension).IsNotNull();
+                await Assert.That(ReferenceEquals(otherExtension, second)).IsFalse();
+                await Assert.That(other.GetNyra()).IsSameReferenceAs(otherExtension);
+                await Assert.That(client.GetNyra()).IsSameReferenceAs(second);
+                otherExtension.Dispose();
+            }
+
+            second.Dispose();
+        }
+
+        await Assert.That(new DiscordSocketClient().GetNyra()).IsNull();
+        await Assert
+            .That(() =>
+            {
+                DiscordSocketClientExtensions.UseNyra((DiscordSocketClient)null!);
+            })
+            .Throws<ArgumentNullException>();
+        await Assert
+            .That(() =>
+            {
+                DiscordSocketClientExtensions.GetNyra((DiscordSocketClient)null!);
+            })
+            .Throws<ArgumentNullException>();
+
+        using (var sharded = new DnetSharded())
+        {
+            var shardedFirst = sharded.UseNyra();
+            await Assert.That(shardedFirst).IsNotNull();
+            await Assert.That(ReferenceEquals(sharded.UseNyra(), shardedFirst)).IsTrue();
+            await Assert.That(ReferenceEquals(sharded.GetNyra(), shardedFirst)).IsTrue();
+            shardedFirst.Dispose();
+            await Assert.That(sharded.GetNyra()).IsNull();
+            var shardedSecond = sharded.UseNyra();
+            await Assert.That(shardedSecond).IsNotNull();
+            await Assert.That(ReferenceEquals(shardedSecond, shardedFirst)).IsFalse();
+            shardedSecond.Dispose();
+        }
+
+        await Assert
+            .That(() =>
+            {
+                DiscordSocketClientExtensions.UseNyra((DnetSharded)null!);
+            })
+            .Throws<ArgumentNullException>();
+        await Assert
+            .That(() =>
+            {
+                DiscordSocketClientExtensions.GetNyra((DnetSharded)null!);
+            })
+            .Throws<ArgumentNullException>();
+    }
+
+    [Test]
+    public async Task DSharpPlusEntryPoints()
+    {
+        using (var client = new DiscordClient(new DiscordConfiguration { Token = "offline" }))
+        {
+            var first = client.UseNyra();
+            await Assert.That(first).IsNotNull();
+            await Assert.That(ReferenceEquals(client.UseNyra(), first)).IsTrue();
+            await Assert.That(ReferenceEquals(client.GetNyra(), first)).IsTrue();
+
+            await Assert.That(ReferenceEquals(client.UseNyra(shardCount: 4), first)).IsTrue();
+
+            first.Dispose();
+            await Assert.That(client.GetNyra()).IsNull();
+            var second = client.UseNyra();
+            await Assert.That(second).IsNotNull();
+            await Assert.That(ReferenceEquals(second, first)).IsFalse();
+
+            client.RemoveNyra();
+            await Assert.That(client.GetNyra()).IsNull();
+            client.RemoveNyra();
+
+            await Assert
+                .That(new DiscordClient(new DiscordConfiguration { Token = "offline" }).GetNyra())
+                .IsNull();
+            await Assert
+                .That(() =>
+                {
+                    DiscordClientExtensions.UseNyra(null!);
+                })
+                .Throws<ArgumentNullException>();
+        }
+
+        using (var client = new DiscordClient(new DiscordConfiguration { Token = "offline" }))
+        {
+            var extension = client.UseNyra();
+            await Assert.That(extension).IsNotNull();
+            extension.Dispose();
+        }
+
+        var intentsLogger = new RecordingLogger();
+        using (
+            var client = new DiscordClient(
+                new DiscordConfiguration
+                {
+                    Token = "offline",
+                    Intents = DiscordIntents.DirectMessages,
+                    LoggerFactory = new SingleLoggerFactory(intentsLogger),
+                }
+            )
+        )
+        {
+            var extension = client.UseNyra();
+            extension.Dispose();
+        }
+
+        foreach (
+            var (intents, _) in new[]
+            {
+                (DiscordIntents.Guilds | DiscordIntents.GuildVoiceStates, false),
+                (DiscordIntents.GuildVoiceStates, true),
+                (DiscordIntents.Guilds, true),
+            }
+        )
+        {
+            var logger = new RecordingLogger();
+            using var client = new DiscordClient(
+                new DiscordConfiguration
+                {
+                    Token = "offline",
+                    Intents = intents,
+                    LoggerFactory = new SingleLoggerFactory(logger),
+                }
+            );
+            var extension = client.UseNyra();
+            extension.Dispose();
+        }
+
+        using (
+            var client = new DiscordClient(
+                new DiscordConfiguration
+                {
+                    Token = "offline",
+                    Intents = DiscordIntents.DirectMessages,
+                    LoggerFactory = new SingleLoggerFactory(new ThrowingLogger()),
+                }
+            )
+        )
+        {
+            var extension = client.UseNyra();
+            await Assert.That(extension).IsNotNull();
+            extension.Dispose();
+        }
+
+        using (
+            var client = new DiscordClient(
+                new DiscordConfiguration
+                {
+                    Token = "offline",
+                    LoggerFactory = new SingleLoggerFactory(new ThrowingLogger()),
+                }
+            )
+        )
+        {
+            var first = client.UseNyra(shardCount: 2);
+            await Assert.That(ReferenceEquals(client.UseNyra(shardCount: 4), first)).IsTrue();
+            first.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task NetCordEntryPoints()
+    {
+        var gateway = new GatewayClient(new BotToken("MTIz.ab.cd"));
+        var first = gateway.UseNyra();
+        await Assert.That(first).IsNotNull();
+        await Assert.That(ReferenceEquals(gateway.UseNyra(), first)).IsTrue();
+        await Assert.That(ReferenceEquals(gateway.GetNyra(), first)).IsTrue();
+        first.Dispose();
+        await Assert.That(gateway.GetNyra()).IsNull();
+        var second = gateway.UseNyra();
+        await Assert.That(second).IsNotNull();
+        await Assert.That(ReferenceEquals(second, first)).IsFalse();
+        second.Dispose();
+
+        await Assert
+            .That(() =>
+            {
+                GatewayClientExtensions.UseNyra((GatewayClient)null!);
+            })
+            .Throws<ArgumentNullException>();
+
+        var sharded = new ShardedGatewayClient(new BotToken("MTIz.ab.cd"));
+        var shardedFirst = sharded.UseNyra();
+        await Assert.That(shardedFirst).IsNotNull();
+        await Assert.That(ReferenceEquals(sharded.UseNyra(), shardedFirst)).IsTrue();
+        await Assert.That(ReferenceEquals(sharded.GetNyra(), shardedFirst)).IsTrue();
+        shardedFirst.Dispose();
+        await Assert.That(sharded.GetNyra()).IsNull();
+
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    private sealed class SingleLoggerFactory(ILogger logger) : ILoggerFactory
+    {
+        public ILogger CreateLogger(string categoryName) => logger;
+
+        public void AddProvider(ILoggerProvider provider) { }
+
+        public void Dispose() { }
+    }
+
+    private sealed class RecordingLogger : ILogger
+    {
+        public List<string> Messages { get; } = [];
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => Messages.Add(formatter(state, exception));
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+    }
+
+    private sealed class ThrowingLogger : ILogger
+    {
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => throw new InvalidOperationException("the logger itself is broken");
+
+        public bool IsEnabled(LogLevel logLevel) => false;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+    }
+}

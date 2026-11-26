@@ -17,11 +17,10 @@
   "automergeStrategy": "squash",
   "packageRules": [
     {
-      "description": "Self explanatory",
+      "description": "The nightly adapter is no longer updated",
       "matchFileNames": ["src/Adapters/DSharpPlus/Nightly/**"],
       "matchPackageNames": ["DSharpPlus*"],
-      "groupName": "DSharpPlus Nightly",
-      "ignoreUnstable": false
+      "enabled": false
     },
     {
       "description": "NetCord only provides pre-release versions so far",

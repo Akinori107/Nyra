@@ -6,13 +6,11 @@ namespace Nyra.EventArgs;
 public sealed class NodeStatsEventArgs : System.EventArgs
 {
     /// <summary>
-    /// The reported statistics, the same snapshot <see cref="Node.Stats"/> held when the raise was queued.
+    /// The reported statistics.
     /// </summary>
     /// <remarks>
-    /// By handler time a newer report may have replaced the property. A report that lands while the ready
-    /// phase runs is raised only after the Ready event, or dropped without a raise if the connection dies
-    /// first. The property already holds its data meanwhile, so the last raised snapshot can trail the
-    /// property until the deferred raise runs.
+    /// <see cref="Node.Stats"/> may already be newer. A report that arrives during the ready handshake is raised
+    /// after <see cref="Node.Ready"/>.
     /// </remarks>
     public Stats Stats { get; }
 

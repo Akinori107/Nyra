@@ -9,14 +9,12 @@ public sealed class FiltersChangedEventArgs : System.EventArgs
 {
     /// <summary>The guild the player plays in.</summary>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
     /// <summary>The filters the server reports as applied afterwards.</summary>
     /// <remarks>
-    /// Absorbs a null the server sends, the getter never hands out null, a missing or nulled chain reads as an
-    /// empty one, <see cref="Player.Filters"/> on the read models keeps its own null contract. An empty chain
-    /// re-sent writes every filter's neutral defaults, which are not all no-ops.
+    /// Never null, a missing value reads as an empty chain. Sending an empty chain back is not a no-op.
     /// </remarks>
     [JsonPropertyName("filters"), JsonInclude]
     public FilterChain Filters

@@ -3,17 +3,9 @@ using Microsoft.Extensions.Logging;
 namespace Nyra;
 
 /// <summary>Log event ids used by Nyra.</summary>
-/// <remarks>
-/// Messages the library forwards from third-party libraries (a Discord client's own log output) are re-emitted
-/// without an id from this catalog.
-/// </remarks>
 public static class LogEvents
 {
     /// <summary>The event id of the gateway intents a bridge requires.</summary>
-    /// <remarks>
-    /// Named NyraIntents to stay distinct from a Discord library's own "Intents" event id in the same logger
-    /// pipeline, a filter silencing theirs must not silence this critical with it.
-    /// </remarks>
     public static EventId Intents { get; } = new(1000, "NyraIntents");
 
     /// <summary>The event id of node activity.</summary>

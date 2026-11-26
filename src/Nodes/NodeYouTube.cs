@@ -28,8 +28,9 @@ public sealed class NodeYouTube
     )
     {
         _node.ThrowIfDisposed();
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "the YouTube config");
+        await _node
+            .RequireNodeLinkAsync("the YouTube config", cancellationToken)
+            .ConfigureAwait(false);
 
         return await _node
             .Rest.YouTube.GetConfigAsync(validate, cancellationToken)
@@ -71,8 +72,9 @@ public sealed class NodeYouTube
                 nameof(visitorData)
             );
 
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "the YouTube config");
+        await _node
+            .RequireNodeLinkAsync("the YouTube config", cancellationToken)
+            .ConfigureAwait(false);
 
         return await _node
             .Rest.YouTube.UpdateConfigAsync(
@@ -101,8 +103,9 @@ public sealed class NodeYouTube
         _node.ThrowIfDisposed();
         ArgumentException.ThrowIfNullOrWhiteSpace(refreshToken);
 
-        await _node.EnsureServerInfoAsync(cancellationToken).ConfigureAwait(false);
-        NodeGuards.RequireNodeLink(_node, "the YouTube OAuth route");
+        await _node
+            .RequireNodeLinkAsync("the YouTube OAuth route", cancellationToken)
+            .ConfigureAwait(false);
 
         return await _node
             .Rest.YouTube.RefreshTokenAsync(refreshToken, cancellationToken)

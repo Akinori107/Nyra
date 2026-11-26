@@ -5,57 +5,42 @@ namespace Nyra.Exceptions;
 /// <summary>
 /// A failed REST request against an audio node, carries the status code and error body when available.
 /// </summary>
-public sealed class RestException : NyraException
+/// <param name="statusCode">The HTTP status the server replied with.</param>
+/// <param name="path">The path the failed request went to.</param>
+/// <param name="responseBody">The body the server replied with, null when it sent none.</param>
+/// <param name="retryAfter">The retry delay the server asked for, null when it sent none.</param>
+/// <param name="innerException">The exception that caused this one, null when there is none.</param>
+/// <exception cref="ArgumentNullException"><paramref name="path"/> is null.</exception>
+public sealed class RestException(
+    int statusCode,
+    string path,
+    string? responseBody,
+    TimeSpan? retryAfter = null,
+    Exception? innerException = null
+) : NyraException(BuildMessage(statusCode, path, responseBody, retryAfter), innerException)
 {
     /// <summary>The HTTP status the server replied with.</summary>
     /// <remarks>
-    /// A failure raised on the client side (a body that did not parse) carries a synthetic 2xx, standing for
-    /// the reply the server gave before its body failed the read. Only a real server reply carries its own
-    /// status, including the route planner's empty 204, a success reported through the same type.
+    /// When the body could not be read, this is the success status the server sent with it.
     /// </remarks>
-    public int StatusCode { get; }
+    public int StatusCode { get; } = statusCode;
 
     /// <summary>The body the server replied with, null when it sent none.</summary>
     /// <remarks>
-    /// A client-side parse failure carries the client's diagnostic instead of the body, a reply the server
-    /// null-ed reads as null, the diagnostic is what the client kept. A body beyond the read bound is dropped,
-    /// it reads as an empty string.
+    /// When the body could not be read, Nyra's reason. A body too large reads as an empty string.
     /// </remarks>
-    public string? ResponseBody { get; }
+    public string? ResponseBody { get; } = responseBody;
 
     /// <summary>The path the failed request went to.</summary>
-    public string Path { get; }
+    public string Path { get; } = path;
 
     internal bool BodyUnreadable { get; init; }
 
     /// <summary>The retry delay the server asked for, null when it sent none.</summary>
     /// <remarks>
-    /// NodeLink's admission control answers 429 with this header, so the caller knows how long to wait before
-    /// retrying. A delay beyond one hour reads as one hour.
+    /// Set on a 429, capped at one hour.
     /// </remarks>
-    public TimeSpan? RetryAfter { get; }
-
-    /// <summary>Creates the exception.</summary>
-    /// <param name="statusCode">The HTTP status the server replied with.</param>
-    /// <param name="path">The path the failed request went to.</param>
-    /// <param name="responseBody">The body the server replied with, null when it sent none.</param>
-    /// <param name="retryAfter">The retry delay the server asked for, null when it sent none.</param>
-    /// <param name="innerException">The exception that caused this one, null when there is none.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="path"/> is null.</exception>
-    public RestException(
-        int statusCode,
-        string path,
-        string? responseBody,
-        TimeSpan? retryAfter = null,
-        Exception? innerException = null
-    )
-        : base(BuildMessage(statusCode, path, responseBody, retryAfter), innerException)
-    {
-        StatusCode = statusCode;
-        Path = path;
-        ResponseBody = responseBody;
-        RetryAfter = retryAfter;
-    }
+    public TimeSpan? RetryAfter { get; } = retryAfter;
 
     private static string BuildMessage(
         int statusCode,

@@ -1,0 +1,121 @@
+name: Contributing
+on:
+  pull_request:
+    branches: [dev, main]
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+concurrency:
+  group: contributing-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    name: PR
+    if: ${{ github.event.pull_request.user.login != 'renovate[bot]' && !(github.base_ref == 'main' && github.head_ref == 'dev' && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reject PRs to main
+        if: github.base_ref == 'main'
+        run: |
+          echo '::error title=Wrong base branch::Contributions go to dev branch'
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: github.base_ref == 'dev'
+        with:
+          fetch-depth: 0
+      - name: Check PR title and commit subjects
+        if: github.base_ref == 'dev'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          pattern='^(feat|fix|docs|refactor|chore)!?: [^[:space:]]'
+          failed=0
+
+          if [[ ! "$PR_TITLE" =~ $pattern ]]; then
+            printf '::error title=Invalid PR title::Got "%s". Title must start with a valid prefix\n' "$PR_TITLE"
+            failed=1
+          fi
+
+          commits=$(git log --no-merges --format='%h%x09%s' "origin/dev..$HEAD_SHA")
+          while IFS=$'\t' read -r sha subject; do
+            [[ -n "$sha" ]] || continue
+            if [[ ! "$subject" =~ $pattern ]]; then
+              printf '::error title=Invalid commit subject::%s %s\n' "$sha" "$subject"
+              failed=1
+            fi
+          done <<< "$commits"
+
+          if [[ "$failed" == 1 ]]; then
+            echo '::warning title=Allowed prefixes::Use feat:, fix:, docs:, refactor:, or chore:. Put ! before the colon for breaking changes.'
+          fi
+          exit "$failed"
+      - name: Reject merge commits
+        if: ${{ !cancelled() && github.base_ref == 'dev' }}
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          merges=$(git log --merges --format='%h %s' "origin/dev..$HEAD_SHA")
+          [[ -z "$merges" ]] && exit 0
+          while IFS= read -r line; do
+            printf '::error title=Merge commit::%s\n' "$line"
+          done <<< "$merges"
+          echo '::warning title=Merge commits::Rebase on dev instead of merging it'
+          exit 1
+      - name: Reject code comments
+        if: ${{ !cancelled() && github.base_ref == 'dev' }}
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --unified=0 "origin/dev...$HEAD_SHA" -- '*.cs' | python3 -c '
+          import re, sys
+
+          failed = False
+          path = None
+          line = 0
+          for raw in sys.stdin:
+              if raw.startswith("+++ "):
+                  path = raw[6:].strip()
+              elif raw.startswith("@@"):
+                  line = int(re.search(r"\+(\d+)", raw).group(1))
+              elif raw.startswith("+"):
+                  if raw[1:].lstrip().startswith("///"):
+                      line += 1
+                      continue
+                  code = re.sub(r"\"(?:[^\"\\]|\\.)*\"", "\"\"", raw[1:])
+                  if re.search(r"(?<!/)//(?!/)|/\*", code):
+                      print(f"::error file={path},line={line},title=Code comment::Remove the comment")
+                      failed = True
+                  line += 1
+          sys.exit(1 if failed else 0)
+          '
+      - name: Check PR description follows the template
+        if: ${{ !cancelled() && github.base_ref == 'dev' }}
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          body = (os.environ.get("PR_BODY") or "").replace("\r\n", "\n")
+          body = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+
+          failed = False
+          for name in ["Purpose", "Details", "Checks", "Server Version"]:
+              match = re.search(
+                  rf"^## {re.escape(name)}[ \t]*(?:\n|\Z)(.*?)(?=^## |\Z)", body, re.M | re.S
+              )
+              if match is None:
+                  print(f"::error title=Template violated::Missing section '## {name}'")
+                  failed = True
+              elif name in ("Purpose", "Details") and not match.group(1).strip():
+                  print(f"::error title=Template violated::Section '## {name}' is empty")
+                  failed = True
+
+          if failed:
+              print("::warning title=PR template::Fill the sections from .github/PULL_REQUEST_TEMPLATE.md")
+              sys.exit(1)
+          PY

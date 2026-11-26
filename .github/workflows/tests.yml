@@ -12,26 +12,45 @@ permissions:
   id-token: write
 jobs:
   tests:
-    name: Suite
+    name: Suite (${{ matrix.framework }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: [net10.0, net11.0]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
         with:
-          dotnet-version: '10.0.x'
-      - run: dotnet build --configuration Release
+          dotnet-version: |
+            10.0.x
+            11.0.x
+      - name: Reject internal access in tests
+        run: |
+          pattern='System\.Reflection|BindingFlags|(Method|Field|Property|Member|Constructor|Event|Parameter)Info\b|MethodBase\b|TypeInfo\b|Runtime(Method|Field|Type)Handle|\.Assembly\b|\bAssembly\.|Type\.GetType\(|\.Get(Method|Field|Member|Constructor|Event|NestedType|Interface|Runtime\w+)s?\(|\.GetProperties\(|\.GetProperty\((?!"[a-z])|InvokeMember|MakeGeneric(Method|Type)|CreateDelegate|\bActivator\.|GetUninitializedObject|\bExpression\.\w+\(|Reflection\.Emit|DynamicMethod|AssemblyLoadContext|UnsafeAccessor|IgnoresAccessChecksTo|\bUnsafe\.|\bunsafe\b|MemoryMarshal|\bMarshal\.|GCHandle|TypedReference|__makeref|<Compile\b|<Reference\b'
+          failed=0
+          if git grep -nP "$pattern" -- 'tests/*.cs' 'tests/*.csproj' 'tests/*.props' 'tests/*.targets' > hits; then
+            while IFS=: read -r file line _; do
+              echo "::error file=$file,line=$line,title=Internal access::Tests only use the public API"
+            done < hits
+            failed=1
+          fi
+          packages=$(git grep -hoP '<PackageReference Include="\K[^"]+' -- 'tests/*.csproj' 'tests/*.props' 'tests/*.targets' | grep -vxE 'TUnit|Microsoft\.Extensions\.TimeProvider\.Testing' || true)
+          for package in $packages; do
+            echo "::error title=Test package::$package is not allowed in tests"
+            failed=1
+          done
+          exit "$failed"
+      - run: dotnet build --configuration Release -f ${{ matrix.framework }}
       - run: >-
-          dotnet run --project tests/Nyra.Tests --configuration Release --no-build --
-          --fail-fast --timeout 5m --minimum-expected-tests 549
+          dotnet run --project tests --configuration Release --no-build -f ${{ matrix.framework }} --
+          --fail-fast --timeout 3m --maximum-parallel-tests 16
           --results-directory results --coverage --coverage-output-format cobertura
           --coverage-output results.xml
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
+        if: matrix.framework == 'net11.0'
         with:
           files: results/results.xml
           disable_search: true
           use_oidc: true
-      - run: >-
-          dotnet run --project tests/Nyra.Tests.Nightly --configuration Release --no-build --
-          --fail-fast --timeout 10m --minimum-expected-tests 8
-        if: always()

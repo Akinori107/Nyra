@@ -50,12 +50,16 @@ internal static class NyraJson
         JsonSerializerOptions options
     ) => JsonSerializer.Deserialize(ref reader, TypeInfoOf<TValue>(options));
 
+#if NET11_0_OR_GREATER
     private static JsonTypeInfo<TValue> TypeInfoOf<TValue>(JsonSerializerOptions options) =>
-        options.GetTypeInfo(typeof(TValue)) is JsonTypeInfo<TValue> typeInfo
-            ? typeInfo
-            : throw new NotSupportedException(
-                $"The type '{typeof(TValue)}' is not covered by the options' serialization context."
-            );
+        options.GetTypeInfo<TValue>();
+#else
+    private static JsonTypeInfo<TValue> TypeInfoOf<TValue>(JsonSerializerOptions options) =>
+        options.GetTypeInfo(typeof(TValue)) as JsonTypeInfo<TValue>
+        ?? throw new NotSupportedException(
+            $"The type '{typeof(TValue)}' is not covered by the options' serialization context."
+        );
+#endif
 
     private static JsonSerializerOptions Create(
         bool? isNodeLink = null,
@@ -106,28 +110,36 @@ internal sealed class SnowflakeConverter : JsonConverter<ulong>
         JsonSerializerOptions options
     )
     {
-        switch (reader.TokenType)
-        {
-            case JsonTokenType.String:
-                if (JsonNumberParsing.TryParseUtf8UInt64(ref reader, out var parsed))
-                    return parsed;
+        if (TryRead(ref reader, out var value))
+            return value;
 
-                throw new JsonException(
-                    "Cannot read a snowflake, the string does not parse as one."
-                );
-            case JsonTokenType.Number:
-                if (reader.TryGetUInt64(out var number))
-                    return number;
-
-                throw new JsonException("Cannot read a snowflake, the number does not fit one.");
-            case JsonTokenType.Null:
-                throw new JsonException("Cannot read a snowflake, the server sent a JSON null.");
-        }
-
-        throw new JsonException($"Cannot read snowflake value of token type '{reader.TokenType}'.");
+        throw new JsonException(
+            reader.TokenType switch
+            {
+                JsonTokenType.String =>
+                    "Cannot read a snowflake, the string does not parse as one.",
+                JsonTokenType.Number => "Cannot read a snowflake, the number does not fit one.",
+                JsonTokenType.Null => "Cannot read a snowflake, the server sent a JSON null.",
+                _ => $"Cannot read snowflake value of token type '{reader.TokenType}'.",
+            }
+        );
     }
 
-    public override void Write(Utf8JsonWriter writer, ulong value, JsonSerializerOptions options)
+    internal static bool TryRead(ref Utf8JsonReader reader, out ulong value)
+    {
+        value = default;
+        return reader.TokenType switch
+        {
+            JsonTokenType.String => JsonNumberParsing.TryParseUtf8UInt64(ref reader, out value),
+            JsonTokenType.Number => reader.TryGetUInt64(out value),
+            _ => false,
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, ulong value, JsonSerializerOptions options) =>
+        WriteValue(writer, value);
+
+    internal static void WriteValue(Utf8JsonWriter writer, ulong value)
     {
         Span<char> buffer = stackalloc char[20];
         value.TryFormat(buffer, out var written, provider: CultureInfo.InvariantCulture);
@@ -135,101 +147,27 @@ internal sealed class SnowflakeConverter : JsonConverter<ulong>
     }
 }
 
-internal abstract class NullAsDefaultConverter<T>(JsonConverter<T> strict) : JsonConverter<T>
-    where T : struct
+internal sealed class NullableSnowflakeConverter : JsonConverter<ulong?>
 {
-    public override T Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    ) =>
-        reader.TokenType == JsonTokenType.Null
-            ? default
-            : strict.Read(ref reader, typeToConvert, options);
+    private static readonly SnowflakeConverter Strict = new();
 
-    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options) =>
-        strict.Write(writer, value, options);
-}
-
-internal abstract class NullAsNullConverter<T>(JsonConverter<T> strict) : JsonConverter<T?>
-    where T : struct
-{
-    public override T? Read(
+    public override ulong? Read(
         ref Utf8JsonReader reader,
         Type typeToConvert,
         JsonSerializerOptions options
     ) =>
         reader.TokenType == JsonTokenType.Null
             ? null
-            : strict.Read(ref reader, typeToConvert, options);
+            : Strict.Read(ref reader, typeToConvert, options);
 
-    public override void Write(Utf8JsonWriter writer, T? value, JsonSerializerOptions options)
+    public override void Write(Utf8JsonWriter writer, ulong? value, JsonSerializerOptions options)
     {
-        if (value.HasValue)
-            strict.Write(writer, value.Value, options);
+        if (value is { } id)
+            SnowflakeConverter.WriteValue(writer, id);
         else
             writer.WriteNullValue();
     }
 }
-
-internal sealed class TolerantSnowflakeConverter()
-    : NullAsDefaultConverter<ulong>(new SnowflakeConverter());
-
-internal sealed class NullableSnowflakeConverter()
-    : NullAsNullConverter<ulong>(new SnowflakeConverter());
-
-internal abstract class GarbageAsDefaultConverter<T>(JsonConverter<T> strict)
-    : NullAsDefaultConverter<T>(strict)
-    where T : struct
-{
-    public override T Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    )
-    {
-        try
-        {
-            return base.Read(ref reader, typeToConvert, options);
-        }
-        catch (JsonException)
-        {
-            reader.Skip();
-            return default;
-        }
-    }
-}
-
-internal abstract class GarbageAsNullConverter<T>(JsonConverter<T> strict)
-    : NullAsNullConverter<T>(strict)
-    where T : struct
-{
-    public override T? Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    )
-    {
-        try
-        {
-            return base.Read(ref reader, typeToConvert, options);
-        }
-        catch (JsonException)
-        {
-            reader.Skip();
-            return null;
-        }
-    }
-}
-
-internal sealed class TolerantRoundedInt32Converter()
-    : GarbageAsDefaultConverter<int>(new RoundedInt32Converter());
-
-internal sealed class TolerantRoundedInt64Converter()
-    : GarbageAsDefaultConverter<long>(new RoundedInt64Converter());
-
-internal sealed class TolerantNullableRoundedInt64Converter()
-    : GarbageAsNullConverter<long>(new RoundedInt64Converter());
 
 internal sealed class StringOrNumberConverter : JsonConverter<string?>
 {
@@ -242,41 +180,21 @@ internal sealed class StringOrNumberConverter : JsonConverter<string?>
         {
             JsonTokenType.String => reader.GetString(),
             JsonTokenType.Number => ReadNumberAsRawText(ref reader),
-            JsonTokenType.Null => null,
             _ => throw new JsonException(
                 $"Cannot read string-or-number value from token type '{reader.TokenType}'."
             ),
         };
 
-    private static string ReadNumberAsRawText(ref Utf8JsonReader reader)
-    {
-        try
-        {
-            return reader.GetInt64().ToString(CultureInfo.InvariantCulture);
-        }
-        catch (FormatException)
-        {
-            if (!reader.HasValueSequence)
-                return Encoding.UTF8.GetString(reader.ValueSpan);
-            var sequence = reader.ValueSequence;
-            var bytes = new byte[(int)sequence.Length];
-            var remaining = bytes.AsSpan();
-            foreach (var segment in sequence)
-            {
-                segment.Span.CopyTo(remaining);
-                remaining = remaining[segment.Length..];
-            }
-            return Encoding.UTF8.GetString(bytes);
-        }
-    }
+    private static string ReadNumberAsRawText(ref Utf8JsonReader reader) =>
+        reader.TryGetInt64(out var value) ? value.ToString(CultureInfo.InvariantCulture)
+        : reader.HasValueSequence ? Encoding.UTF8.GetString(reader.ValueSequence)
+        : Encoding.UTF8.GetString(reader.ValueSpan);
 
-    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
-    {
-        if (value is null)
-            writer.WriteNullValue();
-        else
-            writer.WriteStringValue(value);
-    }
+    public override void Write(
+        Utf8JsonWriter writer,
+        string? value,
+        JsonSerializerOptions options
+    ) => writer.WriteStringValue(value);
 }
 
 internal static class JsonNumberParsing
@@ -350,88 +268,14 @@ internal sealed class RoundedInt64Converter : JsonConverter<long>
     private static long RoundToInt64(double value)
     {
         var rounded = JsonNumberParsing.RoundHalfUp(value);
-        if (rounded == 9_223_372_036_854_775_808.0)
-            return long.MaxValue;
-        if (rounded is >= -9_223_372_036_854_775_808.0 and < 9_223_372_036_854_775_808.0)
-            return (long)rounded;
-        throw new JsonException(
-            $"Integral value {value} is outside the int64 range, the server sent garbage."
-        );
-    }
-}
-
-internal sealed class TolerantBooleanConverter : JsonConverter<bool>
-{
-    private static readonly NullableTolerantBooleanConverter Nullable = new();
-
-    public override bool Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    ) => Nullable.Read(ref reader, typeToConvert, options) ?? false;
-
-    public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options) =>
-        writer.WriteBooleanValue(value);
-}
-
-internal sealed class NullableTolerantStringConverter : JsonConverter<string?>
-{
-    public override string? Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    ) =>
-        reader.TokenType switch
+        return rounded switch
         {
-            JsonTokenType.String => reader.GetString(),
-            JsonTokenType.Null => null,
-            _ => SkipAsStringless(ref reader),
+            9_223_372_036_854_775_808.0 => long.MaxValue,
+            >= -9_223_372_036_854_775_808.0 and < 9_223_372_036_854_775_808.0 => (long)rounded,
+            _ => throw new JsonException(
+                $"Integral value {value} is outside the int64 range, the server sent garbage."
+            ),
         };
-
-    private static string? SkipAsStringless(ref Utf8JsonReader reader)
-    {
-        reader.Skip();
-        return null;
-    }
-
-    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
-    {
-        if (value is null)
-            writer.WriteNullValue();
-        else
-            writer.WriteStringValue(value);
-    }
-}
-
-internal sealed class NullableTolerantBooleanConverter : JsonConverter<bool?>
-{
-    public override bool? Read(
-        ref Utf8JsonReader reader,
-        Type typeToConvert,
-        JsonSerializerOptions options
-    ) =>
-        reader.TokenType switch
-        {
-            JsonTokenType.True => true,
-            JsonTokenType.False => false,
-            JsonTokenType.Null => null,
-            JsonTokenType.Number => reader.GetDouble() != 0,
-            JsonTokenType.String when bool.TryParse(reader.GetString(), out var parsed) => parsed,
-            _ => SkipAsUnknown(ref reader),
-        };
-
-    private static bool? SkipAsUnknown(ref Utf8JsonReader reader)
-    {
-        reader.Skip();
-        return null;
-    }
-
-    public override void Write(Utf8JsonWriter writer, bool? value, JsonSerializerOptions options)
-    {
-        if (value.HasValue)
-            writer.WriteBooleanValue(value.Value);
-        else
-            writer.WriteNullValue();
     }
 }
 
@@ -488,18 +332,16 @@ internal sealed class FiniteFloatConverter : JsonConverter<float>
         JsonSerializerOptions options
     )
     {
-        float value;
-        if (reader.TokenType is JsonTokenType.Number)
-            value = reader.GetSingle();
-        else if (
-            reader.TokenType is JsonTokenType.String
-            && JsonNumberParsing.TryParseUtf8Double(ref reader, out var parsed)
-        )
-            value = (float)parsed;
-        else
-            throw new JsonException(
+        var value = reader.TokenType switch
+        {
+            JsonTokenType.Number => reader.GetSingle(),
+            JsonTokenType.String
+                when JsonNumberParsing.TryParseUtf8Double(ref reader, out var parsed) =>
+                (float)parsed,
+            _ => throw new JsonException(
                 $"Cannot read a finite float from token type '{reader.TokenType}'."
-            );
+            ),
+        };
         if (!float.IsFinite(value))
             throw new JsonException($"The value must be a finite number, got {value}.");
         return value;

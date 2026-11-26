@@ -14,22 +14,56 @@ internal static partial class ConnectionFailure
     [GeneratedRegex(@"status code '(\d{3})'")]
     private static partial Regex HandshakeStatusCodeRegex();
 
-    public static void Log(
+    public static string? Log(
         ILogger? logger,
         string nodeName,
         Endpoint endpoint,
         bool initial,
-        Exception exception
+        Exception exception,
+        bool retrying = false,
+        int? gaveUpAfter = null,
+        string? previous = null
     )
     {
         var endpointText = endpoint.ToString();
+        string? key = null;
+
+        void Write(LogLevel level, Exception? error, string template, params object?[] args)
+        {
+            key = $"{template}|{string.Join('|', args)}";
+            if (gaveUpAfter is { } attempts)
+            {
+                level = LogLevel.Error;
+                if (attempts > 1)
+                {
+                    template += " Gave up after {Attempts} attempts.";
+                    args = [.. args, attempts];
+                }
+                else
+                    template += " Gave up.";
+            }
+            else if (key == previous)
+                return;
+            else if (retrying)
+                template += " Retrying.";
+
+            logger?.Log(level, LogEvents.Node, error, template, args);
+        }
+
         try
         {
             switch (exception)
             {
-                case HttpRequestException { InnerException: AuthenticationException }:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                case NodeUnreachableException
+                {
+                    InnerException: HttpRequestException
+                    {
+                        InnerException: AuthenticationException,
+                    },
+                }:
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) rejected the connection: TLS handshake failed. Check that IsSecure isn't set to true for a node that isn't TLS, a certificate that expired or is not trusted also lands here when IsSecure is correct.",
                         nodeName,
                         endpointText
@@ -37,42 +71,28 @@ internal static partial class ConnectionFailure
                     break;
                 case WebSocketException { InnerException: HttpRequestException httpException }
                     when httpException.InnerException is AuthenticationException:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) rejected the connection: TLS handshake failed. Check that IsSecure matches the node's port, a certificate that expired since the last successful connect also lands here.",
                         nodeName,
                         endpointText
                     );
                     break;
                 case TimeoutException timeoutException:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) not reachable: connection timed out: {Reason}.",
                         nodeName,
                         endpointText,
                         TrimTrailingPeriod(timeoutException.Message)
                     );
                     break;
-                case TaskCanceledException { InnerException: TimeoutException }:
-                    logger?.LogWarning(
-                        LogEvents.Node,
-                        "Node {NodeName} ({Endpoint}) not reachable: connection timed out.",
-                        nodeName,
-                        endpointText
-                    );
-                    break;
-                case HttpRequestException requestException:
-                    logger?.LogWarning(
-                        LogEvents.Node,
-                        "Node {NodeName} ({Endpoint}) not reachable: {Reason}.",
-                        nodeName,
-                        endpointText,
-                        Describe(requestException)
-                    );
-                    break;
                 case NodeUnreachableException unreachableException:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) not reachable: {Reason}.",
                         nodeName,
                         endpointText,
@@ -82,8 +102,9 @@ internal static partial class ConnectionFailure
                     );
                     break;
                 case WebSocketException { InnerException: HttpRequestException httpException }:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) not reachable: {Reason}.",
                         nodeName,
                         endpointText,
@@ -93,8 +114,9 @@ internal static partial class ConnectionFailure
                 case not null
                     when TryGetStatusCode(exception, out var authStatus)
                         && authStatus is 401 or 403:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) rejected the connection: check the node's configured password.",
                         nodeName,
                         endpointText
@@ -103,8 +125,9 @@ internal static partial class ConnectionFailure
                 case WebSocketException webSocketException
                     when TryGetHandshakeStatusCode(webSocketException, out var statusCode)
                         && statusCode is 400:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) rejected the connection with HTTP 400. Check the bridge's user id, NodeLink rejects user ids that are not snowflakes.",
                         nodeName,
                         endpointText
@@ -115,8 +138,9 @@ internal static partial class ConnectionFailure
                         "sent to HTTPS port",
                         StringComparison.OrdinalIgnoreCase
                     ) == true:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) rejected the connection: {Reason}. Check whether the node's IsSecure should be true.",
                         nodeName,
                         endpointText,
@@ -126,8 +150,9 @@ internal static partial class ConnectionFailure
                 case not null
                     when TryGetStatusCode(exception, out var proxyStatus)
                         && proxyStatus is 502 or 504 or (>= 520 and <= 526) or 529 or 530:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) not reachable: reverse proxy in front of it returned {StatusCode}.",
                         nodeName,
                         endpointText,
@@ -135,8 +160,9 @@ internal static partial class ConnectionFailure
                     );
                     break;
                 case RestException or IncompatibleServerException:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) rejected the connection: {Reason}.",
                         nodeName,
                         endpointText,
@@ -144,8 +170,9 @@ internal static partial class ConnectionFailure
                     );
                     break;
                 case ArgumentException:
-                    logger?.LogWarning(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Warning,
+                        null,
                         "Node {NodeName} ({Endpoint}) rejected the connection: {Reason}. Check the session id the server handed out and any user-supplied header values.",
                         nodeName,
                         endpointText,
@@ -153,16 +180,17 @@ internal static partial class ConnectionFailure
                     );
                     break;
                 case OperationCanceledException:
-                    logger?.LogInformation(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Information,
+                        null,
                         "Node {NodeName} ({Endpoint}) connection attempt cancelled.",
                         nodeName,
                         endpointText
                     );
                     break;
                 default:
-                    logger?.LogError(
-                        LogEvents.Node,
+                    Write(
+                        LogLevel.Error,
                         exception,
                         "Node {NodeName} ({Endpoint}) {Failure}.",
                         nodeName,
@@ -173,6 +201,8 @@ internal static partial class ConnectionFailure
             }
         }
         catch { }
+
+        return key;
     }
 
     private static bool TryGetStatusCode(Exception exception, out int statusCode)
@@ -214,7 +244,7 @@ internal static partial class ConnectionFailure
         if (
             exception.InnerException is SocketException
             {
-                SocketErrorCode: SocketError.HostNotFound
+                SocketErrorCode: SocketError.HostNotFound,
             }
         )
             return "host or port is invalid";

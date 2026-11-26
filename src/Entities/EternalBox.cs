@@ -119,7 +119,7 @@ public sealed record EternalBoxInfo
     [JsonPropertyName("id"), JsonInclude]
     public string? Id { get; internal set; }
 
-    /// <summary>Service the track was sourced from, e.g. <c>SPOTIFY</c>, null when the server sent none.</summary>
+    /// <summary>Service the track was sourced from, like <c>SPOTIFY</c>, null when the server sent none.</summary>
     [JsonPropertyName("service"), JsonInclude]
     public string? Service { get; internal set; }
 
@@ -141,10 +141,7 @@ public sealed record EternalBoxInfo
 public enum EternalBoxJumpType
 {
     /// <summary>A jump type the library does not know, reported by a newer server.</summary>
-    /// <remarks>
-    /// The fallback for wire values and non-string tokens the library does not know, a frame without
-    /// a type reads as null, see EternalBoxJump.Type.
-    /// </remarks>
+    /// <remarks>A jump with no type reads as null instead.</remarks>
     Unknown,
 
     /// <summary>The beat queue wrapped around to the beginning.</summary>

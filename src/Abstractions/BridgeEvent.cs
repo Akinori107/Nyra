@@ -4,14 +4,11 @@ using Nyra.Internal;
 namespace Nyra.Abstractions;
 
 /// <summary>
-/// Bridge event raises with per-handler isolation, a plain multicast invoke lets one throwing subscriber block
-/// every handler subscribed after it, and the wiring's routing is one of those handlers.
+/// Raises bridge events so a subscriber that throws does not stop the others. Bridges raise their events
+/// through it.
 /// </summary>
 /// <remarks>
-/// Each subscriber runs in its own try, a crash is reported to the logger when one is provided and the rest
-/// still run. Crashes of the same kind are reported five times per thirty seconds, so a subscriber that fails on
-/// every event cannot flood the log. Bridge implementations raise their events through this helper instead of a
-/// plain invoke.
+/// A crash is logged when there is a logger, at most five times per thirty seconds for the same kind.
 /// </remarks>
 public static class BridgeEvent
 {

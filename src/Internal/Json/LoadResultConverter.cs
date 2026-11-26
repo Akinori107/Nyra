@@ -29,7 +29,6 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
         var hasData = false;
 
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-        {
             if (reader.ValueTextEquals("loadType"u8))
             {
                 hasLoadType = true;
@@ -58,7 +57,6 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
             }
             else
                 reader.Skip();
-        }
 
         switch (loadType)
         {
@@ -69,10 +67,9 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 if (data.TokenType != JsonTokenType.StartObject)
                     throw new JsonException("Track load result is missing its 'data' object.");
 
-                var track =
-                    NyraJson.Deserialize<Track>(ref data, options)
+                var track = NyraJson.Deserialize<Track>(ref data, options)
                     ?? throw new JsonException("Track load result 'data' member is null.");
-                return new LoadResult.TrackLoaded(track);
+                return new TrackLoaded(track);
             }
 
             case TypePlaylist:
@@ -88,19 +85,18 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 if (!hasData)
                     throw new JsonException("Search load result is missing its 'data' member.");
 
-                var tracks =
-                    NyraJson.Deserialize<List<Track>>(ref data, options)
+                var tracks = NyraJson.Deserialize<List<Track>>(ref data, options)
                     ?? throw new JsonException("Search load result 'data' member is null.");
                 foreach (var track in tracks)
                     if (track is null)
                         throw new JsonException(
                             "The search load result contained a null track element."
                         );
-                return new LoadResult.SearchLoaded(tracks);
+                return new SearchLoaded(tracks);
             }
 
             case TypeEmpty:
-                return new LoadResult.NoMatches();
+                return new NoMatches();
 
             case TypeError:
             {
@@ -111,7 +107,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 if (error.TokenType != JsonTokenType.StartObject)
                     throw new JsonException("Error load result is missing its exception.");
 
-                return new LoadResult.LoadFailed(
+                return new LoadFailed(
                     NyraJson.Deserialize<ErrorInfo>(ref error, options)
                         ?? throw new JsonException("Error load result exception is null.")
                 );
@@ -120,7 +116,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
             default:
             {
                 var reported = unknownLoadType ?? (hasLoadType ? "not a string" : "missing");
-                return new LoadResult.LoadFailed(
+                return new LoadFailed(
                     new ErrorInfo
                     {
                         Message = $"The server reported an unknown load type '{reported}'.",
@@ -166,7 +162,10 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
         return 0;
     }
 
-    private static LoadResult ReadPlaylist(ref Utf8JsonReader data, JsonSerializerOptions options)
+    private static PlaylistLoaded ReadPlaylist(
+        ref Utf8JsonReader data,
+        JsonSerializerOptions options
+    )
     {
         var name = string.Empty;
         var selectedTrack = -1;
@@ -223,7 +222,7 @@ internal sealed class LoadResultConverter(bool isNodeLink) : JsonConverter<LoadR
                 data.Skip();
         }
 
-        return new LoadResult.PlaylistLoaded(
+        return new PlaylistLoaded(
             new PlaylistInfo { Name = name, SelectedTrack = selectedTrack },
             tracks ?? [],
             pluginInfo

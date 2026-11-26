@@ -21,6 +21,8 @@ internal sealed class NodeBridgeWiring
         client.VoiceServerUpdated += OnDiscordVoiceServerUpdated;
         if (client is IGuildRemovalSource guildRemoval)
             guildRemoval.GuildRemoved += OnDiscordGuildRemoved;
+        if (client is IVoiceListenerSource listeners)
+            listeners.ListenerVoiceStateUpdated += OnListenerVoiceStateUpdated;
 
         _wiredClient = client;
     }
@@ -34,6 +36,8 @@ internal sealed class NodeBridgeWiring
         client.VoiceServerUpdated -= OnDiscordVoiceServerUpdated;
         if (client is IGuildRemovalSource guildRemoval)
             guildRemoval.GuildRemoved -= OnDiscordGuildRemoved;
+        if (client is IVoiceListenerSource listeners)
+            listeners.ListenerVoiceStateUpdated -= OnListenerVoiceStateUpdated;
 
         _wiredClient = null;
     }
@@ -81,6 +85,14 @@ internal sealed class NodeBridgeWiring
                 connection.HandleVoiceSessionUpdated(eventArgs.VoiceState.SessionId);
         }
     }
+
+    private void OnListenerVoiceStateUpdated(
+        object? sender,
+        ListenerVoiceStateUpdatedEventArgs eventArgs
+    ) =>
+        _node
+            .GetConnection(eventArgs.GuildId)
+            ?.HandleListenerVoiceState(eventArgs.UserId, eventArgs.ChannelId);
 
     private void OnDiscordGuildRemoved(object? sender, GuildRemovedEventArgs eventArgs)
     {

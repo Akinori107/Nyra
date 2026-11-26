@@ -55,7 +55,7 @@ internal sealed class TracksRest
         var json = await _rest
             .SendAsync(HttpMethod.Post, Routes.DecodeTracks, body, cancellationToken)
             .ConfigureAwait(false);
-        return _rest.DeserializeList<Track>(json, Routes.DecodeTracks, options);
+        return RestClient.DeserializeList<Track>(json, Routes.DecodeTracks, options);
     }
 
     public async Task<string> EncodeAsync(
@@ -68,7 +68,7 @@ internal sealed class TracksRest
         var json = await _rest
             .SendAsync(HttpMethod.Post, Routes.EncodedTracks, body, cancellationToken)
             .ConfigureAwait(false);
-        var encoded = _rest.DeserializeList<string>(json, Routes.EncodedTracks, options);
+        var encoded = RestClient.DeserializeList<string>(json, Routes.EncodedTracks, options);
         return encoded is { Count: > 0 }
             ? encoded[0]
             : throw new RestException(
@@ -88,7 +88,7 @@ internal sealed class TracksRest
         var json = await _rest
             .SendAsync(HttpMethod.Post, Routes.EncodedTracks, body, cancellationToken)
             .ConfigureAwait(false);
-        return _rest.DeserializeList<string>(json, Routes.EncodedTracks, options);
+        return RestClient.DeserializeList<string>(json, Routes.EncodedTracks, options);
     }
 
     public async Task<TrackStreamUrl> GetStreamUrlAsync(
@@ -152,18 +152,14 @@ internal sealed class TracksRest
 
         using var headerCts = new TimeoutLink(
             _rest.Node.Time,
-            TimeSpan.FromSeconds(60),
+            RestClient.RequestTimeout,
             cancellationToken
         );
         HttpResponseMessage response;
         try
         {
             response = await RestClient
-                .StreamingHttp.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    headerCts.Token
-                )
+                .Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headerCts.Token)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -175,55 +171,28 @@ internal sealed class TracksRest
         }
         catch (HttpRequestException exception)
         {
-            throw new NodeUnreachableException(
-                $"The node '{_rest.Node.Name}' at {_rest.Node.Endpoint} is not reachable: {exception.Message}",
-                exception
-            );
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            string body;
-            bool bodyUnreadable;
-            TimeSpan? retryAfter;
-            try
-            {
-                using var tailCts = CancellationTokenSource.CreateLinkedTokenSource(
-                    cancellationToken,
-                    headerCts.Token
-                );
-                (body, bodyUnreadable) = await RestClient
-                    .ReadErrorBodyAsync(response.Content, tailCts.Token)
-                    .ConfigureAwait(false);
-                retryAfter = RestClient.ReadRetryAfter(response);
-            }
-            catch (OperationCanceledException)
-                when (headerCts.IsCancellationRequested
-                    && !cancellationToken.IsCancellationRequested
-                )
-            {
-                throw new TimeoutException(
-                    $"The node '{_rest.Node.Name}' at {_rest.Node.Endpoint} did not answer the load stream within sixty seconds."
-                );
-            }
-            finally
-            {
-                response.Dispose();
-            }
-
-            throw new RestException((int)response.StatusCode, path, body, retryAfter)
-            {
-                BodyUnreadable = bodyUnreadable,
-            };
+            throw _rest.Unreachable(exception);
         }
 
         try
         {
-            using var tailCts = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken,
-                headerCts.Token
-            );
-            return await response.Content.ReadAsStreamAsync(tailCts.Token).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                var (body, bodyUnreadable) = await RestClient
+                    .ReadErrorBodyAsync(response.Content, headerCts.Token)
+                    .ConfigureAwait(false);
+                throw new RestException(
+                    (int)response.StatusCode,
+                    path,
+                    body,
+                    RestClient.ReadRetryAfter(response, _rest.Node.Time)
+                )
+                {
+                    BodyUnreadable = bodyUnreadable,
+                };
+            }
+
+            return await response.Content.ReadAsStreamAsync(headerCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
             when (headerCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)

@@ -4,32 +4,24 @@ namespace Nyra.EventArgs;
 
 /// <summary>Raised when the Discord voice websocket of the player was closed.</summary>
 /// <remarks>
-/// For NodeLink this also reports synthetic voice deaths (worker failure, UDP/IP-discovery loss) that never
-/// closed a Discord websocket (see <see cref="Code"/>). It also emits deaths that never came from Discord
-/// wearing Discord codes, for example 4015 when its voice library gives up reconnecting and 4014 when the
-/// voice server endpoint is null. Do not attribute 4xxx to Discord on NodeLink without checking the reason.
+/// On NodeLink a close here does not always come from Discord, even with a 4xxx code. Check
+/// <see cref="Reason"/> before blaming Discord.
 /// </remarks>
 public sealed class WebSocketClosedEventArgs : System.EventArgs
 {
     /// <summary>The guild the player plays in.</summary>
     [JsonPropertyName("guildId"), JsonInclude]
-    [JsonConverter(typeof(TolerantSnowflakeConverter))]
+    [JsonConverter(typeof(SnowflakeConverter))]
     public ulong GuildId { get; internal set; }
 
     /// <summary>Discord voice close event code, the 4xxx family signals failures.</summary>
-    /// <remarks>
-    /// NodeLink also emits synthetic non-Discord codes, 1000 on client destroy, 5001 on cluster worker
-    /// failure, and null on voice failures that carry no close code at all (UDP loss, IP discovery failure),
-    /// those deaths never opened a close handshake, there is no code to report.
-    /// </remarks>
+    /// <remarks>NodeLink can send codes of its own and null when the voice connection failed without a close.</remarks>
     [JsonPropertyName("code"), JsonInclude]
     public int? Code { get; internal set; }
 
     /// <summary>Why the voice websocket closed.</summary>
     /// <remarks>
-    /// Absorbs a null reason the server sends, readers see an empty string instead of null. Defensive
-    /// only, no current server sends one, NodeLink's no-close deaths carry the library's own reason
-    /// string, see <see cref="Code"/> for the discriminator.
+    /// A null reason from the server reads as an empty string.
     /// </remarks>
     [JsonPropertyName("reason"), JsonInclude]
     public string Reason
@@ -40,8 +32,7 @@ public sealed class WebSocketClosedEventArgs : System.EventArgs
 
     /// <summary>Whether the websocket was closed by Discord.</summary>
     /// <remarks>
-    /// NodeLink reports true for every synthetic voice death as well, its voice library sets it
-    /// unconditionally, so true does not imply a Discord-initiated close outside Lavalink.
+    /// On NodeLink it can be true for closes that did not come from Discord.
     /// </remarks>
     [JsonPropertyName("byRemote"), JsonInclude]
     public bool ByRemote { get; internal set; }
