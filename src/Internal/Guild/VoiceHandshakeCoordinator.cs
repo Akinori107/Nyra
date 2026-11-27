@@ -336,8 +336,7 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
                 }
                 finally
                 {
-                    if (!joinSend.IsCompleted || joinSend.IsFaulted)
-                        joinSend.ObserveFaults();
+                    joinSend.ObserveFaults();
                 }
             }
             catch (OperationCanceledException exception)
@@ -479,8 +478,7 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
             }
             finally
             {
-                if (!leaveSend.IsCompleted || leaveSend.IsFaulted)
-                    leaveSend.ObserveFaults();
+                leaveSend.ObserveFaults();
 
                 if (leaveSend.Status == TaskStatus.Faulted)
                     GuardForGuild(GuardFor(client), guildId).Disarm(armTicket);
@@ -524,8 +522,7 @@ internal sealed class VoiceHandshakeCoordinator(TimeSpan timeout, TimeProvider? 
         catch { }
         finally
         {
-            if (!send.IsCompleted || send.IsFaulted)
-                send.ObserveFaults();
+            send.ObserveFaults();
 
             if (send.Status == TaskStatus.Faulted && armTicket is { } ticket)
                 guard.Disarm(ticket);

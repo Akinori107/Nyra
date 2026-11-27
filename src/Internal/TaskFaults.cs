@@ -2,7 +2,11 @@ namespace Nyra.Internal;
 
 internal static class TaskFaults
 {
-    internal static void ObserveFaults(this Task task, Action<Exception>? onFault = null) =>
+    internal static void ObserveFaults(this Task? task, Action<Exception>? onFault = null)
+    {
+        if (task is null || task.IsCompletedSuccessfully || task.IsCanceled)
+            return;
+
         task.ContinueWith(
             static (faulted, handler) =>
             {
@@ -14,4 +18,5 @@ internal static class TaskFaults
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
         );
+    }
 }
