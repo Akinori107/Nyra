@@ -167,8 +167,6 @@ public sealed record Track
             var message = raw.AsSpan(4, messageSize);
             var reader = new JavaBinaryReader(message);
 
-            var canonicalEncoded = Convert.ToBase64String(raw);
-
             var version = (flags & 0b1) != 0 ? reader.ReadByte() : 1;
             if (version is < 1 or > MaxDecodeVersion)
                 throw new InvalidTrackException(
@@ -181,16 +179,9 @@ public sealed record Track
             var identifier = reader.ReadModifiedUtf8();
             var isStream = reader.ReadBoolean();
 
-            string? uri = null;
-            string? artworkUrl = null;
-            string? isrc = null;
-            if (version >= 2)
-                uri = reader.ReadNullableModifiedUtf8();
-            if (version >= 3)
-            {
-                artworkUrl = reader.ReadNullableModifiedUtf8();
-                isrc = reader.ReadNullableModifiedUtf8();
-            }
+            var uri = version >= 2 ? reader.ReadNullableModifiedUtf8() : null;
+            var artworkUrl = version >= 3 ? reader.ReadNullableModifiedUtf8() : null;
+            var isrc = version >= 3 ? reader.ReadNullableModifiedUtf8() : null;
 
             var sourceName = reader.ReadModifiedUtf8();
 
@@ -204,7 +195,7 @@ public sealed record Track
 
             return new Track
             {
-                Encoded = canonicalEncoded,
+                Encoded = Convert.ToBase64String(raw),
                 Info = new TrackInfo
                 {
                     Title = title,
